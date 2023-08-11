@@ -1,3 +1,13 @@
+ # bgpfix
+
+[![Go Reference](https://pkg.go.dev/badge/github.com/bgpfix/bgpfix.svg)](https://pkg.go.dev/github.com/bgpfix/bgpfix)
+
+A generic-purpose, high-performance Golang library for all things BGP.
+
+[Docs](https://pkg.go.dev/github.com/bgpfix/bgpfix)
+
+# Supported RFCs (incl. partial/wip support)
+
  * [RFC1997 BGP Communities Attribute](https://datatracker.ietf.org/doc/html/rfc1997)
  * [RFC2918 Route Refresh Capability for BGP-4](https://datatracker.ietf.org/doc/html/rfc2918)
  * [RFC4360 BGP Extended Communities Attribute](https://datatracker.ietf.org/doc/html/rfc4360)
@@ -14,3 +24,7 @@
  * [RFC8956 Dissemination of Flow Specification Rules for IPv6](https://datatracker.ietf.org/doc/html/rfc8956)
  * [draft-simpson-idr-flowspec-redirect BGP Flow-Spec Extended Community for Traffic Redirect to IP Next Hop](https://datatracker.ietf.org/doc/html/draft-simpson-idr-flowspec-redirect-02)
  * [RFC9072 Extended Optional Parameters Length for BGP OPEN Message](https://datatracker.ietf.org/doc/html/rfc9072)
+
+# Author
+
+Pawel Foremski [@pforemski](https://twitter.com/pforemski) 2023
