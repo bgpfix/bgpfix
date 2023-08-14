@@ -1,3 +1,8 @@
+// Package attrs represents BGP path attributes.
+//
+// This package can store a set of BGP attributes in a thread-unsafe map
+// using the Attrs type, and read/write a particular BGP attribute
+// representation using implementations of the Attr interface.
 package attrs
 
 import (

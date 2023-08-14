@@ -1,5 +1,4 @@
-// Package caps represent BGP capabilities, which is one of the optional
-// parameters in the BGP OPEN messages (probably the only used widely).
+// Package caps represents BGP capabilities.
 //
 // This package can store a set of BGP capabilities in a thread-safe map
 // using the Caps type, and read/write a particular BGP capability
@@ -12,7 +11,7 @@ import (
 	"github.com/puzpuzpuz/xsync/v2"
 )
 
-// Caps is an xsync map that represents a set of BGP capabilities.
+// Caps wraps an xsync map to represent a set of BGP capabilities.
 // It may contain nil values.
 //
 // Caps is thread-safe for writes, but only after Init() or first modification.

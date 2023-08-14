@@ -8,12 +8,12 @@ import (
 
 // MP implements CAP_MP rfc4760
 type MP struct {
-	Proto map[af.Asafi]bool
+	Proto map[af.AS]bool
 }
 
 func NewMP(cc Code) Cap {
 	return &MP{
-		Proto: make(map[af.Asafi]bool),
+		Proto: make(map[af.AS]bool),
 	}
 }
 
@@ -28,19 +28,19 @@ func (c *MP) Unmarshal(buf []byte, caps Caps) error {
 	return nil
 }
 
-func (c *MP) Add(afi af.Afi, safi af.Safi) {
+func (c *MP) Add(afi af.AFI, safi af.SAFI) {
 	c.Proto[af.AfiSafi(afi, safi)] = true
 }
 
-func (c *MP) Has(afi af.Afi, safi af.Safi) bool {
+func (c *MP) Has(afi af.AFI, safi af.SAFI) bool {
 	return c.Proto[af.AfiSafi(afi, safi)]
 }
 
-func (c *MP) Drop(afi af.Afi, safi af.Safi) {
+func (c *MP) Drop(afi af.AFI, safi af.SAFI) {
 	delete(c.Proto, af.AfiSafi(afi, safi))
 }
 
-func (c *MP) Sorted() (dst []af.Asafi) {
+func (c *MP) Sorted() (dst []af.AS) {
 	for as, val := range c.Proto {
 		if val {
 			dst = append(dst, as)
@@ -59,7 +59,7 @@ func (c *MP) Common(cap2 Cap) Cap {
 	}
 
 	dst := &MP{
-		Proto: make(map[af.Asafi]bool),
+		Proto: make(map[af.AS]bool),
 	}
 	for as, val := range c.Proto {
 		if val && c2.Proto[as] {

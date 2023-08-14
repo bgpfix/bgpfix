@@ -9,7 +9,7 @@ import (
 // MP represents ATTR_MP_REACH and ATTR_MP_UNREACH attributes
 type MP struct {
 	CodeFlags
-	af.Asafi
+	af.AS
 
 	NH    []byte  // only for ATTR_MP_REACH
 	Data  []byte  // NLRI or unreachable
@@ -19,10 +19,10 @@ type MP struct {
 // MP attribute Value
 type MPValue interface {
 	// Afi returns the AFI of the parent
-	Afi() af.Afi
+	Afi() af.AFI
 
 	// Safi returns the SAFI of the parent
-	Safi() af.Safi
+	Safi() af.SAFI
 
 	// Unmarshal parses wire representation from the parent
 	Unmarshal(cps caps.Caps) error
@@ -41,7 +41,7 @@ type MPValue interface {
 type MPNewFunc func(mp *MP) MPValue
 
 // MPNewFuncs maps ATTR_MP_* afi/safi pairs to their NewFunc
-var MPNewFuncs = map[af.Asafi]MPNewFunc{
+var MPNewFuncs = map[af.AS]MPNewFunc{
 	af.AfiSafi(af.AFI_IPV4, af.SAFI_UNICAST):  NewMPPrefixes,
 	af.AfiSafi(af.AFI_IPV4, af.SAFI_FLOWSPEC): NewMPFlowspec,
 
@@ -58,7 +58,7 @@ func (mp *MP) Unmarshal(buf []byte, cps caps.Caps) error {
 	if len(buf) < 3 {
 		return ErrLength
 	}
-	mp.Asafi = af.AfiSafiFrom(buf[0:3])
+	mp.AS = af.AfiSafiFrom(buf[0:3])
 	buf = buf[3:]
 
 	// nexthop?
@@ -81,7 +81,7 @@ func (mp *MP) Unmarshal(buf []byte, cps caps.Caps) error {
 	mp.Data = buf
 
 	// parse the value?
-	if newfunc, ok := MPNewFuncs[mp.Asafi]; ok {
+	if newfunc, ok := MPNewFuncs[mp.AS]; ok {
 		mp.Value = newfunc(mp)
 		return mp.Value.Unmarshal(cps)
 	}
@@ -100,7 +100,7 @@ func (mp *MP) Marshal(dst []byte, cps caps.Caps) []byte {
 	}
 	dst = mp.CodeFlags.MarshalLen(dst, tl)
 
-	dst = mp.Asafi.Marshal3(dst)
+	dst = mp.AS.Marshal3(dst)
 	if mp.Code() == ATTR_MP_REACH {
 		dst = append(dst, byte(len(mp.NH)))
 		dst = append(dst, mp.NH...)
@@ -112,7 +112,7 @@ func (mp *MP) Marshal(dst []byte, cps caps.Caps) []byte {
 
 func (mp *MP) ToJSON(dst []byte) []byte {
 	dst = append(dst, '{')
-	dst = mp.Asafi.ToJSONKey(dst, "af")
+	dst = mp.AS.ToJSONKey(dst, "af")
 	dst = append(dst, ',')
 
 	if mp.Value != nil {
@@ -137,13 +137,13 @@ func (mp *MP) FromJSON(src []byte) error {
 	}
 
 	// decode afi/safi
-	err = mp.Asafi.FromJSON(afsrc)
+	err = mp.AS.FromJSON(afsrc)
 	if err != nil {
 		return err
 	}
 
 	// do we have a parser for it?
-	if newfunc, ok := MPNewFuncs[mp.Asafi]; ok {
+	if newfunc, ok := MPNewFuncs[mp.AS]; ok {
 		mp.Value = newfunc(mp)
 		return mp.Value.FromJSON(src)
 	} // else nope, parse "nh"

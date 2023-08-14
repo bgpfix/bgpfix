@@ -1,3 +1,6 @@
+// Package msg represents BGP messages.
+//
+// This package can read/write BGP messages in wire and JSON formats.
 package msg
 
 import (
@@ -230,9 +233,9 @@ func (msg *Msg) Parse(raw []byte) (off int, err error) {
 	return off + dlen, nil
 }
 
-// ParseUp parses the upper layer iff needed.
+// ParseUpper parses the upper layer iff needed.
 // caps can infuence the upper layer decoders.
-func (msg *Msg) ParseUp(caps caps.Caps) error {
+func (msg *Msg) ParseUpper(caps caps.Caps) error {
 	if msg.Upper != INVALID {
 		return nil // already done
 	}
@@ -271,9 +274,9 @@ func (msg *Msg) ParseUp(caps caps.Caps) error {
 	return err
 }
 
-// MarshalUp marshals the upper layer to msg.Data iff possible and needed.
+// MarshalUpper marshals the upper layer to msg.Data iff possible and needed.
 // caps can infuence the upper layer encoders.
-func (msg *Msg) MarshalUp(caps caps.Caps) error {
+func (msg *Msg) MarshalUpper(caps caps.Caps) error {
 	if !msg.Dirty || msg.Upper == INVALID {
 		return nil // not needed or not possible
 	}
@@ -307,7 +310,7 @@ func (msg *Msg) MarshalUp(caps caps.Caps) error {
 	return err
 }
 
-// WriteTo writes the BGP message to w, implementing io.WriterTo
+// WriteTo marshals the BGP message to w, implementing io.WriterTo
 func (msg *Msg) WriteTo(w io.Writer) (n int64, err error) {
 	var m int
 

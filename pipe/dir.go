@@ -230,7 +230,7 @@ input:
 		for _, cb := range cbs {
 			// need to parse first?
 			if !cb.Raw && !parsed {
-				err := m.ParseUp(p.Caps)
+				err := m.ParseUpper(p.Caps)
 				if err != nil {
 					p.Event(EVENT_PARSE, m, err)
 					continue input // next message
@@ -251,7 +251,7 @@ input:
 		}
 
 		// the first valid OPEN? keep it
-		if !fo && m.Type == msg.OPEN && m.ParseUp(p.Caps) == nil {
+		if !fo && m.Type == msg.OPEN && m.ParseUpper(p.Caps) == nil {
 			old_action := m.Action  // just in case [3]
 			m.Action |= ACTION_KEEP // don't re-use in pool
 			fo = true               // it's now or never
@@ -298,7 +298,7 @@ func (d *Dir) Read(dst []byte) (int, error) {
 	// marshal from dir's output into obuf as much as possible
 	for m := range d.Out {
 		// marshal upper layer to m.Data if needed
-		err = m.MarshalUp(p.Caps)
+		err = m.MarshalUpper(p.Caps)
 		if err != nil {
 			p.Put(m)
 			break

@@ -210,7 +210,7 @@ func (s *Speaker) onRx(p *pipe.Pipe, m *msg.Msg) {
 
 	// try to parse
 	// FIXME: MODE_INFER
-	if err := m.ParseUp(p.Caps); err != nil {
+	if err := m.ParseUpper(p.Caps); err != nil {
 		p.Event(EVENT_PARSE_ERROR, m, err.Error())
 		// TODO: notify + teardown?
 		if opts.ErrorDrop {
@@ -257,7 +257,7 @@ func (s *Speaker) onTx(p *pipe.Pipe, m *msg.Msg) {
 
 	// try to parse
 	// FIXME: MODE_INFER
-	if err := m.ParseUp(p.Caps); err != nil {
+	if err := m.ParseUpper(p.Caps); err != nil {
 		p.Event(EVENT_PARSE_ERROR, m, err)
 		// TODO: notify + teardown?
 		if opts.ErrorDrop {

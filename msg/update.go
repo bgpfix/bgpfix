@@ -21,8 +21,8 @@ type Update struct {
 	RawAttrs []byte         // raw attributes
 
 	Attrs attrs.Attrs // parsed attributes
-	afi   af.Afi      // AFI from attr.ATTR_MP_REACH / attr.ATTR_MP_UNREACH
-	safi  af.Safi     // SAFI from attr.ATTR_MP_REACH / attr.ATTR_MP_UNREACH
+	afi   af.AFI      // AFI from attr.ATTR_MP_REACH / attr.ATTR_MP_UNREACH
+	safi  af.SAFI     // SAFI from attr.ATTR_MP_REACH / attr.ATTR_MP_UNREACH
 }
 
 const (
@@ -169,7 +169,7 @@ func (u *Update) afisafi() bool {
 }
 
 // Afi returns the AFI from MP_REACH attribute (or MP_UNREACH)
-func (u *Update) Afi() af.Afi {
+func (u *Update) Afi() af.AFI {
 	if u.afi > 0 || u.afisafi() {
 		return u.afi
 	} else {
@@ -178,7 +178,7 @@ func (u *Update) Afi() af.Afi {
 }
 
 // Safi returns the SAFI from MP_REACH attribute (or MP_UNREACH)
-func (u *Update) Safi() af.Safi {
+func (u *Update) Safi() af.SAFI {
 	if u.safi > 0 || u.afisafi() {
 		return u.safi
 	} else {

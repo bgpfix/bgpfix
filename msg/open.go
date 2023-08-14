@@ -21,7 +21,7 @@ type Open struct {
 	Params     []byte     // raw Optional Parameters
 	ParamsExt  bool       // true iff Params use extended length
 
-	Caps caps.Caps // BGP capabilities; always thread-safe for read-only
+	Caps caps.Caps // BGP capabilities, usually parsed from Params
 }
 
 const (
