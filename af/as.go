@@ -1,8 +1,14 @@
+// Package af implements AFI, SAFI, and combinations
 package af
 
 import (
 	"strings"
+
+	"github.com/bgpfix/bgpfix/binary"
+	"github.com/bgpfix/bgpfix/json"
 )
+
+var msb = binary.Msb
 
 // AS represents AFI+SAFI as afi(16) + 0(8) + safi(8)
 type AS uint32
@@ -54,7 +60,7 @@ func (as AS) ToJSONKey(dst []byte, key string) []byte {
 }
 
 func (as *AS) FromJSON(src []byte) error {
-	s1, s2, ok := strings.Cut(bsu(src), "/")
+	s1, s2, ok := strings.Cut(json.BSQ(src), "/")
 	if !ok {
 		return ErrValue
 	}

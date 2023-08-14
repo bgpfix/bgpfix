@@ -1,6 +1,10 @@
 package caps
 
-import "bytes"
+import (
+	"bytes"
+
+	"github.com/bgpfix/bgpfix/json"
+)
 
 // Raw represents any BGP capability as raw bytes
 type Raw struct {
@@ -47,7 +51,7 @@ func (c *Raw) ToJSON(dst []byte) []byte {
 		if len(c.Raw[0]) == 0 {
 			return append(dst, `true`...)
 		} else {
-			dst = jsonHex(dst, c.Raw[0])
+			dst = json.Hex(dst, c.Raw[0])
 		}
 	default:
 		dst = append(dst, `[`...)
@@ -55,7 +59,7 @@ func (c *Raw) ToJSON(dst []byte) []byte {
 			if i > 0 {
 				dst = append(dst, ',')
 			}
-			dst = jsonHex(dst, c.Raw[i])
+			dst = json.Hex(dst, c.Raw[i])
 		}
 		dst = append(dst, `]`...)
 	}

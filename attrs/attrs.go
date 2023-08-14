@@ -9,8 +9,11 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/bgpfix/bgpfix/binary"
 	jsp "github.com/buger/jsonparser"
 )
+
+var msb = binary.Msb
 
 // Attrs is an ordinary map that represents a set of BGP path attributes.
 // It should not contain nil values.

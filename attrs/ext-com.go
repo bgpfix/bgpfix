@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/json"
 	jsp "github.com/buger/jsonparser"
 )
 
@@ -125,7 +126,7 @@ func (et ExtcomType) ToJSON(dst []byte) []byte {
 }
 
 func (et *ExtcomType) FromJSON(src []byte) error {
-	ss := bs(unq(src))
+	ss := json.BSQ(src)
 	if v, ok := ExtcomTypeValue[ss]; ok {
 		*et = v
 	} else {

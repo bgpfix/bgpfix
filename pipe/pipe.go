@@ -1,3 +1,4 @@
+// Package pipe provides BGP message processing with callbacks.
 package pipe
 
 import (

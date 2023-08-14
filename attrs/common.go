@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/json"
 	jsp "github.com/buger/jsonparser"
 )
 
@@ -35,7 +36,7 @@ func (a *Raw) Marshal(dst []byte, cps caps.Caps) []byte {
 
 func (a *Raw) ToJSON(dst []byte) []byte {
 	if len(a.Raw) > 0 {
-		dst = jsonHex(dst, a.Raw)
+		dst = json.Hex(dst, a.Raw)
 	} else {
 		dst = append(dst, `true`...)
 	}
@@ -44,7 +45,7 @@ func (a *Raw) ToJSON(dst []byte) []byte {
 
 func (a *Raw) FromJSON(src []byte) (err error) {
 	if !bytes.Equal(src, []byte(`true`)) {
-		a.Raw, err = unjsonHex(a.Raw[:0], src)
+		a.Raw, err = json.UnHex(a.Raw[:0], src)
 	}
 	return
 }
@@ -82,13 +83,13 @@ func (a *Origin) ToJSON(dst []byte) []byte {
 	case 2:
 		return append(dst, `"INCOMPLETE"`...)
 	default:
-		return jsonByte(dst, a.Origin)
+		return json.Byte(dst, a.Origin)
 	}
 }
 
 func (a *Origin) FromJSON(src []byte) (err error) {
-	src = unq(src)
-	switch bs(src) {
+	src = json.Q(src)
+	switch json.BS(src) {
 	case "IGP":
 		a.Origin = 0
 	case "EGP":
@@ -96,7 +97,7 @@ func (a *Origin) FromJSON(src []byte) (err error) {
 	case "INCOMPLETE":
 		a.Origin = 2
 	default:
-		a.Origin, err = unjsonByte(src)
+		a.Origin, err = json.UnByte(src)
 	}
 	return
 }
@@ -126,11 +127,11 @@ func (a *U32) Marshal(dst []byte, cps caps.Caps) []byte {
 }
 
 func (a *U32) ToJSON(dst []byte) []byte {
-	return jsonU32(dst, a.Val)
+	return json.U32(dst, a.Val)
 }
 
 func (a *U32) FromJSON(src []byte) (err error) {
-	a.Val, err = unjsonU32(src)
+	a.Val, err = json.UnU32(src)
 	return
 }
 
@@ -196,11 +197,11 @@ func (a *Aggregator) ToJSON(dst []byte) []byte {
 
 func (a *Aggregator) FromJSON(src []byte) error {
 	return jsp.ObjectEach(src, func(key, value []byte, dataType jsp.ValueType, offset int) (err error) {
-		switch bs(key) {
+		switch json.BS(key) {
 		case "asn":
-			a.ASN, err = unjsonU32(value)
+			a.ASN, err = json.UnU32(value)
 		case "addr":
-			a.Addr, err = netip.ParseAddr(bs(value))
+			a.Addr, err = netip.ParseAddr(json.BS(value))
 		}
 		return
 	})
@@ -247,7 +248,7 @@ func (a *IP) ToJSON(dst []byte) []byte {
 }
 
 func (a *IP) FromJSON(src []byte) (err error) {
-	a.Addr, err = netip.ParseAddr(bsu(src))
+	a.Addr, err = netip.ParseAddr(json.BSQ(src))
 	if err != nil {
 		return err
 	}
@@ -332,7 +333,7 @@ func (a *IPList) FromJSON(src []byte) (reterr error) {
 	}()
 
 	jsp.ArrayEach(src, func(value []byte, dataType jsp.ValueType, _ int, _ error) {
-		addr, err := netip.ParseAddr(bs(value))
+		addr, err := netip.ParseAddr(json.BS(value))
 		if err != nil {
 			panic(err)
 		}

@@ -5,6 +5,7 @@ import (
 
 	"github.com/bgpfix/bgpfix/af"
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/json"
 	jsp "github.com/buger/jsonparser"
 )
 
@@ -30,7 +31,7 @@ func (a *MPPrefixes) Unmarshal(cps caps.Caps) error {
 
 	// NH defined?
 	if len(a.NH) > 0 {
-		addr, ll, ok := parseNH(a.NH)
+		addr, ll, ok := ParseNH(a.NH)
 		if !ok {
 			return ErrLength
 		}
@@ -53,7 +54,7 @@ func (a *MPPrefixes) Unmarshal(cps caps.Caps) error {
 		}
 	}
 
-	a.Prefixes, err = appendPrefixes(a.Prefixes, a.Data, afi == af.AFI_IPV6)
+	a.Prefixes, err = ReadPrefixes(a.Prefixes, a.Data, afi == af.AFI_IPV6)
 	return err
 }
 
@@ -69,7 +70,7 @@ func (a *MPPrefixes) Marshal(cps caps.Caps) {
 	a.NH = nh
 
 	// prefixes
-	a.Data = marshalPrefixes(a.Data[:0], a.Prefixes)
+	a.Data = WritePrefixes(a.Data[:0], a.Prefixes)
 }
 
 func (a *MPPrefixes) ToJSON(dst []byte) []byte {
@@ -84,22 +85,22 @@ func (a *MPPrefixes) ToJSON(dst []byte) []byte {
 	}
 
 	dst = append(dst, `"prefixes":`...)
-	return jsonPrefixes(dst, a.Prefixes)
+	return json.Prefixes(dst, a.Prefixes)
 }
 
 func (a *MPPrefixes) FromJSON(src []byte) error {
 	return jsp.ObjectEach(src, func(key, value []byte, dataType jsp.ValueType, offset int) (err error) {
-		switch bs(key) {
+		switch json.BS(key) {
 		case "nexthop":
 			if a.Code() == ATTR_MP_REACH {
-				a.NextHop, err = netip.ParseAddr(bs(value))
+				a.NextHop, err = netip.ParseAddr(json.BS(value))
 			}
 		case "link-local":
 			if a.Code() == ATTR_MP_REACH {
-				a.LinkLocal, err = netip.ParseAddr(bs(value))
+				a.LinkLocal, err = netip.ParseAddr(json.BS(value))
 			}
 		case "prefixes":
-			a.Prefixes, err = unjsonPrefixes(a.Prefixes, value)
+			a.Prefixes, err = json.UnPrefixes(a.Prefixes, value)
 		}
 		return
 	})

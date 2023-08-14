@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/json"
 	jsp "github.com/buger/jsonparser"
 )
 
@@ -77,13 +78,13 @@ func (a *Community) FromJSON(src []byte) error {
 			return
 		}
 
-		asn, err := strconv.ParseUint(bs(d[0]), 0, 16)
+		asn, err := strconv.ParseUint(json.BS(d[0]), 0, 16)
 		if err != nil {
 			errs = append(errs, err)
 			return
 		}
 
-		val, err := strconv.ParseUint(bs(d[1]), 0, 16)
+		val, err := strconv.ParseUint(json.BS(d[1]), 0, 16)
 		if err != nil {
 			errs = append(errs, err)
 			return

@@ -12,6 +12,7 @@ import (
 
 	"github.com/bgpfix/bgpfix/binary"
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/json"
 	jsp "github.com/buger/jsonparser"
 )
 
@@ -400,7 +401,7 @@ func (msg *Msg) ToJSON(dst []byte) []byte {
 		dst = append(dst, msg.Data[2:]...) // FIXME
 		dst = append(dst, `"`...)
 	default:
-		dst = jsonHex(dst, msg.Data)
+		dst = json.Hex(dst, msg.Data)
 	}
 
 	// [6] action, if needed
@@ -432,29 +433,29 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 		switch i++; i {
 		case 0: // time
 			if typ == jsp.String && len(val) > 0 {
-				msg.Time, err = time.Parse(JSON_TIME, bs(val))
+				msg.Time, err = time.Parse(JSON_TIME, json.BS(val))
 			}
 
 		case 1: // seq number
 			if typ == jsp.Number {
-				msg.Seq, err = strconv.ParseInt(bs(val), 10, 64)
+				msg.Seq, err = strconv.ParseInt(json.BS(val), 10, 64)
 			}
 
 		case 2: // direction
 			if typ == jsp.String {
-				msg.Dir, err = DirString(bs(val))
+				msg.Dir, err = DirString(json.BS(val))
 			} else if typ == jsp.Number {
 				var v byte
-				v, err = unjsonByte(val)
+				v, err = json.UnByte(val)
 				msg.Dir = Dir(v)
 			}
 
 		case 3: // type
 			if typ == jsp.String {
-				msg.Type, err = TypeString(bs(val))
+				msg.Type, err = TypeString(json.BS(val))
 			} else if typ == jsp.Number {
 				var v byte
-				v, err = unjsonByte(val)
+				v, err = json.UnByte(val)
 				msg.Type = Type(v)
 			}
 			if msg.Type != INVALID {
@@ -468,7 +469,7 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 				break // OK, dont touch the upper layer
 			} else if typ == jsp.String {
 				if val[0] == '0' && val[1] == 'x' {
-					msg.buf, err = unjsonHex(msg.buf, val)
+					msg.buf, err = json.UnHex(msg.buf, val)
 				} else {
 					msg.buf = append(msg.buf[:0], val...) // NB: copy
 				}
@@ -487,7 +488,7 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 
 		case 6: // action
 			if typ == jsp.Number {
-				msg.Action, err = unjsonByte(val)
+				msg.Action, err = json.UnByte(val)
 			}
 
 		case 7: // value

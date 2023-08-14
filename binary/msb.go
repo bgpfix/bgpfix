@@ -1,3 +1,4 @@
+// Package binary provides binary read/write methods.
 package binary
 
 import (

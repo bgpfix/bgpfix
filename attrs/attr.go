@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/json"
 )
 
 // Attr represents a particular BGP path attribute
@@ -181,14 +182,14 @@ func (ac Code) ToJSON(dst []byte) []byte {
 		dst = append(dst, name...)
 	} else {
 		dst = append(dst, `ATTR_`...)
-		dst = jsonByte(dst, byte(ac))
+		dst = json.Byte(dst, byte(ac))
 	}
 	return append(dst, '"')
 }
 
 // FromJSON() sets ac from JSON in src
 func (ac *Code) FromJSON(src []byte) error {
-	name := bsu(src)
+	name := json.BSQ(src)
 	if val, ok := CodeValue[name]; ok {
 		*ac = val
 	} else if aft, ok := strings.CutPrefix(name, `ATTR_`); ok {
@@ -218,13 +219,13 @@ func (af Flags) ToJSON(dst []byte) []byte {
 		dst = append(dst, 'X')
 	}
 	if v := af & ATTR_UNUSED; v != 0 {
-		dst = jsonByte(dst, byte(v))
+		dst = json.Byte(dst, byte(v))
 	}
 	return append(dst, '"')
 }
 
 func (af *Flags) FromJSON(src []byte) error {
-	src = unq(src)
+	src = json.Q(src)
 	for i, v := range src {
 		switch v {
 		case 'O':
@@ -236,7 +237,7 @@ func (af *Flags) FromJSON(src []byte) error {
 		case 'X':
 			*af |= ATTR_EXTENDED
 		default:
-			fv, err := unjsonByte(src[i:])
+			fv, err := json.UnByte(src[i:])
 			*af |= Flags(fv)
 			return err
 		}

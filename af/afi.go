@@ -1,4 +1,3 @@
-// Package af implements AFI, SAFI, and combinations
 package af
 
 //go:generate go run github.com/dmarkham/enumer -type AFI -trimprefix AFI_

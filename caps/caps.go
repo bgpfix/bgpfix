@@ -8,8 +8,11 @@ package caps
 import (
 	"sort"
 
+	"github.com/bgpfix/bgpfix/binary"
 	"github.com/puzpuzpuz/xsync/v2"
 )
+
+var msb = binary.Msb
 
 // Caps wraps an xsync map to represent a set of BGP capabilities.
 // It may contain nil values.

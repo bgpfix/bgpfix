@@ -1,3 +1,4 @@
+// Package speaker provides a very basic BGP speaker.
 package speaker
 
 import (

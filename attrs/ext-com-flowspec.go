@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/json"
 	jsp "github.com/buger/jsonparser"
 )
 
@@ -45,9 +46,9 @@ func (e *ExtcomFlowRate) ToJSON(dst []byte) []byte {
 }
 
 func (e *ExtcomFlowRate) FromJSON(src []byte) error {
-	d := bytes.Split(unq(src), []byte(":"))
+	d := bytes.Split(json.Q(src), []byte(":"))
 	if len(d) == 2 {
-		v, err := strconv.ParseUint(bs(d[0]), 10, 16)
+		v, err := strconv.ParseUint(json.BS(d[0]), 10, 16)
 		if err != nil {
 			return err
 		}
@@ -57,7 +58,7 @@ func (e *ExtcomFlowRate) FromJSON(src []byte) error {
 		return ErrValue
 	}
 
-	v, err := strconv.ParseFloat(bs(d[0]), 32)
+	v, err := strconv.ParseFloat(json.BS(d[0]), 32)
 	if err != nil {
 		return err
 	}
@@ -99,9 +100,9 @@ func (e *ExtcomFlowAction) Marshal(cps caps.Caps) uint64 {
 
 func (e *ExtcomFlowAction) ToJSON(dst []byte) []byte {
 	dst = append(dst, `{"terminal":`...)
-	dst = jsonBool(dst, e.Terminal)
+	dst = json.Bool(dst, e.Terminal)
 	dst = append(dst, `,"sample":`...)
-	dst = jsonBool(dst, e.Sample)
+	dst = json.Bool(dst, e.Sample)
 	dst = append(dst, '}')
 	return dst
 }
@@ -139,7 +140,7 @@ func (e *ExtcomFlowRedirectNH) Marshal(cps caps.Caps) uint64 {
 
 func (e *ExtcomFlowRedirectNH) ToJSON(dst []byte) []byte {
 	dst = append(dst, `{"copy":`...)
-	dst = jsonBool(dst, e.Copy)
+	dst = json.Bool(dst, e.Copy)
 	dst = append(dst, '}')
 	return dst
 }
@@ -176,7 +177,7 @@ func (e *ExtcomFlowDSCP) ToJSON(dst []byte) []byte {
 }
 
 func (e *ExtcomFlowDSCP) FromJSON(src []byte) error {
-	v, err := strconv.ParseUint(bs(unq(src)), 0, 6)
+	v, err := strconv.ParseUint(json.BSQ(src), 0, 6)
 	if err == nil {
 		e.DSCP = uint8(v)
 	}

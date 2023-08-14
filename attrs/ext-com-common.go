@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/json"
 )
 
 // The basic (raw) Extended Community value
@@ -33,7 +34,7 @@ func (e *ExtcomRaw) ToJSON(dst []byte) []byte {
 }
 
 func (e *ExtcomRaw) FromJSON(src []byte) error {
-	v, err := strconv.ParseUint(bs(unq(src)), 0, 48)
+	v, err := strconv.ParseUint(json.BSQ(src), 0, 48)
 	if err == nil {
 		e.uint64 = v
 	}
@@ -84,18 +85,18 @@ func (e *ExtcomASN) ToJSON(dst []byte) []byte {
 }
 
 func (e *ExtcomASN) FromJSON(src []byte) error {
-	d := bytes.Split(unq(src), []byte(":"))
+	d := bytes.Split(json.Q(src), []byte(":"))
 	if len(d) != 2 {
 		return ErrValue
 	}
 
-	v, err := strconv.ParseUint(bs(d[0]), 10, 32)
+	v, err := strconv.ParseUint(json.BS(d[0]), 10, 32)
 	if err != nil {
 		return err
 	}
 	e.ASN = uint32(v)
 
-	v, err = strconv.ParseUint(bs(d[1]), 10, 32)
+	v, err = strconv.ParseUint(json.BS(d[1]), 10, 32)
 	if err != nil {
 		return err
 	}
@@ -143,18 +144,18 @@ func (e *ExtcomAddr) ToJSON(dst []byte) []byte {
 }
 
 func (e *ExtcomAddr) FromJSON(src []byte) error {
-	d := bytes.Split(unq(src), []byte(":"))
+	d := bytes.Split(json.Q(src), []byte(":"))
 	if len(d) != 2 {
 		return ErrValue
 	}
 
-	a, err := netip.ParseAddr(bs(d[0]))
+	a, err := netip.ParseAddr(json.BS(d[0]))
 	if err != nil {
 		return err
 	}
 	e.Addr = a
 
-	v, err := strconv.ParseUint(bs(d[1]), 10, 16)
+	v, err := strconv.ParseUint(json.BS(d[1]), 10, 16)
 	if err != nil {
 		return err
 	}

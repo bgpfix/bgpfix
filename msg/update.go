@@ -9,6 +9,7 @@ import (
 	"github.com/bgpfix/bgpfix/af"
 	"github.com/bgpfix/bgpfix/attrs"
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/json"
 	jsp "github.com/buger/jsonparser"
 )
 
@@ -75,14 +76,14 @@ func (u *Update) Parse() error {
 
 	var err error
 	if len(announced) > 0 {
-		u.Reach, err = appendPrefixes(u.Reach, announced, false)
+		u.Reach, err = attrs.ReadPrefixes(u.Reach, announced, false)
 		if err != nil {
 			return err
 		}
 	}
 
 	if len(withdrawn) > 0 {
-		u.Unreach, err = appendPrefixes(u.Unreach, withdrawn, false)
+		u.Unreach, err = attrs.ReadPrefixes(u.Unreach, withdrawn, false)
 		if err != nil {
 			return err
 		}
@@ -226,7 +227,7 @@ func (u *Update) Marshal(cps caps.Caps) error {
 
 	// withdrawn routes
 	dst = append(dst, 0, 0) // length (tbd [1])
-	dst = marshalPrefixes(dst, u.Unreach)
+	dst = attrs.WritePrefixes(dst, u.Unreach)
 	if l := len(dst) - 2; l > math.MaxUint16 {
 		return fmt.Errorf("Marshal: too long Withdrawn Routes: %w (%d)", ErrLength, l)
 	} else if l > 0 {
@@ -241,7 +242,7 @@ func (u *Update) Marshal(cps caps.Caps) error {
 	dst = append(dst, u.RawAttrs...)
 
 	// NLRI
-	dst = marshalPrefixes(dst, u.Reach)
+	dst = attrs.WritePrefixes(dst, u.Reach)
 
 	// done
 	msg.buf = dst
@@ -261,7 +262,7 @@ func (u *Update) ToJSON(dst []byte) []byte {
 
 	if len(u.Reach) > 0 {
 		dst = append(dst, `"reach":`...)
-		dst = jsonPrefixes(dst, u.Reach)
+		dst = json.Prefixes(dst, u.Reach)
 	}
 
 	if len(u.Unreach) > 0 {
@@ -269,7 +270,7 @@ func (u *Update) ToJSON(dst []byte) []byte {
 			dst = append(dst, ',')
 		}
 		dst = append(dst, `"unreach":`...)
-		dst = jsonPrefixes(dst, u.Unreach)
+		dst = json.Prefixes(dst, u.Unreach)
 	}
 
 	if len(u.Reach) > 0 || len(u.Unreach) > 0 {
@@ -280,7 +281,7 @@ func (u *Update) ToJSON(dst []byte) []byte {
 	if u.Attrs.Valid() {
 		dst = u.Attrs.ToJSON(dst)
 	} else {
-		dst = jsonHex(dst, u.RawAttrs)
+		dst = json.Hex(dst, u.RawAttrs)
 	}
 
 	dst = append(dst, '}')
@@ -290,14 +291,14 @@ func (u *Update) ToJSON(dst []byte) []byte {
 // FromJSON reads u JSON representation from src
 func (u *Update) FromJSON(src []byte) error {
 	return jsp.ObjectEach(src, func(key, val []byte, typ jsp.ValueType, _ int) (err error) {
-		switch bs(key) {
+		switch json.BS(key) {
 		case "reach":
-			u.Reach, err = unjsonPrefixes(u.Reach[:0], val)
+			u.Reach, err = json.UnPrefixes(u.Reach[:0], val)
 		case "unreach":
-			u.Unreach, err = unjsonPrefixes(u.Unreach[:0], val)
+			u.Unreach, err = json.UnPrefixes(u.Unreach[:0], val)
 		case "attrs":
 			if typ == jsp.String {
-				u.RawAttrs, err = unjsonHex(u.RawAttrs[:0], val)
+				u.RawAttrs, err = json.UnHex(u.RawAttrs[:0], val)
 			} else if typ == jsp.Object {
 				err = u.Attrs.FromJSON(val)
 			}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/bgpfix/bgpfix/af"
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/json"
 )
 
 // MPFlowspec represents ATTR_MP attributes for RFC8955 and RFC8956 Flowspec
@@ -99,7 +100,7 @@ func (a *MPFlowspec) Unmarshal(_ caps.Caps) error {
 
 	// best-effort NH parser
 	if len(a.NH) > 0 {
-		a.NextHop, a.LinkLocal, _ = parseNH(a.NH)
+		a.NextHop, a.LinkLocal, _ = ParseNH(a.NH)
 	}
 
 	data := a.Data
@@ -262,7 +263,7 @@ func (f FlowRaw) Marshal(dst []byte, cps caps.Caps) []byte {
 }
 
 func (f FlowRaw) ToJSON(dst []byte) []byte {
-	return jsonHex(dst, f)
+	return json.Hex(dst, f)
 }
 
 // FlowPrefix4 holds IPv4 prefix
@@ -298,7 +299,7 @@ func ParseFlowPrefix4(ft FlowKey, buf []byte) (FlowValue, int, error) {
 }
 
 func (f *FlowPrefix4) Marshal(dst []byte, cps caps.Caps) []byte {
-	return marshalPrefix(dst, f.Prefix)
+	return WritePrefix(dst, f.Prefix)
 }
 
 func (f *FlowPrefix4) ToJSON(dst []byte) []byte {

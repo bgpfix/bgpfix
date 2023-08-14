@@ -3,6 +3,7 @@ package attrs
 import (
 	"github.com/bgpfix/bgpfix/af"
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/json"
 	jsp "github.com/buger/jsonparser"
 )
 
@@ -120,11 +121,11 @@ func (mp *MP) ToJSON(dst []byte) []byte {
 	} else {
 		if mp.Code() == ATTR_MP_REACH && len(mp.NH) > 0 {
 			dst = append(dst, `"nh":`...)
-			dst = jsonHex(dst, mp.NH)
+			dst = json.Hex(dst, mp.NH)
 			dst = append(dst, ',')
 		}
 		dst = append(dst, `"data":`...)
-		dst = jsonHex(dst, mp.Data)
+		dst = json.Hex(dst, mp.Data)
 	}
 	return append(dst, '}')
 }
@@ -150,7 +151,7 @@ func (mp *MP) FromJSON(src []byte) error {
 
 	// has "nh"?
 	if v, _, _, err := jsp.Get(src, "nh"); err == nil {
-		mp.NH, err = unjsonHex(mp.NH[:0], v)
+		mp.NH, err = json.UnHex(mp.NH[:0], v)
 		if err != nil {
 			return err
 		}
@@ -158,7 +159,7 @@ func (mp *MP) FromJSON(src []byte) error {
 
 	// has "data"?
 	if v, _, _, err := jsp.Get(src, "data"); err == nil {
-		mp.Data, err = unjsonHex(mp.Data[:0], v)
+		mp.Data, err = json.UnHex(mp.Data[:0], v)
 		if err != nil {
 			return err
 		}

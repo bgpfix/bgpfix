@@ -1,4 +1,3 @@
-// Package errval provides errors for common error types
 package msg
 
 import "errors"

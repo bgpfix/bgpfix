@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/json"
 )
 
 // Open represents a BGP OPEN message
@@ -292,7 +293,7 @@ func (o *Open) ToJSON(dst []byte) []byte {
 		dst = o.Caps.ToJSON(dst)
 	} else {
 		dst = append(dst, `,"params":`...)
-		dst = jsonHex(dst, o.Params)
+		dst = json.Hex(dst, o.Params)
 	}
 
 	dst = append(dst, '}')
