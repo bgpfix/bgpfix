@@ -5,6 +5,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
 	"github.com/rs/zerolog"
@@ -112,7 +114,7 @@ func (s *Speaker) txOpen(p *pipe.Pipe, ro *msg.Open) {
 	o.Identifier = opts.LocalId
 
 	if opts.LocalASN > 0 {
-		o.SetASN(opts.LocalASN) // will add CAP_AS4
+		o.SetASN(opts.LocalASN) // will add AS4
 	} else if opts.LocalASN < 0 && ro != nil {
 		o.SetASN(ro.GetASN())
 	}
@@ -131,14 +133,14 @@ func (s *Speaker) txOpen(p *pipe.Pipe, ro *msg.Open) {
 	}
 
 	// FIXME: add real capabilities
-	o.Caps.Use(msg.CAP_EXTENDED_MESSAGE)
-	o.Caps.Use(msg.CAP_ROUTE_REFRESH)
-	if mp, ok := o.Caps.Use(msg.CAP_MP).(*msg.CapMP); ok {
-		mp.Add(msg.AFI_IPV4, msg.SAFI_UNICAST)
-		mp.Add(msg.AFI_IPV4, msg.SAFI_FLOWSPEC)
+	o.Caps.Use(caps.CAP_EXTENDED_MESSAGE)
+	o.Caps.Use(caps.CAP_ROUTE_REFRESH)
+	if mp, ok := o.Caps.Use(caps.CAP_MP).(*caps.MP); ok {
+		mp.Add(af.AFI_IPV4, af.SAFI_UNICAST)
+		mp.Add(af.AFI_IPV4, af.SAFI_FLOWSPEC)
 
-		mp.Add(msg.AFI_IPV6, msg.SAFI_UNICAST)
-		mp.Add(msg.AFI_IPV6, msg.SAFI_FLOWSPEC)
+		mp.Add(af.AFI_IPV6, af.SAFI_UNICAST)
+		mp.Add(af.AFI_IPV6, af.SAFI_FLOWSPEC)
 	}
 
 	// possibly overwrite with pipe and local capabilities
@@ -196,8 +198,8 @@ func (s *Speaker) keepaliver(p *pipe.Pipe, negotiated uint16) {
 func (s *Speaker) onRx(p *pipe.Pipe, m *msg.Msg) {
 	opts := &s.Options
 
-	// check if m too long vs. cap_extmsg?
-	if m.Length() > msg.MSG_MAXLEN && !p.Caps.Has(msg.CAP_EXTENDED_MESSAGE) {
+	// check if m too long vs. extmsg?
+	if m.Length() > msg.MSG_MAXLEN && !p.Caps.Has(caps.CAP_EXTENDED_MESSAGE) {
 		p.Event(EVENT_TOO_LONG, m)
 		// TODO: notify + teardown
 		if opts.ErrorDrop {
@@ -244,8 +246,8 @@ func (s *Speaker) onRx(p *pipe.Pipe, m *msg.Msg) {
 func (s *Speaker) onTx(p *pipe.Pipe, m *msg.Msg) {
 	opts := &s.Options
 
-	// check if m too long vs. cap_extmsg
-	if m.Length() > msg.MSG_MAXLEN && !p.Caps.Has(msg.CAP_EXTENDED_MESSAGE) {
+	// check if m too long vs. extmsg
+	if m.Length() > msg.MSG_MAXLEN && !p.Caps.Has(caps.CAP_EXTENDED_MESSAGE) {
 		p.Event(EVENT_TOO_LONG, m)
 		if opts.ErrorDrop {
 			m.Action |= pipe.ACTION_DROP

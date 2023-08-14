@@ -6,6 +6,8 @@ import (
 	"math"
 	"net/netip"
 	"strconv"
+
+	"github.com/bgpfix/bgpfix/caps"
 )
 
 // Open represents a BGP OPEN message
@@ -19,7 +21,7 @@ type Open struct {
 	Params     []byte     // raw Optional Parameters
 	ParamsExt  bool       // true iff Params use extended length
 
-	Caps Caps // BGP capabilities; always thread-safe for read-only
+	Caps caps.Caps // BGP capabilities; always thread-safe for read-only
 }
 
 const (
@@ -95,12 +97,12 @@ func (o *Open) ParseCaps() error {
 		plen   int        // parameter length
 		pval   []byte     // parameter value
 		errs   []error    // capability errors
-		caps   Caps       // parsed capabilities
+		cps    caps.Caps  // parsed capabilities
 	)
 
 	// parse params one-by-one, in practice there's only the
 	// capabilities param, or we return an error
-	caps.Init()
+	cps.Init()
 	for len(params) > 0 {
 		if o.ParamsExt {
 			if len(params) < 3 {
@@ -136,7 +138,7 @@ func (o *Open) ParseCaps() error {
 			if len(pval) < 2 {
 				return ErrCaps
 			}
-			cc, clen, cval := CapCode(pval[0]), int(pval[1]), pval[2:]
+			cc, clen, cval := caps.Code(pval[0]), int(pval[1]), pval[2:]
 			if len(cval) < clen {
 				return ErrCaps
 			} else {
@@ -145,13 +147,13 @@ func (o *Open) ParseCaps() error {
 			}
 
 			// fetch cap
-			cap := caps.Use(cc)
+			cap := cps.Use(cc)
 			if cap == nil {
 				continue // should not happen
 			}
 
 			// try parsing
-			if err := cap.Unmarshal(cval, caps); err != nil {
+			if err := cap.Unmarshal(cval, cps); err != nil {
 				errs = append(errs, fmt.Errorf("%s: %w", cc, err))
 			}
 		}
@@ -163,11 +165,11 @@ func (o *Open) ParseCaps() error {
 	}
 
 	// store
-	o.Caps = caps
+	o.Caps = cps
 	return nil
 }
 
-// SetASN sets local ASN number in o and its CAP_AS4
+// SetASN sets local ASN number in o and its AS4
 func (o *Open) SetASN(asn int) {
 	// o'rlly?
 	if asn < 0 || asn > math.MaxUint32 {
@@ -180,14 +182,14 @@ func (o *Open) SetASN(asn int) {
 		o.ASN = AS_TRANS
 	}
 
-	if c, ok := o.Caps.Use(CAP_AS4).(*CapAS4); ok {
+	if c, ok := o.Caps.Use(caps.CAP_AS4).(*caps.AS4); ok {
 		c.ASN = uint32(asn)
 	}
 }
 
-// GetASN returns the local ASN, preferably from CAP_AS4
+// GetASN returns the local ASN, preferably from AS4
 func (o *Open) GetASN() int {
-	if c, ok := o.Caps.Get(CAP_AS4).(*CapAS4); ok {
+	if c, ok := o.Caps.Get(caps.CAP_AS4).(*caps.AS4); ok {
 		return int(c.ASN)
 	} else {
 		return int(o.ASN)
@@ -233,8 +235,8 @@ func (o *Open) MarshalCaps() error {
 
 	// marshal one-by-one
 	var raw []byte
-	o.Caps.Each(func(i int, cc CapCode, cap Cap) {
-		raw = cap.Marshal(raw)
+	o.Caps.Each(func(i int, cc caps.Code, c caps.Cap) {
+		raw = c.Marshal(raw)
 	})
 
 	// done?

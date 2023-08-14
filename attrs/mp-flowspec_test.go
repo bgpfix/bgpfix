@@ -1,9 +1,11 @@
-package msg
+package attrs
 
 import (
 	"bytes"
 	"fmt"
 	"testing"
+
+	"github.com/bgpfix/bgpfix/caps"
 )
 
 func TestParseFlowPrefix6(t *testing.T) {
@@ -18,7 +20,7 @@ func TestParseFlowPrefix6(t *testing.T) {
 		{[]byte{0x40, 0x68, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbe, 0xef}, `"::1234:5678:9a00:0/104-64"`, 7, true},  // rfc8956/3.8.1 src error
 		{[]byte{0x68, 0x41, 0x24, 0x68, 0xac, 0xf1, 0x34, 0xbe, 0xef}, `"::1234:5678:9a00:0/65-104"`, 7, false}, // rfc8956/3.8.2 src
 	}
-	var caps Caps
+	var cps caps.Caps
 	for ti, tt := range tests {
 		t.Run(fmt.Sprintf("tests[%d]", ti), func(t *testing.T) {
 			got, gotN, err := ParseFlowPrefix6(0, tt.arg)
@@ -34,7 +36,7 @@ func TestParseFlowPrefix6(t *testing.T) {
 			if gotN != tt.wantN {
 				t.Errorf("ParseFlowPrefix6() gotN = %d, want %d", gotN, tt.wantN)
 			}
-			res := got.Marshal(nil, caps)
+			res := got.Marshal(nil, cps)
 			if !bytes.Equal(tt.arg[:tt.wantN], res) {
 				t.Errorf("Marshal() result = '%x', want '%x'", res, tt.arg[:tt.wantN])
 			}

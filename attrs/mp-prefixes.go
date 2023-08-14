@@ -1,25 +1,27 @@
-package msg
+package attrs
 
 import (
 	"net/netip"
 
+	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/caps"
 	jsp "github.com/buger/jsonparser"
 )
 
-// ATTR_MP_* for the generic RFC4760 IP prefix encoding
-type AttrMPPrefixes struct {
-	*AttrMP
+// MPPrefixes represents ATTR_MP for the generic RFC4760 IP prefix encoding
+type MPPrefixes struct {
+	*MP
 
 	NextHop   netip.Addr // only for ATTR_MP_REACH
 	LinkLocal netip.Addr // only for IPv6 NextHop, if given
 	Prefixes  []netip.Prefix
 }
 
-func NewAttrMPPrefixes(mp *AttrMP) AttrMPValue {
-	return &AttrMPPrefixes{AttrMP: mp}
+func NewMPPrefixes(mp *MP) MPValue {
+	return &MPPrefixes{MP: mp}
 }
 
-func (a *AttrMPPrefixes) Unmarshal(caps Caps) error {
+func (a *MPPrefixes) Unmarshal(cps caps.Caps) error {
 	var (
 		afi  = a.Afi()
 		safi = a.Safi()
@@ -33,13 +35,13 @@ func (a *AttrMPPrefixes) Unmarshal(caps Caps) error {
 			return ErrLength
 		}
 
-		if afi == AFI_IPV6 {
+		if afi == af.AFI_IPV6 {
 			a.NextHop = addr
 			a.LinkLocal = ll
 		} else if addr.Is6() {
 			// IPv6 nexthop for AFI=1 reachable prefixes?
-			enh, ok := caps.Get(CAP_EXTENDED_NEXTHOP).(*CapExtNH)
-			if !ok || !enh.Has(afi, safi, AFI_IPV6) {
+			enh, ok := cps.Get(caps.CAP_EXTENDED_NEXTHOP).(*caps.ExtNH)
+			if !ok || !enh.Has(afi, safi, af.AFI_IPV6) {
 				return ErrValue
 			}
 
@@ -51,11 +53,11 @@ func (a *AttrMPPrefixes) Unmarshal(caps Caps) error {
 		}
 	}
 
-	a.Prefixes, err = appendPrefixes(a.Prefixes, a.Data, afi == AFI_IPV6)
+	a.Prefixes, err = appendPrefixes(a.Prefixes, a.Data, afi == af.AFI_IPV6)
 	return err
 }
 
-func (a *AttrMPPrefixes) Marshal(caps Caps) {
+func (a *MPPrefixes) Marshal(cps caps.Caps) {
 	// next-hop
 	nh := a.NH[:0]
 	if a.NextHop.IsValid() {
@@ -70,7 +72,7 @@ func (a *AttrMPPrefixes) Marshal(caps Caps) {
 	a.Data = marshalPrefixes(a.Data[:0], a.Prefixes)
 }
 
-func (a *AttrMPPrefixes) ToJSON(dst []byte) []byte {
+func (a *MPPrefixes) ToJSON(dst []byte) []byte {
 	if a.Code() == ATTR_MP_REACH {
 		dst = append(dst, `"nexthop":"`...)
 		dst = a.NextHop.AppendTo(dst)
@@ -85,7 +87,7 @@ func (a *AttrMPPrefixes) ToJSON(dst []byte) []byte {
 	return jsonPrefixes(dst, a.Prefixes)
 }
 
-func (a *AttrMPPrefixes) FromJSON(src []byte) error {
+func (a *MPPrefixes) FromJSON(src []byte) error {
 	return jsp.ObjectEach(src, func(key, value []byte, dataType jsp.ValueType, offset int) (err error) {
 		switch bs(key) {
 		case "nexthop":

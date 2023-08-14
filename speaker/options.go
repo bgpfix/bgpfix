@@ -3,6 +3,7 @@ package speaker
 import (
 	"net/netip"
 
+	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -29,12 +30,12 @@ type Options struct {
 	LocalASN      int        // local ASN; -1 means use remote (if Passive)
 	LocalHoldTime int        // local hold time (s); -1 means use a default
 	LocalId       netip.Addr // local identifier; unspecified means use remote-1 (if Passive)
-	LocalCaps     msg.Caps   // additional local capabilities; set to nil to block a capability
+	LocalCaps     caps.Caps  // additional local capabilities; set to nil to block a capability
 
 	RemoteASN      int        // expected remote ASN; -1 means accept any
 	RemoteHoldTime int        // minimum remote hold time (s); <= 0 means any
 	RemoteId       netip.Addr // expected remote identifier; unspecified means any
-	RemoteCaps     msg.Caps   // minimum remote capabilities; set to nil to block a capability
+	RemoteCaps     caps.Caps  // minimum remote capabilities; set to nil to block a capability
 }
 
 // Mode controls how much we should engage in the attached BGP processor

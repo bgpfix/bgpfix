@@ -1,32 +1,34 @@
-package msg
+package attrs
 
 import (
+	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/caps"
 	jsp "github.com/buger/jsonparser"
 )
 
-// AttrMP represents ATTR_MP_REACH and ATTR_MP_UNREACH attributes
-type AttrMP struct {
-	AttrType
-	Asafi
+// MP represents ATTR_MP_REACH and ATTR_MP_UNREACH attributes
+type MP struct {
+	CodeFlags
+	af.Asafi
 
-	NH    []byte      // only for ATTR_MP_REACH
-	Data  []byte      // NLRI or unreachable
-	Value AttrMPValue // interpreted NH / Data (may be nil)
+	NH    []byte  // only for ATTR_MP_REACH
+	Data  []byte  // NLRI or unreachable
+	Value MPValue // interpreted NH / Data (may be nil)
 }
 
-// AttrMP Value
-type AttrMPValue interface {
+// MP attribute Value
+type MPValue interface {
 	// Afi returns the AFI of the parent
-	Afi() Afi
+	Afi() af.Afi
 
 	// Safi returns the SAFI of the parent
-	Safi() Safi
+	Safi() af.Safi
 
 	// Unmarshal parses wire representation from the parent
-	Unmarshal(caps Caps) error
+	Unmarshal(cps caps.Caps) error
 
 	// Marshal writes wire representation to the parent
-	Marshal(caps Caps)
+	Marshal(cps caps.Caps)
 
 	// ToJSON appends *JSON keys* to dst (will be embedded in the parent object)
 	ToJSON(dst []byte) []byte
@@ -35,28 +37,28 @@ type AttrMPValue interface {
 	FromJSON(src []byte) error
 }
 
-// AttrMPNewFunc returns new ATTR_MP_* value for afi/safi in mp
-type AttrMPNewFunc func(mp *AttrMP) AttrMPValue
+// MPNewFunc returns new ATTR_MP_* value for afi/safi in mp
+type MPNewFunc func(mp *MP) MPValue
 
-// AttrMPNew maps ATTR_MP_* afi/safi pairs to their NewFunc
-var AttrMPNew = map[Asafi]AttrMPNewFunc{
-	AfiSafi(AFI_IPV4, SAFI_UNICAST):  NewAttrMPPrefixes,
-	AfiSafi(AFI_IPV4, SAFI_FLOWSPEC): NewParseAttrMPFlow,
+// MPNewFuncs maps ATTR_MP_* afi/safi pairs to their NewFunc
+var MPNewFuncs = map[af.Asafi]MPNewFunc{
+	af.AfiSafi(af.AFI_IPV4, af.SAFI_UNICAST):  NewMPPrefixes,
+	af.AfiSafi(af.AFI_IPV4, af.SAFI_FLOWSPEC): NewMPFlowspec,
 
-	AfiSafi(AFI_IPV6, SAFI_UNICAST):  NewAttrMPPrefixes,
-	AfiSafi(AFI_IPV6, SAFI_FLOWSPEC): NewParseAttrMPFlow,
+	af.AfiSafi(af.AFI_IPV6, af.SAFI_UNICAST):  NewMPPrefixes,
+	af.AfiSafi(af.AFI_IPV6, af.SAFI_FLOWSPEC): NewMPFlowspec,
 }
 
-func NewAttrMP(at AttrType) Attr {
-	return &AttrMP{AttrType: at}
+func NewMP(at CodeFlags) Attr {
+	return &MP{CodeFlags: at}
 }
 
-func (mp *AttrMP) Unmarshal(buf []byte, caps Caps) error {
+func (mp *MP) Unmarshal(buf []byte, cps caps.Caps) error {
 	// afi + safi
 	if len(buf) < 3 {
 		return ErrLength
 	}
-	mp.Asafi = AfiSafiFrom(buf[0:3])
+	mp.Asafi = af.AfiSafiFrom(buf[0:3])
 	buf = buf[3:]
 
 	// nexthop?
@@ -79,24 +81,24 @@ func (mp *AttrMP) Unmarshal(buf []byte, caps Caps) error {
 	mp.Data = buf
 
 	// parse the value?
-	if newfunc, ok := AttrMPNew[mp.Asafi]; ok {
+	if newfunc, ok := MPNewFuncs[mp.Asafi]; ok {
 		mp.Value = newfunc(mp)
-		return mp.Value.Unmarshal(caps)
+		return mp.Value.Unmarshal(cps)
 	}
 
 	return nil
 }
 
-func (mp *AttrMP) Marshal(dst []byte, caps Caps) []byte {
+func (mp *MP) Marshal(dst []byte, cps caps.Caps) []byte {
 	if mp.Value != nil {
-		mp.Value.Marshal(caps)
+		mp.Value.Marshal(cps)
 	}
 
 	tl := 2 + 1 + len(mp.Data) // afi + safi + nlri
 	if mp.Code() == ATTR_MP_REACH {
 		tl += 1 + len(mp.NH) + 1 // next-hop len + data + reserved
 	}
-	dst = mp.AttrType.MarshalLen(dst, tl)
+	dst = mp.CodeFlags.MarshalLen(dst, tl)
 
 	dst = mp.Asafi.Marshal3(dst)
 	if mp.Code() == ATTR_MP_REACH {
@@ -108,7 +110,7 @@ func (mp *AttrMP) Marshal(dst []byte, caps Caps) []byte {
 	return append(dst, mp.Data...)
 }
 
-func (mp *AttrMP) ToJSON(dst []byte) []byte {
+func (mp *MP) ToJSON(dst []byte) []byte {
 	dst = append(dst, '{')
 	dst = mp.Asafi.ToJSONKey(dst, "af")
 	dst = append(dst, ',')
@@ -127,7 +129,7 @@ func (mp *AttrMP) ToJSON(dst []byte) []byte {
 	return append(dst, '}')
 }
 
-func (mp *AttrMP) FromJSON(src []byte) error {
+func (mp *MP) FromJSON(src []byte) error {
 	// has "af"?
 	afsrc, _, _, err := jsp.Get(src, "af")
 	if err != nil {
@@ -141,7 +143,7 @@ func (mp *AttrMP) FromJSON(src []byte) error {
 	}
 
 	// do we have a parser for it?
-	if newfunc, ok := AttrMPNew[mp.Asafi]; ok {
+	if newfunc, ok := MPNewFuncs[mp.Asafi]; ok {
 		mp.Value = newfunc(mp)
 		return mp.Value.FromJSON(src)
 	} // else nope, parse "nh"

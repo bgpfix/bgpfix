@@ -1,27 +1,28 @@
-package msg
+package attrs
 
 import (
 	"bytes"
 	"errors"
 	"strconv"
 
+	"github.com/bgpfix/bgpfix/caps"
 	jsp "github.com/buger/jsonparser"
 )
 
-// ATTR_LARGE_COMMUNITY
-type AttrLargeCom struct {
-	AttrType
+// LargeCom represents ATTR_LARGE_COMMUNITY
+type LargeCom struct {
+	CodeFlags
 
 	ASN    []uint32 // Global Administrator
 	Value1 []uint32 // Local Data Part 1
 	Value2 []uint32 // Local Data Part 2
 }
 
-func NewAttrLargeCom(at AttrType) Attr {
-	return &AttrLargeCom{AttrType: at}
+func NewLargeCom(at CodeFlags) Attr {
+	return &LargeCom{CodeFlags: at}
 }
 
-func (a *AttrLargeCom) Unmarshal(buf []byte, caps Caps) error {
+func (a *LargeCom) Unmarshal(buf []byte, cps caps.Caps) error {
 	for len(buf) > 0 {
 		if len(buf) < 12 {
 			return ErrLength
@@ -36,15 +37,15 @@ func (a *AttrLargeCom) Unmarshal(buf []byte, caps Caps) error {
 	return nil
 }
 
-func (a *AttrLargeCom) Add(asn, value1, value2 uint32) {
+func (a *LargeCom) Add(asn, value1, value2 uint32) {
 	a.ASN = append(a.ASN, asn)
 	a.Value1 = append(a.Value1, value1)
 	a.Value2 = append(a.Value2, value2)
 }
 
-func (a *AttrLargeCom) Marshal(dst []byte, caps Caps) []byte {
+func (a *LargeCom) Marshal(dst []byte, cps caps.Caps) []byte {
 	tl := 12 * len(a.ASN)
-	dst = a.AttrType.MarshalLen(dst, tl)
+	dst = a.CodeFlags.MarshalLen(dst, tl)
 	for i := range a.ASN {
 		dst = msb.AppendUint32(dst, a.ASN[i])
 		dst = msb.AppendUint32(dst, a.Value1[i])
@@ -53,7 +54,7 @@ func (a *AttrLargeCom) Marshal(dst []byte, caps Caps) []byte {
 	return dst
 }
 
-func (a *AttrLargeCom) ToJSON(dst []byte) []byte {
+func (a *LargeCom) ToJSON(dst []byte) []byte {
 	dst = append(dst, '[')
 	for i := range a.ASN {
 		if i > 0 {
@@ -71,7 +72,7 @@ func (a *AttrLargeCom) ToJSON(dst []byte) []byte {
 	return append(dst, ']')
 }
 
-func (a *AttrLargeCom) FromJSON(src []byte) error {
+func (a *LargeCom) FromJSON(src []byte) error {
 	sep := []byte(":")
 	var errs []error
 	jsp.ArrayEach(src, func(value []byte, dataType jsp.ValueType, _ int, _ error) {
@@ -103,9 +104,7 @@ func (a *AttrLargeCom) FromJSON(src []byte) error {
 			return
 		}
 
-		a.ASN = append(a.ASN, uint32(asn))
-		a.Value1 = append(a.Value1, uint32(val1))
-		a.Value2 = append(a.Value2, uint32(val2))
+		a.Add(uint32(asn), uint32(val1), uint32(val2))
 	})
 	return errors.Join(errs...)
 }

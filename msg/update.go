@@ -6,6 +6,9 @@ import (
 	"math"
 	"net/netip"
 
+	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/attrs"
+	"github.com/bgpfix/bgpfix/caps"
 	jsp "github.com/buger/jsonparser"
 )
 
@@ -17,9 +20,9 @@ type Update struct {
 	Unreach  []netip.Prefix // unreachable IPv4 unicast
 	RawAttrs []byte         // raw attributes
 
-	Attrs Attrs // parsed attributes
-	afi   Afi   // AFI from ATTR_MP_REACH / ATTR_MP_UNREACH
-	safi  Safi  // SAFI from ATTR_MP_REACH / ATTR_MP_UNREACH
+	Attrs attrs.Attrs // parsed attributes
+	afi   af.Afi      // AFI from attr.ATTR_MP_REACH / attr.ATTR_MP_UNREACH
+	safi  af.Safi     // SAFI from attr.ATTR_MP_REACH / attr.ATTR_MP_UNREACH
 }
 
 const (
@@ -58,13 +61,13 @@ func (u *Update) Parse() error {
 		buf = buf[l:]
 	}
 
-	var attrs []byte
+	var ats []byte
 	l = msb.Uint16(buf[0:2])
 	buf = buf[2:]
 	if int(l) > len(buf) {
 		return ErrShort
 	} else if l > 0 {
-		attrs = buf[:l]
+		ats = buf[:l]
 		buf = buf[l:]
 	}
 
@@ -85,32 +88,32 @@ func (u *Update) Parse() error {
 		}
 	}
 
-	u.RawAttrs = attrs
+	u.RawAttrs = ats
 	return nil
 }
 
 // ParseAttrs parses all attributes from RawAttrs into Attrs.
-func (u *Update) ParseAttrs(caps Caps) error {
+func (u *Update) ParseAttrs(cps caps.Caps) error {
 	var (
-		raw   = u.RawAttrs // all attributes
-		atyp  AttrType     // attribute type
-		alen  uint16       // attribute length
-		errs  []error      // atribute errors
-		attrs Attrs        // parsed attributes
+		raw  = u.RawAttrs    // all attributes
+		atyp attrs.CodeFlags // attribute type
+		alen uint16          // attribute length
+		errs []error         // atribute errors
+		ats  attrs.Attrs     // parsed attributes
 	)
 
-	attrs.Init()
+	ats.Init()
 	for len(raw) > 0 {
 		if len(raw) < 3 {
 			return ErrAttrs
 		}
 
 		// parse attribute type
-		atyp = AttrType(msb.Uint16(raw[0:2]))
+		atyp = attrs.CodeFlags(msb.Uint16(raw[0:2]))
 		acode := atyp.Code()
 
 		// parse attribute length
-		if !atyp.HasFlags(ATTR_EXTENDED) {
+		if !atyp.HasFlags(attrs.ATTR_EXTENDED) {
 			alen = uint16(raw[2])
 			raw = raw[3:]
 		} else if len(raw) < 4 {
@@ -128,15 +131,15 @@ func (u *Update) ParseAttrs(caps Caps) error {
 		raw = raw[alen:]
 
 		// a duplicate?
-		if attrs.Has(acode) {
+		if ats.Has(acode) {
 			errs = append(errs, fmt.Errorf("%s: %w", acode, ErrDupe))
 			continue
 		}
 
 		// create, overwrite flags, try parsing
-		attr := attrs.Use(acode)
+		attr := ats.Use(acode)
 		attr.SetFlags(atyp.Flags())
-		if err := attr.Unmarshal(buf, caps); err != nil {
+		if err := attr.Unmarshal(buf, cps); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", acode, err))
 		}
 	}
@@ -147,16 +150,16 @@ func (u *Update) ParseAttrs(caps Caps) error {
 	}
 
 	// store
-	u.Attrs = attrs
+	u.Attrs = ats
 	return nil
 }
 
 func (u *Update) afisafi() bool {
-	if reach, ok := u.Attrs.Get(ATTR_MP_REACH).(*AttrMP); ok {
+	if reach, ok := u.Attrs.Get(attrs.ATTR_MP_REACH).(*attrs.MP); ok {
 		u.afi = reach.Afi()
 		u.safi = reach.Safi()
 		return true
-	} else if unreach, ok := u.Attrs.Get(ATTR_MP_UNREACH).(*AttrMP); ok {
+	} else if unreach, ok := u.Attrs.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); ok {
 		u.afi = unreach.Afi()
 		u.safi = unreach.Safi()
 		return true
@@ -166,7 +169,7 @@ func (u *Update) afisafi() bool {
 }
 
 // Afi returns the AFI from MP_REACH attribute (or MP_UNREACH)
-func (u *Update) Afi() Afi {
+func (u *Update) Afi() af.Afi {
 	if u.afi > 0 || u.afisafi() {
 		return u.afi
 	} else {
@@ -175,7 +178,7 @@ func (u *Update) Afi() Afi {
 }
 
 // Safi returns the SAFI from MP_REACH attribute (or MP_UNREACH)
-func (u *Update) Safi() Safi {
+func (u *Update) Safi() af.Safi {
 	if u.safi > 0 || u.afisafi() {
 		return u.safi
 	} else {
@@ -183,18 +186,18 @@ func (u *Update) Safi() Safi {
 	}
 }
 
-// ReachMP returns ATTR_MP_REACH value from u, or nil if not defined
-func (u *Update) ReachMP() AttrMPValue {
-	if a, ok := u.Attrs.Get(ATTR_MP_REACH).(*AttrMP); ok {
+// ReachMP returns attr.ATTR_MP_REACH value from u, or nil if not defined
+func (u *Update) ReachMP() attrs.MPValue {
+	if a, ok := u.Attrs.Get(attrs.ATTR_MP_REACH).(*attrs.MP); ok {
 		return a.Value
 	} else {
 		return nil
 	}
 }
 
-// UnreachMP returns ATTR_MP_UNREACH value from u, or nil if not defined
-func (u *Update) UnreachMP() AttrMPValue {
-	if a, ok := u.Attrs.Get(ATTR_MP_UNREACH).(*AttrMP); ok {
+// UnreachMP returns attr.ATTR_MP_UNREACH value from u, or nil if not defined
+func (u *Update) UnreachMP() attrs.MPValue {
+	if a, ok := u.Attrs.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); ok {
 		return a.Value
 	} else {
 		return nil
@@ -202,21 +205,21 @@ func (u *Update) UnreachMP() AttrMPValue {
 }
 
 // MarshalAttrs marshals u.Attrs into u.RawAttrs
-func (u *Update) MarshalAttrs(caps Caps) error {
+func (u *Update) MarshalAttrs(cps caps.Caps) error {
 	// NB: avoid u.RawAttrs[:0] as it might be referencing another slice
 	u.RawAttrs = nil
 
 	// marshal one-by-one
 	var raw []byte
-	u.Attrs.Each(func(i int, ac AttrCode, att Attr) {
-		raw = att.Marshal(raw, caps)
+	u.Attrs.Each(func(i int, ac attrs.Code, at attrs.Attr) {
+		raw = at.Marshal(raw, cps)
 	})
 	u.RawAttrs = raw
 	return nil
 }
 
 // Marshal marshals o to o.Msg and returns it
-func (u *Update) Marshal(caps Caps) error {
+func (u *Update) Marshal(cps caps.Caps) error {
 	msg := u.Msg
 	msg.Data = nil
 	dst := msg.buf[:0]

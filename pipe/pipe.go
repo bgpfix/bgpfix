@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/rs/zerolog"
 )
@@ -39,7 +40,7 @@ type Pipe struct {
 	Options Options // BGP pipe options
 
 	// use anytime, thread-safe
-	Caps   msg.Caps    // BGP capability context
+	Caps   caps.Caps   // BGP capability context
 	Events chan *Event // pipe events
 }
 
@@ -182,7 +183,7 @@ func (p *Pipe) open(_ *Pipe, ev *Event) bool {
 		p.Caps.SetFrom(rx.Caps)
 
 		// verify vs. what we sent
-		p.Caps.Each(func(i int, cc msg.CapCode, rxcap msg.Cap) {
+		p.Caps.Each(func(i int, cc caps.Code, rxcap caps.Cap) {
 			txcap := tx.Caps.Get(cc)
 
 			// no common support for cc at all? delete it

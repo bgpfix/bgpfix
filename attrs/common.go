@@ -1,4 +1,4 @@
-package msg
+package attrs
 
 import (
 	"bytes"
@@ -6,33 +6,34 @@ import (
 	"net/netip"
 	"strconv"
 
+	"github.com/bgpfix/bgpfix/caps"
 	jsp "github.com/buger/jsonparser"
 )
 
-// AttrRaw represents generic raw attribute
-type AttrRaw struct {
-	AttrType
+// Raw represents generic raw attribute
+type Raw struct {
+	CodeFlags
 	Raw []byte
 }
 
-func NewAttrRaw(at AttrType) Attr {
-	return &AttrRaw{AttrType: at}
+func NewRaw(at CodeFlags) Attr {
+	return &Raw{CodeFlags: at}
 }
 
-func (a *AttrRaw) Unmarshal(buf []byte, caps Caps) error {
+func (a *Raw) Unmarshal(buf []byte, cps caps.Caps) error {
 	if len(buf) > 0 {
 		a.Raw = append(a.Raw, buf...) // copy
 	}
 	return nil
 }
 
-func (a *AttrRaw) Marshal(dst []byte, caps Caps) []byte {
-	dst = a.AttrType.MarshalLen(dst, len(a.Raw))
+func (a *Raw) Marshal(dst []byte, cps caps.Caps) []byte {
+	dst = a.CodeFlags.MarshalLen(dst, len(a.Raw))
 	dst = append(dst, a.Raw...)
 	return dst
 }
 
-func (a *AttrRaw) ToJSON(dst []byte) []byte {
+func (a *Raw) ToJSON(dst []byte) []byte {
 	if len(a.Raw) > 0 {
 		dst = jsonHex(dst, a.Raw)
 	} else {
@@ -41,24 +42,24 @@ func (a *AttrRaw) ToJSON(dst []byte) []byte {
 	return dst
 }
 
-func (a *AttrRaw) FromJSON(src []byte) (err error) {
+func (a *Raw) FromJSON(src []byte) (err error) {
 	if !bytes.Equal(src, []byte(`true`)) {
 		a.Raw, err = unjsonHex(a.Raw[:0], src)
 	}
 	return
 }
 
-// ATTR_ORIGIN
-type AttrOrigin struct {
-	AttrType
+// Origin represents ATTR_ORIGIN
+type Origin struct {
+	CodeFlags
 	Origin byte
 }
 
-func NewAttrOrigin(at AttrType) Attr {
-	return &AttrOrigin{AttrType: at}
+func NewOrigin(at CodeFlags) Attr {
+	return &Origin{CodeFlags: at}
 }
 
-func (a *AttrOrigin) Unmarshal(buf []byte, caps Caps) error {
+func (a *Origin) Unmarshal(buf []byte, cps caps.Caps) error {
 	if len(buf) != 1 {
 		return ErrLength
 	}
@@ -67,12 +68,12 @@ func (a *AttrOrigin) Unmarshal(buf []byte, caps Caps) error {
 	return nil
 }
 
-func (a *AttrOrigin) Marshal(dst []byte, caps Caps) []byte {
-	dst = a.AttrType.MarshalLen(dst, 1)
+func (a *Origin) Marshal(dst []byte, cps caps.Caps) []byte {
+	dst = a.CodeFlags.MarshalLen(dst, 1)
 	return append(dst, a.Origin)
 }
 
-func (a *AttrOrigin) ToJSON(dst []byte) []byte {
+func (a *Origin) ToJSON(dst []byte) []byte {
 	switch a.Origin {
 	case 0:
 		return append(dst, `"IGP"`...)
@@ -85,7 +86,7 @@ func (a *AttrOrigin) ToJSON(dst []byte) []byte {
 	}
 }
 
-func (a *AttrOrigin) FromJSON(src []byte) (err error) {
+func (a *Origin) FromJSON(src []byte) (err error) {
 	src = unq(src)
 	switch bs(src) {
 	case "IGP":
@@ -100,17 +101,17 @@ func (a *AttrOrigin) FromJSON(src []byte) (err error) {
 	return
 }
 
-// ATTR_MULTI_EXIT_DISC / ATTR_LOCALPREF
-type AttrU32 struct {
-	AttrType
+// U32 represents uint32 valued attributes, eg. ATTR_MULTI_EXIT_DISC / ATTR_LOCALPREF
+type U32 struct {
+	CodeFlags
 	Val uint32
 }
 
-func NewAttrU32(at AttrType) Attr {
-	return &AttrU32{AttrType: at}
+func NewU32(at CodeFlags) Attr {
+	return &U32{CodeFlags: at}
 }
 
-func (a *AttrU32) Unmarshal(buf []byte, caps Caps) error {
+func (a *U32) Unmarshal(buf []byte, cps caps.Caps) error {
 	if len(buf) != 4 {
 		return ErrLength
 	}
@@ -119,35 +120,35 @@ func (a *AttrU32) Unmarshal(buf []byte, caps Caps) error {
 	return nil
 }
 
-func (a *AttrU32) Marshal(dst []byte, caps Caps) []byte {
-	dst = a.AttrType.MarshalLen(dst, 4)
+func (a *U32) Marshal(dst []byte, cps caps.Caps) []byte {
+	dst = a.CodeFlags.MarshalLen(dst, 4)
 	return msb.AppendUint32(dst, a.Val)
 }
 
-func (a *AttrU32) ToJSON(dst []byte) []byte {
+func (a *U32) ToJSON(dst []byte) []byte {
 	return jsonU32(dst, a.Val)
 }
 
-func (a *AttrU32) FromJSON(src []byte) (err error) {
+func (a *U32) FromJSON(src []byte) (err error) {
 	a.Val, err = unjsonU32(src)
 	return
 }
 
-// ATTR_AGGREGATOR / ATTR_AS4AGGREGATOR
-type AttrAggregator struct {
-	AttrType
+// Aggregator represents ATTR_AGGREGATOR / ATTR_AS4AGGREGATOR
+type Aggregator struct {
+	CodeFlags
 	ASN  uint32
 	Addr netip.Addr
 }
 
-func NewAttrAggregator(at AttrType) Attr {
-	return &AttrAggregator{AttrType: at}
+func NewAggregator(at CodeFlags) Attr {
+	return &Aggregator{CodeFlags: at}
 }
 
-func (a *AttrAggregator) Unmarshal(buf []byte, caps Caps) error {
+func (a *Aggregator) Unmarshal(buf []byte, cps caps.Caps) error {
 	// asn length
 	asnlen := 2
-	if a.Code() == ATTR_AS4AGGREGATOR || caps.Has(CAP_AS4) {
+	if a.Code() == ATTR_AS4AGGREGATOR || cps.Has(caps.CAP_AS4) {
 		asnlen = 4
 	}
 
@@ -167,14 +168,14 @@ func (a *AttrAggregator) Unmarshal(buf []byte, caps Caps) error {
 	return nil
 }
 
-func (a *AttrAggregator) Marshal(dst []byte, caps Caps) []byte {
+func (a *Aggregator) Marshal(dst []byte, cps caps.Caps) []byte {
 	// asn length
 	asnlen := 2
-	if a.Code() == ATTR_AS4AGGREGATOR || caps.Has(CAP_AS4) {
+	if a.Code() == ATTR_AS4AGGREGATOR || cps.Has(caps.CAP_AS4) {
 		asnlen = 4
 	}
 
-	dst = a.AttrType.MarshalLen(dst, asnlen+4)
+	dst = a.CodeFlags.MarshalLen(dst, asnlen+4)
 	if asnlen == 4 {
 		dst = msb.AppendUint32(dst, a.ASN)
 	} else {
@@ -185,7 +186,7 @@ func (a *AttrAggregator) Marshal(dst []byte, caps Caps) []byte {
 	return dst
 }
 
-func (a *AttrAggregator) ToJSON(dst []byte) []byte {
+func (a *Aggregator) ToJSON(dst []byte) []byte {
 	dst = append(dst, `{"asn":`...)
 	dst = strconv.AppendUint(dst, uint64(a.ASN), 10)
 	dst = append(dst, `, "addr":"`...)
@@ -193,7 +194,7 @@ func (a *AttrAggregator) ToJSON(dst []byte) []byte {
 	return append(dst, `"}`...)
 }
 
-func (a *AttrAggregator) FromJSON(src []byte) error {
+func (a *Aggregator) FromJSON(src []byte) error {
 	return jsp.ObjectEach(src, func(key, value []byte, dataType jsp.ValueType, offset int) (err error) {
 		switch bs(key) {
 		case "asn":
@@ -205,22 +206,22 @@ func (a *AttrAggregator) FromJSON(src []byte) error {
 	})
 }
 
-// eg. ATTR_NEXTHOP / ATTR_ORIGINATOR
-type AttrIP struct {
-	AttrType
+// IP represents IP address attributes, eg. ATTR_NEXTHOP / ATTR_ORIGINATOR
+type IP struct {
+	CodeFlags
 	IPv6 bool
 	Addr netip.Addr
 }
 
-func NewAttrIP4(at AttrType) Attr {
-	return &AttrIP{AttrType: at}
+func NewIP4(at CodeFlags) Attr {
+	return &IP{CodeFlags: at}
 }
 
-func NewAttrIP6(at AttrType) Attr {
-	return &AttrIP{AttrType: at, IPv6: true}
+func NewIP6(at CodeFlags) Attr {
+	return &IP{CodeFlags: at, IPv6: true}
 }
 
-func (a *AttrIP) Unmarshal(buf []byte, caps Caps) error {
+func (a *IP) Unmarshal(buf []byte, cps caps.Caps) error {
 	switch {
 	case !a.IPv6 && len(buf) == 4:
 		a.Addr = netip.AddrFrom4([4]byte(buf))
@@ -232,20 +233,20 @@ func (a *AttrIP) Unmarshal(buf []byte, caps Caps) error {
 	return nil
 }
 
-func (a *AttrIP) Marshal(dst []byte, caps Caps) []byte {
+func (a *IP) Marshal(dst []byte, cps caps.Caps) []byte {
 	addr := a.Addr.AsSlice()
-	dst = a.AttrType.MarshalLen(dst, len(addr))
+	dst = a.CodeFlags.MarshalLen(dst, len(addr))
 	dst = append(dst, addr...)
 	return dst
 }
 
-func (a *AttrIP) ToJSON(dst []byte) []byte {
+func (a *IP) ToJSON(dst []byte) []byte {
 	dst = append(dst, '"')
 	dst = a.Addr.AppendTo(dst)
 	return append(dst, '"')
 }
 
-func (a *AttrIP) FromJSON(src []byte) (err error) {
+func (a *IP) FromJSON(src []byte) (err error) {
 	a.Addr, err = netip.ParseAddr(bsu(src))
 	if err != nil {
 		return err
@@ -256,22 +257,22 @@ func (a *AttrIP) FromJSON(src []byte) (err error) {
 	return nil
 }
 
-// eg. ATTR_CLUSTER_LIST
-type AttrIPList struct {
-	AttrType
+// IPList represents IP prefix list attributes, eg. ATTR_CLUSTER_LIST
+type IPList struct {
+	CodeFlags
 	IPv6 bool
 	Addr []netip.Addr
 }
 
-func NewAttrIPList4(at AttrType) Attr {
-	return &AttrIPList{AttrType: at}
+func NewIPList4(at CodeFlags) Attr {
+	return &IPList{CodeFlags: at}
 }
 
-func NewAttrIPList6(at AttrType) Attr {
-	return &AttrIPList{AttrType: at, IPv6: true}
+func NewIPList6(at CodeFlags) Attr {
+	return &IPList{CodeFlags: at, IPv6: true}
 }
 
-func (a *AttrIPList) Unmarshal(buf []byte, caps Caps) error {
+func (a *IPList) Unmarshal(buf []byte, cps caps.Caps) error {
 	var addr netip.Addr
 	for len(buf) > 0 {
 		if a.IPv6 {
@@ -294,7 +295,7 @@ func (a *AttrIPList) Unmarshal(buf []byte, caps Caps) error {
 	return nil
 }
 
-func (a *AttrIPList) Marshal(dst []byte, caps Caps) []byte {
+func (a *IPList) Marshal(dst []byte, cps caps.Caps) []byte {
 	tl := 0
 	for _, addr := range a.Addr {
 		if addr.Is6() {
@@ -303,14 +304,14 @@ func (a *AttrIPList) Marshal(dst []byte, caps Caps) []byte {
 			tl += 4
 		}
 	}
-	dst = a.AttrType.MarshalLen(dst, tl)
+	dst = a.CodeFlags.MarshalLen(dst, tl)
 	for _, addr := range a.Addr {
 		dst = append(dst, addr.AsSlice()...)
 	}
 	return dst
 }
 
-func (a *AttrIPList) ToJSON(dst []byte) []byte {
+func (a *IPList) ToJSON(dst []byte) []byte {
 	dst = append(dst, '[')
 	for i := range a.Addr {
 		if i > 0 {
@@ -323,7 +324,7 @@ func (a *AttrIPList) ToJSON(dst []byte) []byte {
 	return append(dst, ']')
 }
 
-func (a *AttrIPList) FromJSON(src []byte) (reterr error) {
+func (a *IPList) FromJSON(src []byte) (reterr error) {
 	defer func() {
 		if r, ok := recover().(string); ok {
 			reterr = fmt.Errorf("%w: %s", ErrValue, r)

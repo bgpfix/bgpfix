@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/bgpfix/bgpfix/binary"
+	"github.com/bgpfix/bgpfix/caps"
 	jsp "github.com/buger/jsonparser"
 )
 
@@ -231,7 +232,7 @@ func (msg *Msg) Parse(raw []byte) (off int, err error) {
 
 // ParseUp parses the upper layer iff needed.
 // caps can infuence the upper layer decoders.
-func (msg *Msg) ParseUp(caps Caps) error {
+func (msg *Msg) ParseUp(caps caps.Caps) error {
 	if msg.Upper != INVALID {
 		return nil // already done
 	}
@@ -272,7 +273,7 @@ func (msg *Msg) ParseUp(caps Caps) error {
 
 // MarshalUp marshals the upper layer to msg.Data iff possible and needed.
 // caps can infuence the upper layer encoders.
-func (msg *Msg) MarshalUp(caps Caps) error {
+func (msg *Msg) MarshalUp(caps caps.Caps) error {
 	if !msg.Dirty || msg.Upper == INVALID {
 		return nil // not needed or not possible
 	}

@@ -1,15 +1,16 @@
-package msg
+package attrs
 
 import (
 	"fmt"
 	"strconv"
 
+	"github.com/bgpfix/bgpfix/caps"
 	jsp "github.com/buger/jsonparser"
 )
 
-// ATTR_ASPATH or ATTR_AS4PATH
-type AttrAspath struct {
-	AttrType
+// Aspath represents ATTR_ASPATH or ATTR_AS4PATH
+type Aspath struct {
+	CodeFlags
 	Segments []AspathSegment
 }
 
@@ -19,11 +20,11 @@ type AspathSegment struct {
 	List  []uint32 // list of AS numbers
 }
 
-func NewAttrAspath(at AttrType) Attr {
-	return &AttrAspath{AttrType: at}
+func NewAspath(at CodeFlags) Attr {
+	return &Aspath{CodeFlags: at}
 }
 
-func (a *AttrAspath) Unmarshal(buf []byte, caps Caps) error {
+func (a *Aspath) Unmarshal(buf []byte, cps caps.Caps) error {
 	// support an actually common case: empty AS_PATH
 	if len(buf) == 0 {
 		return nil
@@ -31,7 +32,7 @@ func (a *AttrAspath) Unmarshal(buf []byte, caps Caps) error {
 
 	// asn length
 	asnlen := 2
-	if a.Code() == ATTR_AS4PATH || caps.Has(CAP_AS4) {
+	if a.Code() == ATTR_AS4PATH || cps.Has(caps.CAP_AS4) {
 		asnlen = 4
 	}
 
@@ -77,10 +78,10 @@ func (a *AttrAspath) Unmarshal(buf []byte, caps Caps) error {
 	}
 }
 
-func (a *AttrAspath) Marshal(dst []byte, caps Caps) []byte {
+func (a *Aspath) Marshal(dst []byte, cps caps.Caps) []byte {
 	// asn length
 	asnlen := 2
-	if a.Code() == ATTR_AS4PATH || caps.Has(CAP_AS4) {
+	if a.Code() == ATTR_AS4PATH || cps.Has(caps.CAP_AS4) {
 		asnlen = 4
 	}
 
@@ -91,7 +92,7 @@ func (a *AttrAspath) Marshal(dst []byte, caps Caps) []byte {
 	}
 
 	// attr flags, code, length
-	dst = a.AttrType.MarshalLen(dst, l)
+	dst = a.CodeFlags.MarshalLen(dst, l)
 
 	// attr value
 	for _, seg := range a.Segments {
@@ -113,7 +114,7 @@ func (a *AttrAspath) Marshal(dst []byte, caps Caps) []byte {
 	return dst
 }
 
-func (a *AttrAspath) ToJSON(dst []byte) []byte {
+func (a *Aspath) ToJSON(dst []byte) []byte {
 	dst = append(dst, '[')
 	for i := range a.Segments {
 		seg := &a.Segments[i]
@@ -140,7 +141,7 @@ func (a *AttrAspath) ToJSON(dst []byte) []byte {
 	return dst
 }
 
-func (a *AttrAspath) FromJSON(src []byte) (reterr error) {
+func (a *Aspath) FromJSON(src []byte) (reterr error) {
 	defer func() {
 		if r, ok := recover().(string); ok {
 			reterr = fmt.Errorf("%w: %s", ErrValue, r)

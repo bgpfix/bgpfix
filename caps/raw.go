@@ -1,33 +1,33 @@
-package msg
+package caps
 
 import "bytes"
 
-// CapRaw represents any BGP capability as raw bytes
-type CapRaw struct {
-	CapCode
+// Raw represents any BGP capability as raw bytes
+type Raw struct {
+	Code
 	Raw [][]byte
 }
 
-func NewCapRaw(cc CapCode) Cap {
-	return &CapRaw{CapCode: cc}
+func NewRaw(cc Code) Cap {
+	return &Raw{Code: cc}
 }
 
-func (c *CapRaw) Unmarshal(buf []byte, caps Caps) error {
+func (c *Raw) Unmarshal(buf []byte, caps Caps) error {
 	if len(buf) > 0 {
 		c.Raw = append(c.Raw, buf)
 	}
 	return nil
 }
 
-func (c *CapRaw) Common(cap2 Cap) Cap {
-	c2, ok := cap2.(*CapRaw)
-	if !ok || c.CapCode != c2.CapCode {
+func (c *Raw) Common(cap2 Cap) Cap {
+	c2, ok := cap2.(*Raw)
+	if !ok || c.Code != c2.Code {
 		return nil
 	} else if len(c.Raw) == 0 && len(c2.Raw) == 0 {
 		return nil
 	}
 
-	dst := &CapRaw{CapCode: c.CapCode}
+	dst := &Raw{Code: c.Code}
 	for _, val := range c.Raw {
 		for _, val2 := range c2.Raw {
 			if bytes.Equal(val, val2) {
@@ -39,7 +39,7 @@ func (c *CapRaw) Common(cap2 Cap) Cap {
 	return dst
 }
 
-func (c *CapRaw) ToJSON(dst []byte) []byte {
+func (c *Raw) ToJSON(dst []byte) []byte {
 	switch len(c.Raw) {
 	case 0:
 		dst = append(dst, `true`...)
@@ -62,10 +62,10 @@ func (c *CapRaw) ToJSON(dst []byte) []byte {
 	return dst
 }
 
-func (c *CapRaw) Marshal(dst []byte) []byte {
+func (c *Raw) Marshal(dst []byte) []byte {
 	// special case
 	if len(c.Raw) == 0 {
-		return append(dst, byte(c.CapCode), 0)
+		return append(dst, byte(c.Code), 0)
 	}
 
 	for _, buf := range c.Raw {
@@ -73,7 +73,7 @@ func (c *CapRaw) Marshal(dst []byte) []byte {
 		if l > 255 {
 			continue // should not happen
 		}
-		dst = append(dst, byte(c.CapCode), byte(l))
+		dst = append(dst, byte(c.Code), byte(l))
 		dst = append(dst, buf[:l]...)
 	}
 	return dst

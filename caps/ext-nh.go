@@ -1,47 +1,49 @@
-package msg
+package caps
 
 import (
 	"sort"
+
+	"github.com/bgpfix/bgpfix/af"
 )
 
-// CAP_EXTENDED_NEXTHOP rfc8950
-type CapExtNH struct {
-	Proto map[AsafiVal]bool
+// ExtNH implements CAP_EXTENDED_NEXTHOP rfc8950
+type ExtNH struct {
+	Proto map[af.AsafiVal]bool
 }
 
-func NewCapExtNH(cc CapCode) Cap {
-	return &CapExtNH{make(map[AsafiVal]bool)}
+func NewExtNH(cc Code) Cap {
+	return &ExtNH{make(map[af.AsafiVal]bool)}
 }
 
-func (c *CapExtNH) Unmarshal(buf []byte, caps Caps) error {
+func (c *ExtNH) Unmarshal(buf []byte, caps Caps) error {
 	for len(buf) > 0 {
 		if len(buf) < 6 {
 			return ErrLength
 		}
 
-		af := AfiSafiFrom(buf[0:4])
-		nhf := Afi(msb.Uint16(buf[4:6]))
+		asf := af.AfiSafiFrom(buf[0:4])
+		nhf := af.Afi(msb.Uint16(buf[4:6]))
 		buf = buf[6:]
 
-		c.Add(af.Afi(), af.Safi(), nhf)
+		c.Add(asf.Afi(), asf.Safi(), nhf)
 	}
 
 	return nil
 }
 
-func (c *CapExtNH) Add(afi Afi, safi Safi, nhf Afi) {
-	c.Proto[AfiSafiVal(afi, safi, uint32(nhf))] = true
+func (c *ExtNH) Add(afi af.Afi, safi af.Safi, nhf af.Afi) {
+	c.Proto[af.AfiSafiVal(afi, safi, uint32(nhf))] = true
 }
 
-func (c *CapExtNH) Has(afi Afi, safi Safi, nhf Afi) bool {
-	return c.Proto[AfiSafiVal(afi, safi, uint32(nhf))]
+func (c *ExtNH) Has(afi af.Afi, safi af.Safi, nhf af.Afi) bool {
+	return c.Proto[af.AfiSafiVal(afi, safi, uint32(nhf))]
 }
 
-func (c *CapExtNH) Drop(afi Afi, safi Safi, nhf Afi) {
-	delete(c.Proto, AfiSafiVal(afi, safi, uint32(nhf)))
+func (c *ExtNH) Drop(afi af.Afi, safi af.Safi, nhf af.Afi) {
+	delete(c.Proto, af.AfiSafiVal(afi, safi, uint32(nhf)))
 }
 
-func (c *CapExtNH) Sorted() (dst []AsafiVal) {
+func (c *ExtNH) Sorted() (dst []af.AsafiVal) {
 	for asv, val := range c.Proto {
 		if val {
 			dst = append(dst, asv)
@@ -53,13 +55,13 @@ func (c *CapExtNH) Sorted() (dst []AsafiVal) {
 	return
 }
 
-func (c *CapExtNH) Common(cap2 Cap) Cap {
-	c2, ok := cap2.(*CapExtNH)
+func (c *ExtNH) Common(cap2 Cap) Cap {
+	c2, ok := cap2.(*ExtNH)
 	if !ok {
 		return nil
 	}
 
-	dst := &CapExtNH{make(map[AsafiVal]bool)}
+	dst := &ExtNH{make(map[af.AsafiVal]bool)}
 	for asv, val := range c.Proto {
 		if val && c2.Proto[asv] {
 			dst.Proto[asv] = true
@@ -68,10 +70,10 @@ func (c *CapExtNH) Common(cap2 Cap) Cap {
 	return dst
 }
 
-func (c *CapExtNH) Marshal(dst []byte) []byte {
+func (c *ExtNH) Marshal(dst []byte) []byte {
 	todo := c.Sorted()
 
-	var step []AsafiVal
+	var step []af.AsafiVal
 	for len(todo) > 0 {
 		if len(todo) > 42 {
 			dst = append(dst, byte(CAP_EXTENDED_NEXTHOP), 6*42)
@@ -93,7 +95,7 @@ func (c *CapExtNH) Marshal(dst []byte) []byte {
 	return dst
 }
 
-func (c *CapExtNH) ToJSON(dst []byte) []byte {
+func (c *ExtNH) ToJSON(dst []byte) []byte {
 	dst = append(dst, '[')
 	for i, as := range c.Sorted() {
 		if i > 0 {

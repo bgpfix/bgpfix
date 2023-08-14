@@ -1,6 +1,8 @@
-package msg
+package af
 
-import "strings"
+import (
+	"strings"
+)
 
 //go:generate go run github.com/dmarkham/enumer -type Afi -trimprefix AFI_
 type Afi uint16

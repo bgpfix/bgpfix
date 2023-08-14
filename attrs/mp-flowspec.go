@@ -1,57 +1,60 @@
-package msg
+package attrs
 
 import (
 	"net/netip"
 	"sort"
 	"strconv"
+
+	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/caps"
 )
 
-// ATTR_MP_* for RFC8955 and RFC8956 Flowspec
-type AttrMPFlow struct {
-	*AttrMP
+// MPFlowspec represents ATTR_MP attributes for RFC8955 and RFC8956 Flowspec
+type MPFlowspec struct {
+	*MP
 
 	NextHop   netip.Addr // best-effort
 	LinkLocal netip.Addr // best-effort
-	Rules     []FlowRule // see RFC8955 Fig1
+	Rules     []FlowSpec // see RFC8955 Fig1
 }
 
-// FlowRule represents a collection of flowspec components
-type FlowRule map[FlowType]FlowComp
+// FlowSpec represents a Flowspec rule, a map of type-value components
+type FlowSpec map[FlowKey]FlowValue
 
-// FlowType represent Flowspec component type
-type FlowType uint8
+// FlowKey represents a Flowspec component type
+type FlowKey uint8
 
-// FlowComp represents the value of a particular Flowspec component
-type FlowComp interface {
+//go:generate go run github.com/dmarkham/enumer -type FlowKey -trimprefix FLOW_
+const (
+	FLOW_DST       FlowKey = 1
+	FLOW_SRC       FlowKey = 2
+	FLOW_PROTO     FlowKey = 3
+	FLOW_PORT      FlowKey = 4
+	FLOW_PORT_DST  FlowKey = 5
+	FLOW_PORT_SRC  FlowKey = 6
+	FLOW_ICMP_TYPE FlowKey = 7
+	FLOW_ICMP_CODE FlowKey = 8
+	FLOW_TCP_FLAGS FlowKey = 9
+	FLOW_PKTLEN    FlowKey = 10
+	FLOW_DSCP      FlowKey = 11
+	FLOW_FRAG      FlowKey = 12
+	FLOW_LABEL     FlowKey = 13
+)
+
+// FlowValue represents a Flowspec component value
+type FlowValue interface {
 	// Marshal appends wire representation to dst, without type
-	Marshal(dst []byte, caps Caps) []byte
+	Marshal(dst []byte, cps caps.Caps) []byte
 
 	// ToJSON appends JSON representation of the component to dst
 	ToJSON(dst []byte) []byte
 }
 
-//go:generate go run github.com/dmarkham/enumer -type FlowType -trimprefix FLOW_
-const (
-	FLOW_DST       FlowType = 1
-	FLOW_SRC       FlowType = 2
-	FLOW_PROTO     FlowType = 3
-	FLOW_PORT      FlowType = 4
-	FLOW_PORT_DST  FlowType = 5
-	FLOW_PORT_SRC  FlowType = 6
-	FLOW_ICMP_TYPE FlowType = 7
-	FLOW_ICMP_CODE FlowType = 8
-	FLOW_TCP_FLAGS FlowType = 9
-	FLOW_PKTLEN    FlowType = 10
-	FLOW_DSCP      FlowType = 11
-	FLOW_FRAG      FlowType = 12
-	FLOW_LABEL     FlowType = 13
-)
-
-// FlowParser parses specific Flowspec component type inside given Flowspec rule
-type FlowParser func(ft FlowType, buf []byte) (FlowComp, int, error)
+// FlowParser parses specific Flowspec component type
+type FlowParser func(ft FlowKey, buf []byte) (FlowValue, int, error)
 
 // FlowParsers4 maps IPv4 Flowspec component types to their parsers
-var FlowParsers4 = map[FlowType]FlowParser{
+var FlowParsers4 = map[FlowKey]FlowParser{
 	FLOW_SRC:       ParseFlowPrefix4,
 	FLOW_DST:       ParseFlowPrefix4,
 	FLOW_PROTO:     ParseFlowVal,
@@ -67,7 +70,7 @@ var FlowParsers4 = map[FlowType]FlowParser{
 }
 
 // FlowParsers6 maps IPv6 Flowspec component types to their parsers
-var FlowParsers6 = map[FlowType]FlowParser{
+var FlowParsers6 = map[FlowKey]FlowParser{
 	FLOW_SRC:       ParseFlowPrefix6,
 	FLOW_DST:       ParseFlowPrefix6,
 	FLOW_PROTO:     ParseFlowVal,
@@ -83,14 +86,14 @@ var FlowParsers6 = map[FlowType]FlowParser{
 	FLOW_LABEL:     ParseFlowVal,
 }
 
-func NewParseAttrMPFlow(mp *AttrMP) AttrMPValue {
-	return &AttrMPFlow{AttrMP: mp}
+func NewMPFlowspec(mp *MP) MPValue {
+	return &MPFlowspec{MP: mp}
 }
 
-func (a *AttrMPFlow) Unmarshal(_ Caps) error {
+func (a *MPFlowspec) Unmarshal(_ caps.Caps) error {
 	var (
-		ipv6 = a.Afi() == AFI_IPV6
-		comp FlowComp
+		ipv6 = a.Afi() == af.AFI_IPV6
+		comp FlowValue
 		err  error
 	)
 
@@ -116,9 +119,9 @@ func (a *AttrMPFlow) Unmarshal(_ Caps) error {
 		val := data[:l]
 		data = data[l:]
 
-		rule := make(FlowRule)
+		rule := make(FlowSpec)
 		for len(val) > 0 {
-			ft := FlowType(val[0])
+			ft := FlowKey(val[0])
 			val = val[1:] // eat the type
 
 			// the default
@@ -151,7 +154,7 @@ func (a *AttrMPFlow) Unmarshal(_ Caps) error {
 	return nil
 }
 
-func (a *AttrMPFlow) Marshal(caps Caps) {
+func (a *MPFlowspec) Marshal(cps caps.Caps) {
 	// best-effort
 	nh := a.NH[:0]
 	if a.NextHop.IsValid() {
@@ -169,7 +172,7 @@ func (a *AttrMPFlow) Marshal(caps Caps) {
 		if len(fr) == 0 {
 			continue
 		}
-		buf = fr.Marshal(buf[:0], caps)
+		buf = fr.Marshal(buf[:0], cps)
 		if bl := len(buf); bl < 0xf0 {
 			data = append(data, byte(bl))
 		} else {
@@ -181,7 +184,7 @@ func (a *AttrMPFlow) Marshal(caps Caps) {
 	a.Data = data
 }
 
-func (a *AttrMPFlow) ToJSON(dst []byte) []byte {
+func (a *MPFlowspec) ToJSON(dst []byte) []byte {
 	if a.Code() == ATTR_MP_REACH && a.NextHop.IsValid() {
 		dst = append(dst, `"nexthop":"`...)
 		dst = a.NextHop.AppendTo(dst)
@@ -202,13 +205,13 @@ func (a *AttrMPFlow) ToJSON(dst []byte) []byte {
 	return append(dst, ']')
 }
 
-func (a *AttrMPFlow) FromJSON(src []byte) error {
+func (a *MPFlowspec) FromJSON(src []byte) error {
 	return ErrTODO
 }
 
 // Marshal writes wire representation of all components in fr to dst, without the length
-func (fr FlowRule) Marshal(dst []byte, caps Caps) []byte {
-	var todo []FlowType
+func (fr FlowSpec) Marshal(dst []byte, cps caps.Caps) []byte {
+	var todo []FlowKey
 	for ft := range fr {
 		todo = append(todo, ft)
 	}
@@ -218,16 +221,16 @@ func (fr FlowRule) Marshal(dst []byte, caps Caps) []byte {
 
 	for _, ft := range todo {
 		dst = append(dst, byte(ft))
-		dst = fr[ft].Marshal(dst, caps)
+		dst = fr[ft].Marshal(dst, cps)
 	}
 	return dst
 }
 
-func (fr FlowRule) ToJSON(dst []byte) []byte {
+func (fr FlowSpec) ToJSON(dst []byte) []byte {
 	dst = append(dst, '{')
 
 	// respect the strict flowtype order
-	var todo []FlowType
+	var todo []FlowKey
 	for ft := range fr {
 		todo = append(todo, ft)
 	}
@@ -254,7 +257,7 @@ func (fr FlowRule) ToJSON(dst []byte) []byte {
 // FlowRaw represents a Flowspec component as raw bytes
 type FlowRaw []byte
 
-func (f FlowRaw) Marshal(dst []byte, caps Caps) []byte {
+func (f FlowRaw) Marshal(dst []byte, cps caps.Caps) []byte {
 	return append(dst, f...)
 }
 
@@ -265,7 +268,7 @@ func (f FlowRaw) ToJSON(dst []byte) []byte {
 // FlowPrefix4 holds IPv4 prefix
 type FlowPrefix4 struct{ netip.Prefix }
 
-func ParseFlowPrefix4(ft FlowType, buf []byte) (FlowComp, int, error) {
+func ParseFlowPrefix4(ft FlowKey, buf []byte) (FlowValue, int, error) {
 	if len(buf) < 1 {
 		return nil, 0, ErrLength
 	}
@@ -294,7 +297,7 @@ func ParseFlowPrefix4(ft FlowType, buf []byte) (FlowComp, int, error) {
 	return &FlowPrefix4{pfx}, n + 1, nil
 }
 
-func (f *FlowPrefix4) Marshal(dst []byte, caps Caps) []byte {
+func (f *FlowPrefix4) Marshal(dst []byte, cps caps.Caps) []byte {
 	return marshalPrefix(dst, f.Prefix)
 }
 
@@ -305,12 +308,12 @@ func (f *FlowPrefix4) ToJSON(dst []byte) []byte {
 }
 
 // AddSrc adds FLOW_SRC match to rule fr
-func (fr FlowRule) AddSrc(p netip.Prefix) {
+func (fr FlowSpec) AddSrc(p netip.Prefix) {
 	fr[FLOW_SRC] = &FlowPrefix4{p}
 }
 
 // AddDst adds FLOW_DST match to rule fr
-func (fr FlowRule) AddDst(p netip.Prefix) {
+func (fr FlowSpec) AddDst(p netip.Prefix) {
 	fr[FLOW_DST] = &FlowPrefix4{p}
 }
 
@@ -320,7 +323,7 @@ type FlowPrefix6 struct {
 	Offset int
 }
 
-func ParseFlowPrefix6(ft FlowType, buf []byte) (FlowComp, int, error) {
+func ParseFlowPrefix6(ft FlowKey, buf []byte) (FlowValue, int, error) {
 	if len(buf) < 2 {
 		return nil, 0, ErrLength
 	}
@@ -359,7 +362,7 @@ func ParseFlowPrefix6(ft FlowType, buf []byte) (FlowComp, int, error) {
 	return &FlowPrefix6{pfx, o}, n + 2, nil
 }
 
-func (f *FlowPrefix6) Marshal(dst []byte, caps Caps) []byte {
+func (f *FlowPrefix6) Marshal(dst []byte, cps caps.Caps) []byte {
 	// cut beyond prefix bits
 	l := f.Prefix.Bits()
 	b := l / 8
@@ -428,7 +431,7 @@ func (op FlowOp) Len() int {
 	return 1 << (lcode >> 4)
 }
 
-func ParseFlowVal(ft FlowType, buf []byte) (comp FlowComp, n int, err error) {
+func ParseFlowVal(ft FlowKey, buf []byte) (comp FlowValue, n int, err error) {
 	fv := &FlowVal{}
 	for len(buf) > 0 {
 		if len(buf) < 2 {
@@ -479,7 +482,7 @@ func ParseFlowVal(ft FlowType, buf []byte) (comp FlowComp, n int, err error) {
 	return fv, n, nil
 }
 
-func (f *FlowVal) Marshal(dst []byte, caps Caps) []byte {
+func (f *FlowVal) Marshal(dst []byte, cps caps.Caps) []byte {
 	last := len(f.Op) - 1
 	for i := range f.Op {
 		op := f.Op[i]
