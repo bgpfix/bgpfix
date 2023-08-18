@@ -1,10 +1,252 @@
- # bgpfix
+ # BGPFIX
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/bgpfix/bgpfix.svg)](https://pkg.go.dev/github.com/bgpfix/bgpfix)
 
-A generic-purpose, high-performance Golang library for all things BGP.
+**WORK IN PROGRESS PREVIEW 08/2023**
 
-[Docs](https://pkg.go.dev/github.com/bgpfix/bgpfix)
+A generic-purpose, high-performance Golang library for [bridging the gaps in BGP](https://twitter.com/ACM_IMC2021/status/1445725066403196928).
+
+The main idea is it can "fix" or "extend" BGP sessions in-flight, possibly adding new features or protection layers to proprietary BGP speakers (think big router vendors). As an example, the vision is it can be used to implement:
+ * bidirectional BGP session to JSON translation, replacing [exabgp](https://github.com/Exa-Networks/exabgp/) for some use-cases,
+ * transparent BGP proxy, optionally rewriting the messages in-flight,
+ * streaming MRT files to BGP routers, adding the necessary OPEN negotiation beforehand,
+ * Flowspec firewalls using [Linux Netfilter](https://netfilter.org/),
+ * passive inspection (and storage) of ongoing BGP sessions, like in [tcpdump](https://www.tcpdump.org/),
+ * cool new BGP extensions for legacy speakers, eg. [RPKI](https://en.wikipedia.org/wiki/Resource_Public_Key_Infrastructure) and [ASPA](https://www.manrs.org/2023/02/unpacking-the-first-route-leak-prevented-by-aspa/) validation, [Only To Customer (OTC)](https://www.manrs.org/2023/04/there-is-still-hope-for-bgp-route-leak-prevention/) attribute, or even [BGPSec](https://en.wikipedia.org/wiki/BGPsec),
+ * academic research ideas, eg. [Pretty Good BGP](https://www.cs.princeton.edu/~jrex/papers/pgbgp.pdf) or protection against [distributed prefix de-aggregation attacks](https://arxiv.org/abs/2210.10676).
+
+If you're interested in bgpfix, you might also want to see:
+ * [exabgp](https://github.com/Exa-Networks/exabgp/) (of course)
+ * [corebgp](https://github.com/jwhited/corebgp)
+ * [xBGP](https://www.usenix.org/conference/nsdi23/presentation/wirtgen)
+
+# Idea
+
+The overall idea is presented below. You don't need to use the whole library, eg. you may stick to the basic [BGP message marshal / unmarshal procedures](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/msg).
+
+![bgpfix idea](bgpfix.png)
+
+The above explains the concept of a [Pipe](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Pipe): it has two *directions* - RX and TX - used to exchange BGP messages between 2 speakers on the Left-Hand Side (LHS) and Right-Hand Side (RHS) of the picture.
+
+Each [Msg](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/msg#Msg) sent to the [In](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Dir) channel of a particular direction will go through a set of *callbacks* (think "plugins") configured in the [pipe Options](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Options). Each callback can read, write, modify, synthesize, or drop messages before they reach the Out channel. In addition to BGP messages, callbacks may emit [Events](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Event) - such as [the standard events of the Pipe](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#pkg-variables) - which [event handlers may subscribe to](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Options.OnEvent) in the pipe Options.
+
+# Example
+
+A basic sketch of how to use bgpfix in Go:
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"net/netip"
+
+	"github.com/bgpfix/bgpfix/msg"
+	"github.com/bgpfix/bgpfix/pipe"
+	"github.com/bgpfix/bgpfix/speaker"
+	"github.com/bgpfix/bgpfix/util"
+)
+
+func main() {
+	// create a BGP pipe, enable timestamps
+	p := pipe.NewPipe(context.Background())
+	p.Options.Tstamp = true
+
+	// add our callback and event handlers
+	p.Options.OnTxRx(print)
+	p.Options.OnEvent(event)
+
+	// attach a BGP speaker
+	spk := speaker.NewSpeaker(context.Background())
+	spk.Options.Passive = false
+	spk.Options.LocalASN = 65055
+	spk.Options.LocalId = netip.MustParseAddr("1.1.1.1")
+	spk.Attach(p)
+
+	// dial the target
+	conn, err := net.Dial("tcp", os.Args[1]) // remember to add :179
+	if err != nil {
+		panic(err)
+	}
+
+	// 1. read from conn -> write to p.Rx.In
+	// 2. read from p.Tx.Out -> write to conn
+	util.CopyThrough(p, conn, nil)
+}
+
+func print(p *pipe.Pipe, m *msg.Msg) {
+	fmt.Printf("%s\n", m.ToJSON(nil))
+}
+
+func event(p *pipe.Pipe, ev *pipe.Event) bool {
+	switch ev.Type {
+	case pipe.EVENT_OPEN:
+		fmt.Printf("OPEN sent and received, caps=%s", p.Caps.ToJSON(nil))
+	}
+	return true
+}
+```
+
+# JSON
+
+bgpfix has full, BGP to JSON and vice-versa translation support. For example, below we connect to the Flowspec version of the great [BGP Blackholing project](https://lukasz.bromirski.net/bgp-fs-blackholing/) by [@LukaszBromirski](https://twitter.com/LukaszBromirski):
+```
+pjf@pjf:~/bgp2json$ ./bgp2json -active -asn 65055 85.232.240.180:179 | jq .
+[
+  "2023-08-18T11:33:41.298",
+  1,
+  "TX",
+  "OPEN",
+  -1,
+  {
+	"bgp": 4,
+	"asn": 65055,
+	"id": "0.0.0.1",
+	"hold": 90,
+	"caps": {
+	  "MP": [
+		"IPV4/UNICAST",
+		"IPV4/FLOWSPEC",
+		"IPV6/UNICAST",
+		"IPV6/FLOWSPEC"
+	  ],
+	  "ROUTE_REFRESH": true,
+	  "EXTENDED_MESSAGE": true,
+	  "AS4": 65055
+	}
+  }
+]
+[
+  "2023-08-18T11:33:41.324",
+  1,
+  "RX",
+  "OPEN",
+  56,
+  {
+	"bgp": 4,
+	"asn": 65055,
+	"id": "85.232.240.180",
+	"hold": 7200,
+	"caps": {
+	  "MP": [
+		"IPV4/FLOWSPEC"
+	  ],
+	  "ROUTE_REFRESH": true,
+	  "EXTENDED_NEXTHOP": [
+		"IPV4/UNICAST/IPV6",
+		"IPV4/MULTICAST/IPV6",
+		"IPV4/MPLS_VPN/IPV6"
+	  ],
+	  "AS4": 65055,
+	  "PRE_ROUTE_REFRESH": true
+	}
+  }
+]
+[
+  "2023-08-18T11:33:41.325",
+  2,
+  "TX",
+  "KEEPALIVE",
+  0,
+  null
+]
+[
+  "2023-08-18T11:33:41.348",
+  2,
+  "RX",
+  "KEEPALIVE",
+  0,
+  null
+]
+[
+  "2023-08-18T11:33:46.352",
+  3,
+  "RX",
+  "UPDATE",
+  316,
+  {
+	"attrs": {
+	  "ORIGIN": {
+		"flags": "T",
+		"value": "IGP"
+	  },
+	  "ASPATH": {
+		"flags": "T",
+		"value": []
+	  },
+	  "LOCALPREF": {
+		"flags": "T",
+		"value": 100
+	  },
+	  "ORIGINATOR": {
+		"flags": "O",
+		"value": "85.232.240.170"
+	  },
+	  "CLUSTER_LIST": {
+		"flags": "O",
+		"value": [
+		  "85.232.240.180"
+		]
+	  },
+	  "MP_REACH": {
+		"flags": "OX",
+		"value": {
+		  "af": "IPV4/FLOWSPEC",
+		  "nexthop": "192.0.2.1",
+		  "rules": [
+			{
+			  "SRC": "2.59.255.53/32",
+			  "PROTO": [
+				{
+				  "op": "==",
+				  "val": 6
+				}
+			  ],
+			  "PORT_DST": [
+				{
+				  "op": "==",
+				  "val": 25
+				}
+			  ]
+			},
+			/*** ... cut many lines ... ***/
+		  ]
+		}
+	  },
+	  "EXT_COMMUNITY": {
+		"flags": "OT",
+		"value": [
+		  {
+			"type": "FLOW_RATE_BYTES",
+			"value": 0
+		  }
+		]
+	  }
+	}
+  }
+]
+[
+  "2023-08-18T11:33:46.455",
+  9,
+  "RX",
+  "UPDATE",
+  10,
+  {
+	"attrs": {
+	  "MP_UNREACH": {
+		"flags": "O",
+		"value": {
+		  "af": "IPV4/FLOWSPEC",
+		  "rules": []
+		}
+	  }
+	}
+  }
+]
+
+```
 
 # Supported RFCs (incl. partial/wip support)
 
