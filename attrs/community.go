@@ -78,13 +78,13 @@ func (a *Community) FromJSON(src []byte) error {
 			return
 		}
 
-		asn, err := strconv.ParseUint(json.BS(d[0]), 0, 16)
+		asn, err := strconv.ParseUint(json.S(d[0]), 0, 16)
 		if err != nil {
 			errs = append(errs, err)
 			return
 		}
 
-		val, err := strconv.ParseUint(json.BS(d[1]), 0, 16)
+		val, err := strconv.ParseUint(json.S(d[1]), 0, 16)
 		if err != nil {
 			errs = append(errs, err)
 			return

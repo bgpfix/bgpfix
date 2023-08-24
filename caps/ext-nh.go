@@ -8,11 +8,11 @@ import (
 
 // ExtNH implements CAP_EXTENDED_NEXTHOP rfc8950
 type ExtNH struct {
-	Proto map[af.ASVal]bool
+	Proto map[af.ASV]bool
 }
 
 func NewExtNH(cc Code) Cap {
-	return &ExtNH{make(map[af.ASVal]bool)}
+	return &ExtNH{make(map[af.ASV]bool)}
 }
 
 func (c *ExtNH) Unmarshal(buf []byte, caps Caps) error {
@@ -43,7 +43,7 @@ func (c *ExtNH) Drop(afi af.AFI, safi af.SAFI, nhf af.AFI) {
 	delete(c.Proto, af.AfiSafiVal(afi, safi, uint32(nhf)))
 }
 
-func (c *ExtNH) Sorted() (dst []af.ASVal) {
+func (c *ExtNH) Sorted() (dst []af.ASV) {
 	for asv, val := range c.Proto {
 		if val {
 			dst = append(dst, asv)
@@ -61,7 +61,7 @@ func (c *ExtNH) Common(cap2 Cap) Cap {
 		return nil
 	}
 
-	dst := &ExtNH{make(map[af.ASVal]bool)}
+	dst := &ExtNH{make(map[af.ASV]bool)}
 	for asv, val := range c.Proto {
 		if val && c2.Proto[asv] {
 			dst.Proto[asv] = true
@@ -73,7 +73,7 @@ func (c *ExtNH) Common(cap2 Cap) Cap {
 func (c *ExtNH) Marshal(dst []byte) []byte {
 	todo := c.Sorted()
 
-	var step []af.ASVal
+	var step []af.ASV
 	for len(todo) > 0 {
 		if len(todo) > 42 {
 			dst = append(dst, byte(CAP_EXTENDED_NEXTHOP), 6*42)

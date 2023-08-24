@@ -291,7 +291,7 @@ func (u *Update) ToJSON(dst []byte) []byte {
 // FromJSON reads u JSON representation from src
 func (u *Update) FromJSON(src []byte) error {
 	return jsp.ObjectEach(src, func(key, val []byte, typ jsp.ValueType, _ int) (err error) {
-		switch json.BS(key) {
+		switch json.S(key) {
 		case "reach":
 			u.Reach, err = json.UnPrefixes(u.Reach[:0], val)
 		case "unreach":

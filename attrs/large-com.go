@@ -87,19 +87,19 @@ func (a *LargeCom) FromJSON(src []byte) error {
 			return
 		}
 
-		asn, err := strconv.ParseUint(json.BS(d[0]), 0, 32)
+		asn, err := strconv.ParseUint(json.S(d[0]), 0, 32)
 		if err != nil {
 			errs = append(errs, err)
 			return
 		}
 
-		val1, err := strconv.ParseUint(json.BS(d[1]), 0, 32)
+		val1, err := strconv.ParseUint(json.S(d[1]), 0, 32)
 		if err != nil {
 			errs = append(errs, err)
 			return
 		}
 
-		val2, err := strconv.ParseUint(json.BS(d[2]), 0, 32)
+		val2, err := strconv.ParseUint(json.S(d[2]), 0, 32)
 		if err != nil {
 			errs = append(errs, err)
 			return

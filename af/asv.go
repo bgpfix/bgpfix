@@ -1,26 +1,26 @@
 package af
 
-// ASVal represents AFI+SAFI+VAL as afi(16) + 0(8) + safi(8) + val(32)
-type ASVal uint64
+// ASV represents AFI+SAFI+VAL as afi(16) + 0(8) + safi(8) + val(32)
+type ASV uint64
 
-func AfiSafiVal(afi AFI, safi SAFI, val uint32) ASVal {
-	return ASVal(uint64(afi)<<48 | uint64(safi)<<32 | uint64(val))
+func AfiSafiVal(afi AFI, safi SAFI, val uint32) ASV {
+	return ASV(uint64(afi)<<48 | uint64(safi)<<32 | uint64(val))
 }
 
-func (asv ASVal) Afi() AFI {
+func (asv ASV) Afi() AFI {
 	return AFI(asv >> 48)
 }
 
-func (asv ASVal) Safi() SAFI {
+func (asv ASV) Safi() SAFI {
 	return SAFI(asv >> 32)
 }
 
-func (asv ASVal) Val() uint32 {
+func (asv ASV) Val() uint32 {
 	return uint32(asv)
 }
 
 // ToJSONAfi interprets Val as an AFI
-func (asv ASVal) ToJSONAfi(dst []byte) []byte {
+func (asv ASV) ToJSONAfi(dst []byte) []byte {
 	dst = append(dst, '"')
 	dst = append(dst, asv.Afi().String()...)
 	dst = append(dst, '/')

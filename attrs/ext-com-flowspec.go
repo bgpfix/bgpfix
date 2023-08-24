@@ -48,7 +48,7 @@ func (e *ExtcomFlowRate) ToJSON(dst []byte) []byte {
 func (e *ExtcomFlowRate) FromJSON(src []byte) error {
 	d := bytes.Split(json.Q(src), []byte(":"))
 	if len(d) == 2 {
-		v, err := strconv.ParseUint(json.BS(d[0]), 10, 16)
+		v, err := strconv.ParseUint(json.S(d[0]), 10, 16)
 		if err != nil {
 			return err
 		}
@@ -58,7 +58,7 @@ func (e *ExtcomFlowRate) FromJSON(src []byte) error {
 		return ErrValue
 	}
 
-	v, err := strconv.ParseFloat(json.BS(d[0]), 32)
+	v, err := strconv.ParseFloat(json.S(d[0]), 32)
 	if err != nil {
 		return err
 	}
@@ -177,7 +177,7 @@ func (e *ExtcomFlowDSCP) ToJSON(dst []byte) []byte {
 }
 
 func (e *ExtcomFlowDSCP) FromJSON(src []byte) error {
-	v, err := strconv.ParseUint(json.BSQ(src), 0, 6)
+	v, err := strconv.ParseUint(json.SQ(src), 0, 6)
 	if err == nil {
 		e.DSCP = uint8(v)
 	}

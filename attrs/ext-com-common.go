@@ -34,7 +34,7 @@ func (e *ExtcomRaw) ToJSON(dst []byte) []byte {
 }
 
 func (e *ExtcomRaw) FromJSON(src []byte) error {
-	v, err := strconv.ParseUint(json.BSQ(src), 0, 48)
+	v, err := strconv.ParseUint(json.SQ(src), 0, 48)
 	if err == nil {
 		e.uint64 = v
 	}
@@ -90,13 +90,13 @@ func (e *ExtcomASN) FromJSON(src []byte) error {
 		return ErrValue
 	}
 
-	v, err := strconv.ParseUint(json.BS(d[0]), 10, 32)
+	v, err := strconv.ParseUint(json.S(d[0]), 10, 32)
 	if err != nil {
 		return err
 	}
 	e.ASN = uint32(v)
 
-	v, err = strconv.ParseUint(json.BS(d[1]), 10, 32)
+	v, err = strconv.ParseUint(json.S(d[1]), 10, 32)
 	if err != nil {
 		return err
 	}
@@ -149,13 +149,13 @@ func (e *ExtcomAddr) FromJSON(src []byte) error {
 		return ErrValue
 	}
 
-	a, err := netip.ParseAddr(json.BS(d[0]))
+	a, err := netip.ParseAddr(json.S(d[0]))
 	if err != nil {
 		return err
 	}
 	e.Addr = a
 
-	v, err := strconv.ParseUint(json.BS(d[1]), 10, 16)
+	v, err := strconv.ParseUint(json.S(d[1]), 10, 16)
 	if err != nil {
 		return err
 	}

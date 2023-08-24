@@ -28,7 +28,7 @@ type Attr interface {
 	// ToJSON appends JSON representation of the value to dst
 	ToJSON(dst []byte) []byte
 
-	// FromJSON reads from JSON represetnation in src
+	// FromJSON reads from JSON representation in src
 	FromJSON(src []byte) error
 }
 
@@ -189,7 +189,7 @@ func (ac Code) ToJSON(dst []byte) []byte {
 
 // FromJSON() sets ac from JSON in src
 func (ac *Code) FromJSON(src []byte) error {
-	name := json.BSQ(src)
+	name := json.SQ(src)
 	if val, ok := CodeValue[name]; ok {
 		*ac = val
 	} else if aft, ok := strings.CutPrefix(name, `ATTR_`); ok {

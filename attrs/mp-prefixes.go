@@ -90,14 +90,14 @@ func (a *MPPrefixes) ToJSON(dst []byte) []byte {
 
 func (a *MPPrefixes) FromJSON(src []byte) error {
 	return jsp.ObjectEach(src, func(key, value []byte, dataType jsp.ValueType, offset int) (err error) {
-		switch json.BS(key) {
+		switch json.S(key) {
 		case "nexthop":
 			if a.Code() == ATTR_MP_REACH {
-				a.NextHop, err = netip.ParseAddr(json.BS(value))
+				a.NextHop, err = netip.ParseAddr(json.S(value))
 			}
 		case "link-local":
 			if a.Code() == ATTR_MP_REACH {
-				a.LinkLocal, err = netip.ParseAddr(json.BS(value))
+				a.LinkLocal, err = netip.ParseAddr(json.S(value))
 			}
 		case "prefixes":
 			a.Prefixes, err = json.UnPrefixes(a.Prefixes, value)

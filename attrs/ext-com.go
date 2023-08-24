@@ -126,7 +126,7 @@ func (et ExtcomType) ToJSON(dst []byte) []byte {
 }
 
 func (et *ExtcomType) FromJSON(src []byte) error {
-	ss := json.BSQ(src)
+	ss := json.SQ(src)
 	if v, ok := ExtcomTypeValue[ss]; ok {
 		*et = v
 	} else {
@@ -242,9 +242,8 @@ func (a *ExtCom) FromJSON(src []byte) (reterr error) {
 		}
 
 		// transitive? (best-effort)
-		nont, _ := jsp.GetBoolean(value, "nontransitive")
-		if !nont {
-			et |= EXTCOM_TRANSITIVE
+		if nont, _ := jsp.GetBoolean(value, "nontransitive"); nont {
+			et |= EXTCOM_TRANSITIVE // set transitive bit, meaning "non-transitive" (sic)
 		}
 
 		// get community value

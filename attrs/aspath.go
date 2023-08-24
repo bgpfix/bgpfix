@@ -156,7 +156,7 @@ func (a *Aspath) FromJSON(src []byte) (reterr error) {
 				panic("AS_SET not number")
 			}
 
-			v, err := strconv.ParseUint(json.BS(value), 0, 32)
+			v, err := strconv.ParseUint(json.S(value), 0, 32)
 			if err != nil {
 				panic("AS_SET invalid value")
 			}
@@ -184,7 +184,7 @@ func (a *Aspath) FromJSON(src []byte) (reterr error) {
 			panic("AS_PATH not number")
 		}
 
-		v, err := strconv.ParseUint(json.BS(value), 0, 32)
+		v, err := strconv.ParseUint(json.S(value), 0, 32)
 		if err != nil {
 			panic("AS_PATH invalid value")
 		}

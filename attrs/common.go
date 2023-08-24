@@ -89,7 +89,7 @@ func (a *Origin) ToJSON(dst []byte) []byte {
 
 func (a *Origin) FromJSON(src []byte) (err error) {
 	src = json.Q(src)
-	switch json.BS(src) {
+	switch json.S(src) {
 	case "IGP":
 		a.Origin = 0
 	case "EGP":
@@ -197,11 +197,11 @@ func (a *Aggregator) ToJSON(dst []byte) []byte {
 
 func (a *Aggregator) FromJSON(src []byte) error {
 	return jsp.ObjectEach(src, func(key, value []byte, dataType jsp.ValueType, offset int) (err error) {
-		switch json.BS(key) {
+		switch json.S(key) {
 		case "asn":
 			a.ASN, err = json.UnU32(value)
 		case "addr":
-			a.Addr, err = netip.ParseAddr(json.BS(value))
+			a.Addr, err = netip.ParseAddr(json.S(value))
 		}
 		return
 	})
@@ -248,7 +248,7 @@ func (a *IP) ToJSON(dst []byte) []byte {
 }
 
 func (a *IP) FromJSON(src []byte) (err error) {
-	a.Addr, err = netip.ParseAddr(json.BSQ(src))
+	a.Addr, err = netip.ParseAddr(json.SQ(src))
 	if err != nil {
 		return err
 	}
@@ -333,7 +333,7 @@ func (a *IPList) FromJSON(src []byte) (reterr error) {
 	}()
 
 	jsp.ArrayEach(src, func(value []byte, dataType jsp.ValueType, _ int, _ error) {
-		addr, err := netip.ParseAddr(json.BS(value))
+		addr, err := netip.ParseAddr(json.S(value))
 		if err != nil {
 			panic(err)
 		}

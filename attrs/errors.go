@@ -11,4 +11,6 @@ var (
 	ErrAttrFlags = errors.New("invalid attribute flags")
 	ErrSegType   = errors.New("invalid segment type")
 	ErrSegLen    = errors.New("invalid segment length")
+	ErrFlowType  = errors.New("invalid Flowspec component type")
+	ErrFlowValue = errors.New("invalid Flowspec component value")
 )

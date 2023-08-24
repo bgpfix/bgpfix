@@ -60,7 +60,7 @@ func (as AS) ToJSONKey(dst []byte, key string) []byte {
 }
 
 func (as *AS) FromJSON(src []byte) error {
-	s1, s2, ok := strings.Cut(json.BSQ(src), "/")
+	s1, s2, ok := strings.Cut(json.SQ(src), "/")
 	if !ok {
 		return ErrValue
 	}

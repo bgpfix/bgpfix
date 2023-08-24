@@ -1,14 +1,23 @@
 package attrs
 
 import (
+	"bytes"
+	"fmt"
 	"net/netip"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/bgpfix/bgpfix/af"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
+	jsp "github.com/buger/jsonparser"
 )
+
+// NewMPFlowspec returns, for a parent mp attribute, a new MPValue implementing Flowspec
+func NewMPFlowspec(mp *MP) MPValue {
+	return &MPFlowspec{MP: mp}
+}
 
 // MPFlowspec represents ATTR_MP attributes for RFC8955 and RFC8956 Flowspec
 type MPFlowspec struct {
@@ -16,88 +25,127 @@ type MPFlowspec struct {
 
 	NextHop   netip.Addr // best-effort
 	LinkLocal netip.Addr // best-effort
-	Rules     []FlowSpec // see RFC8955 Fig1
+	Rules     []FlowRule // see RFC8955 Fig1
 }
 
-// FlowSpec represents a Flowspec rule, a map of type-value components
-type FlowSpec map[FlowKey]FlowValue
+// FlowRule represents a Flowspec rule, which is a set of type-value components
+type FlowRule map[FlowType]FlowValue
 
-// FlowKey represents a Flowspec component type
-type FlowKey uint8
+// FlowType represents a Flowspec component type
+type FlowType uint8
 
-//go:generate go run github.com/dmarkham/enumer -type FlowKey -trimprefix FLOW_
+//go:generate go run github.com/dmarkham/enumer -type FlowType -trimprefix FLOW_
 const (
-	FLOW_DST       FlowKey = 1
-	FLOW_SRC       FlowKey = 2
-	FLOW_PROTO     FlowKey = 3
-	FLOW_PORT      FlowKey = 4
-	FLOW_PORT_DST  FlowKey = 5
-	FLOW_PORT_SRC  FlowKey = 6
-	FLOW_ICMP_TYPE FlowKey = 7
-	FLOW_ICMP_CODE FlowKey = 8
-	FLOW_TCP_FLAGS FlowKey = 9
-	FLOW_PKTLEN    FlowKey = 10
-	FLOW_DSCP      FlowKey = 11
-	FLOW_FRAG      FlowKey = 12
-	FLOW_LABEL     FlowKey = 13
+	FLOW_DST       FlowType = 1
+	FLOW_SRC       FlowType = 2
+	FLOW_PROTO     FlowType = 3
+	FLOW_PORT      FlowType = 4
+	FLOW_PORT_DST  FlowType = 5
+	FLOW_PORT_SRC  FlowType = 6
+	FLOW_ICMP_TYPE FlowType = 7
+	FLOW_ICMP_CODE FlowType = 8
+	FLOW_TCP_FLAGS FlowType = 9
+	FLOW_PKTLEN    FlowType = 10
+	FLOW_DSCP      FlowType = 11
+	FLOW_FRAG      FlowType = 12
+	FLOW_LABEL     FlowType = 13
 )
 
 // FlowValue represents a Flowspec component value
 type FlowValue interface {
+	// Unmarshal parses wire representation from src
+	Unmarshal(src []byte, cps caps.Caps) (int, error)
+
 	// Marshal appends wire representation to dst, without type
 	Marshal(dst []byte, cps caps.Caps) []byte
 
 	// ToJSON appends JSON representation of the component to dst
 	ToJSON(dst []byte) []byte
+
+	// FromJSON reads from JSON representation in src
+	FromJSON(src []byte) error
 }
 
-// FlowParser parses specific Flowspec component type
-type FlowParser func(ft FlowKey, buf []byte) (FlowValue, int, error)
+// FlowNewFunc returns a new FlowValue for given FlowType
+type FlowNewFunc func(FlowType) FlowValue
 
-// FlowParsers4 maps IPv4 Flowspec component types to their parsers
-var FlowParsers4 = map[FlowKey]FlowParser{
-	FLOW_SRC:       ParseFlowPrefix4,
-	FLOW_DST:       ParseFlowPrefix4,
-	FLOW_PROTO:     ParseFlowVal,
-	FLOW_PORT:      ParseFlowVal,
-	FLOW_PORT_DST:  ParseFlowVal,
-	FLOW_PORT_SRC:  ParseFlowVal,
-	FLOW_ICMP_TYPE: ParseFlowVal,
-	FLOW_ICMP_CODE: ParseFlowVal,
-	FLOW_TCP_FLAGS: ParseFlowVal,
-	FLOW_PKTLEN:    ParseFlowVal,
-	FLOW_DSCP:      ParseFlowVal,
-	FLOW_FRAG:      ParseFlowVal,
+// FlowNewFuncs4 maps IPv4 Flowspec component types to their new funcs
+var FlowNewFuncs4 = map[FlowType]FlowNewFunc{
+	FLOW_SRC:       NewFlowPrefix4,
+	FLOW_DST:       NewFlowPrefix4,
+	FLOW_PROTO:     NewFlowGeneric,
+	FLOW_PORT:      NewFlowGeneric,
+	FLOW_PORT_DST:  NewFlowGeneric,
+	FLOW_PORT_SRC:  NewFlowGeneric,
+	FLOW_ICMP_TYPE: NewFlowGeneric,
+	FLOW_ICMP_CODE: NewFlowGeneric,
+	FLOW_TCP_FLAGS: NewFlowGeneric,
+	FLOW_PKTLEN:    NewFlowGeneric,
+	FLOW_DSCP:      NewFlowGeneric,
+	FLOW_FRAG:      NewFlowGeneric,
 }
 
-// FlowParsers6 maps IPv6 Flowspec component types to their parsers
-var FlowParsers6 = map[FlowKey]FlowParser{
-	FLOW_SRC:       ParseFlowPrefix6,
-	FLOW_DST:       ParseFlowPrefix6,
-	FLOW_PROTO:     ParseFlowVal,
-	FLOW_PORT:      ParseFlowVal,
-	FLOW_PORT_DST:  ParseFlowVal,
-	FLOW_PORT_SRC:  ParseFlowVal,
-	FLOW_ICMP_TYPE: ParseFlowVal,
-	FLOW_ICMP_CODE: ParseFlowVal,
-	FLOW_TCP_FLAGS: ParseFlowVal,
-	FLOW_PKTLEN:    ParseFlowVal,
-	FLOW_DSCP:      ParseFlowVal,
-	FLOW_FRAG:      ParseFlowVal,
-	FLOW_LABEL:     ParseFlowVal,
+// FlowNewFuncs6 maps IPv6 Flowspec component types to their new funcs
+var FlowNewFuncs6 = map[FlowType]FlowNewFunc{
+	FLOW_SRC:       NewFlowPrefix6,
+	FLOW_DST:       NewFlowPrefix6,
+	FLOW_PROTO:     NewFlowGeneric,
+	FLOW_PORT:      NewFlowGeneric,
+	FLOW_PORT_DST:  NewFlowGeneric,
+	FLOW_PORT_SRC:  NewFlowGeneric,
+	FLOW_ICMP_TYPE: NewFlowGeneric,
+	FLOW_ICMP_CODE: NewFlowGeneric,
+	FLOW_TCP_FLAGS: NewFlowGeneric,
+	FLOW_PKTLEN:    NewFlowGeneric,
+	FLOW_DSCP:      NewFlowGeneric,
+	FLOW_FRAG:      NewFlowGeneric,
+	FLOW_LABEL:     NewFlowGeneric,
 }
 
-func NewMPFlowspec(mp *MP) MPValue {
-	return &MPFlowspec{MP: mp}
+// NewFlowValue returns a new FlowValue for given FlowType and AFI
+func NewFlowValue(ft FlowType, afi af.AFI) FlowValue {
+	var newfuncs map[FlowType]FlowNewFunc
+	if afi == af.AFI_IPV6 {
+		newfuncs = FlowNewFuncs6
+	} else {
+		newfuncs = FlowNewFuncs4
+	}
+
+	newfunc, ok := newfuncs[ft]
+	if !ok {
+		newfunc = NewFlowRaw
+	}
+
+	return newfunc(ft)
 }
 
-func (a *MPFlowspec) Unmarshal(_ caps.Caps) error {
-	var (
-		ipv6 = a.Afi() == af.AFI_IPV6
-		comp FlowValue
-		err  error
-	)
+// FlowOp represents a Flowspec operator (numeric or bitmask)
+type FlowOp uint16
 
+const (
+	FLOW_OP_IS_BITMASK FlowOp = 0x0100
+
+	FLOW_OP_LAST FlowOp = 0b10000000
+	FLOW_OP_AND  FlowOp = 0b01000000
+	FLOW_OP_LEN  FlowOp = 0b00110000
+
+	FLOW_OP_NUM FlowOp = 0b00000111 // numeric
+	FLOW_OP_LT  FlowOp = 0b00000100 // numeric
+	FLOW_OP_GT  FlowOp = 0b00000010 // numeric
+	FLOW_OP_EQ  FlowOp = 0b00000001 // numeric
+
+	FLOW_OP_BIT   FlowOp = 0b00000011 // bitmask
+	FLOW_OP_NOT   FlowOp = 0b00000010 // bitmask
+	FLOW_OP_MATCH FlowOp = 0b00000001 // bitmask
+)
+
+// Len returns the length of the corresponding value: either 1, 2, 4, or 8
+func (op FlowOp) Len() int {
+	lcode := op & FLOW_OP_LEN
+	return 1 << (lcode >> 4)
+}
+
+func (a *MPFlowspec) Unmarshal(cps caps.Caps) error {
 	// best-effort NH parser
 	if len(a.NH) > 0 {
 		a.NextHop, a.LinkLocal, _ = ParseNH(a.NH)
@@ -120,30 +168,21 @@ func (a *MPFlowspec) Unmarshal(_ caps.Caps) error {
 		val := data[:l]
 		data = data[l:]
 
-		rule := make(FlowSpec)
+		rule := make(FlowRule)
 		for len(val) > 0 {
-			ft := FlowKey(val[0])
+			ft := FlowType(val[0])
 			val = val[1:] // eat the type
 
-			// the default
-			comp = FlowRaw(val)
-			n := len(val)
-
-			if ipv6 {
-				if cb := FlowParsers6[ft]; cb != nil {
-					comp, n, err = cb(ft, val)
-				}
-			} else {
-				if cb := FlowParsers4[ft]; cb != nil {
-					comp, n, err = cb(ft, val)
-				}
-			}
-
+			// create and parse FlowValue
+			fv := NewFlowValue(ft, a.Afi())
+			n, err := fv.Unmarshal(val, cps)
 			if err != nil {
 				return err
 			}
 
-			rule[ft] = comp
+			// store, move on
+			rule[ft] = fv
+			n = min(n, len(val))
 			val = val[n:]
 		}
 
@@ -207,12 +246,36 @@ func (a *MPFlowspec) ToJSON(dst []byte) []byte {
 }
 
 func (a *MPFlowspec) FromJSON(src []byte) error {
-	return ErrTODO
+	return jsp.ObjectEach(src, func(key, val []byte, dataType jsp.ValueType, offset int) (err error) {
+		switch json.S(key) {
+		case "nexthop":
+			if a.Code() == ATTR_MP_REACH {
+				a.NextHop, err = netip.ParseAddr(json.S(val))
+			}
+		case "link-local":
+			if a.Code() == ATTR_MP_REACH {
+				a.LinkLocal, err = netip.ParseAddr(json.S(val))
+			}
+		case "rules":
+			return json.ArrayEach(val, func(arrval []byte) error {
+				rule := make(FlowRule)
+				err := rule.FromJSON(arrval, a.Afi())
+				if err != nil {
+					return err
+				}
+				if len(rule) > 0 {
+					a.Rules = append(a.Rules, rule)
+				}
+				return nil
+			})
+		}
+		return err
+	})
 }
 
 // Marshal writes wire representation of all components in fr to dst, without the length
-func (fr FlowSpec) Marshal(dst []byte, cps caps.Caps) []byte {
-	var todo []FlowKey
+func (fr FlowRule) Marshal(dst []byte, cps caps.Caps) []byte {
+	var todo []FlowType
 	for ft := range fr {
 		todo = append(todo, ft)
 	}
@@ -227,19 +290,19 @@ func (fr FlowSpec) Marshal(dst []byte, cps caps.Caps) []byte {
 	return dst
 }
 
-func (fr FlowSpec) ToJSON(dst []byte) []byte {
+func (fr FlowRule) ToJSON(dst []byte) []byte {
 	dst = append(dst, '{')
 
 	// respect the strict flowtype order
-	var todo []FlowKey
+	var ftypes []FlowType
 	for ft := range fr {
-		todo = append(todo, ft)
+		ftypes = append(ftypes, ft)
 	}
-	sort.SliceStable(todo, func(i, j int) bool {
-		return todo[i] < todo[j]
+	sort.SliceStable(ftypes, func(i, j int) bool {
+		return ftypes[i] < ftypes[j]
 	})
 
-	for i, ft := range todo {
+	for i, ft := range ftypes {
 		if i > 0 {
 			dst = append(dst, `,"`...)
 		} else {
@@ -253,49 +316,90 @@ func (fr FlowSpec) ToJSON(dst []byte) []byte {
 	return append(dst, '}')
 }
 
+func (fr FlowRule) FromJSON(src []byte, afi af.AFI) error {
+	return json.ObjectEach(src, func(key, val []byte) error {
+		// lookup flow type
+		ftype, ok := FlowTypeValue[json.S(key)]
+		if !ok {
+			return fmt.Errorf("%s: %w", key, ErrFlowType)
+		}
+
+		// create and read json
+		fval := NewFlowValue(ftype, afi)
+		err := fval.FromJSON(val)
+		if err != nil {
+			return fmt.Errorf("%s: %w: %w", key, ErrFlowValue, err)
+		}
+
+		// store
+		fr[ftype] = fval
+		return nil
+	})
+}
+
 // ------------------
 
 // FlowRaw represents a Flowspec component as raw bytes
-type FlowRaw []byte
+type FlowRaw struct{ Raw []byte }
 
-func (f FlowRaw) Marshal(dst []byte, cps caps.Caps) []byte {
-	return append(dst, f...)
+func NewFlowRaw(FlowType) FlowValue {
+	return &FlowRaw{}
 }
 
-func (f FlowRaw) ToJSON(dst []byte) []byte {
-	return json.Hex(dst, f)
+func (f *FlowRaw) Unmarshal(src []byte, cps caps.Caps) (int, error) {
+	f.Raw = src
+	return len(src), nil
+}
+
+func (f *FlowRaw) Marshal(dst []byte, cps caps.Caps) []byte {
+	return append(dst, f.Raw...)
+}
+
+func (f *FlowRaw) ToJSON(dst []byte) []byte {
+	return json.Hex(dst, f.Raw)
+}
+
+func (f *FlowRaw) FromJSON(src []byte) (err error) {
+	f.Raw, err = json.UnHex(f.Raw[:0], src)
+	return err
 }
 
 // FlowPrefix4 holds IPv4 prefix
 type FlowPrefix4 struct{ netip.Prefix }
 
-func ParseFlowPrefix4(ft FlowKey, buf []byte) (FlowValue, int, error) {
+func NewFlowPrefix4(_ FlowType) FlowValue {
+	return &FlowPrefix4{}
+}
+
+func (f *FlowPrefix4) Unmarshal(buf []byte, cps caps.Caps) (int, error) {
 	if len(buf) < 1 {
-		return nil, 0, ErrLength
+		return 0, ErrLength
 	}
 
 	l := int(buf[0])
-	buf = buf[1:]
 	if l > 32 {
-		return nil, 0, ErrValue
+		return 0, ErrValue
 	}
+	n := 1
+	buf = buf[1:]
 
 	b := l / 8
 	if l%8 != 0 {
 		b++
 	}
 	if len(buf) < b {
-		return nil, 0, ErrLength
+		return 0, ErrLength
 	}
 
 	var tmp [4]byte
-	n := copy(tmp[:], buf[:b]) // the rest of [4]tmp is zeroed
+	n += copy(tmp[:], buf[:b]) // the rest of [4]tmp is zeroed
 	pfx, err := netip.AddrFrom4(tmp).Prefix(l)
 	if err != nil {
-		return nil, 0, err
+		return 0, err
 	}
 
-	return &FlowPrefix4{pfx}, n + 1, nil
+	f.Prefix = pfx
+	return n, nil
 }
 
 func (f *FlowPrefix4) Marshal(dst []byte, cps caps.Caps) []byte {
@@ -303,19 +407,12 @@ func (f *FlowPrefix4) Marshal(dst []byte, cps caps.Caps) []byte {
 }
 
 func (f *FlowPrefix4) ToJSON(dst []byte) []byte {
-	dst = append(dst, '"')
-	dst = f.AppendTo(dst)
-	return append(dst, '"')
+	return json.Prefix(dst, f.Prefix)
 }
 
-// AddSrc adds FLOW_SRC match to rule fr
-func (fr FlowSpec) AddSrc(p netip.Prefix) {
-	fr[FLOW_SRC] = &FlowPrefix4{p}
-}
-
-// AddDst adds FLOW_DST match to rule fr
-func (fr FlowSpec) AddDst(p netip.Prefix) {
-	fr[FLOW_DST] = &FlowPrefix4{p}
+func (f *FlowPrefix4) FromJSON(src []byte) (err error) {
+	f.Prefix, err = json.UnPrefix(src)
+	return err
 }
 
 // FlowPrefix6 holds IPv6 prefix and offset
@@ -324,28 +421,33 @@ type FlowPrefix6 struct {
 	Offset int
 }
 
-func ParseFlowPrefix6(ft FlowKey, buf []byte) (FlowValue, int, error) {
+func NewFlowPrefix6(_ FlowType) FlowValue {
+	return &FlowPrefix6{}
+}
+
+func (f *FlowPrefix6) Unmarshal(buf []byte, cps caps.Caps) (int, error) {
 	if len(buf) < 2 {
-		return nil, 0, ErrLength
+		return 0, ErrLength
 	}
 
 	l := int(buf[0])
 	o := int(buf[1])
-	buf = buf[2:]
 	if l > 128 || (o > 0 && o >= l) {
-		return nil, 0, ErrValue
+		return 0, ErrValue
 	}
+	n := 2
+	buf = buf[n:]
 
 	b := (l - o) / 8
 	if (l-o)%8 != 0 {
 		b++
 	}
 	if len(buf) < b {
-		return nil, 0, ErrLength
+		return 0, ErrLength
 	}
 
 	var tmp [16]byte
-	n := copy(tmp[o/8:], buf[:b]) // the rest of [16]tmp is zeroed
+	n += copy(tmp[o/8:], buf[:b]) // the rest of [16]tmp is zeroed
 
 	// offset%8 is 1-7?
 	if r := o % 8; r != 0 && n > 0 {
@@ -357,10 +459,12 @@ func ParseFlowPrefix6(ft FlowKey, buf []byte) (FlowValue, int, error) {
 
 	pfx, err := netip.AddrFrom16(tmp).Prefix(l)
 	if err != nil {
-		return nil, 0, err
+		return 0, err
 	}
 
-	return &FlowPrefix6{pfx, o}, n + 2, nil
+	f.Prefix = pfx
+	f.Offset = o
+	return n, nil
 }
 
 func (f *FlowPrefix6) Marshal(dst []byte, cps caps.Caps) []byte {
@@ -388,62 +492,90 @@ func (f *FlowPrefix6) Marshal(dst []byte, cps caps.Caps) []byte {
 	return append(dst, addr...)
 }
 
-// ipv6address/offset-length if offset>0
+// ToJSON encodes f as JSON.
+// It writes "ipv6address/offset-length", if offset>0.
+// Otherwise, just an ordinary prefix.
 func (f *FlowPrefix6) ToJSON(dst []byte) []byte {
+	if f.Offset == 0 {
+		return json.Prefix(dst, f.Prefix)
+	}
 	dst = append(dst, '"')
 	dst = f.Prefix.Addr().AppendTo(dst)
 	dst = append(dst, '/')
-	if f.Offset > 0 {
-		dst = strconv.AppendInt(dst, int64(f.Offset), 10)
-		dst = append(dst, '-')
-	}
+	dst = strconv.AppendInt(dst, int64(f.Offset), 10)
+	dst = append(dst, '-')
 	dst = strconv.AppendInt(dst, int64(f.Prefix.Bits()), 10)
 	return append(dst, '"')
 }
 
-// FlowVal represents a list of operator + value pairs
-type FlowVal struct {
-	Op  []FlowOp
-	Val []uint64
+func (f *FlowPrefix6) FromJSON(src []byte) (err error) {
+	if bytes.IndexByte(src, '-') < 0 {
+		f.Prefix, err = json.UnPrefix(src)
+		return err
+	}
+
+	// split
+	srcip, srcol, ok := strings.Cut(json.SQ(src), "/")
+	if !ok {
+		return ErrValue
+	}
+
+	// ipaddr/
+	ip, err := netip.ParseAddr(srcip)
+	if err != nil {
+		return err
+	}
+
+	// offset-length
+	srco, srcl, ok := strings.Cut(srcol, "-")
+	if !ok {
+		return ErrValue
+	}
+	o, err := strconv.Atoi(srco)
+	if err != nil {
+		return err
+	}
+	l, err := strconv.Atoi(srcl)
+	if err != nil {
+		return err
+	}
+
+	// looks sane?
+	if l >= 0 && l <= 128 && o >= 0 && (o == 0 || o < l) {
+		f.Prefix = netip.PrefixFrom(ip, l)
+		f.Offset = o
+		return nil
+	}
+
+	// no
+	return ErrValue
 }
 
-type FlowOp uint16
-
-const (
-	FLOW_OP_IS_BITMASK FlowOp = 0x0100
-
-	FLOW_OP_LAST FlowOp = 0b10000000
-	FLOW_OP_AND  FlowOp = 0b01000000
-	FLOW_OP_LEN  FlowOp = 0b00110000
-
-	FLOW_OP_NUM FlowOp = 0b00000111 // numeric
-	FLOW_OP_LT  FlowOp = 0b00000100 // numeric
-	FLOW_OP_GT  FlowOp = 0b00000010 // numeric
-	FLOW_OP_EQ  FlowOp = 0b00000001 // numeric
-
-	FLOW_OP_BIT   FlowOp = 0b00000011 // bitmask
-	FLOW_OP_NOT   FlowOp = 0b00000010 // bitmask
-	FLOW_OP_MATCH FlowOp = 0b00000001 // bitmask
-)
-
-// Len returns the length of the corresponding value: either 1, 2, 4, or 8
-func (op FlowOp) Len() int {
-	lcode := op & FLOW_OP_LEN
-	return 1 << (lcode >> 4)
+// FlowGeneric represents a generic flowtype with a list of (operator, value) pairs
+type FlowGeneric struct {
+	Type FlowType
+	Op   []FlowOp
+	Val  []uint64
 }
 
-func ParseFlowVal(ft FlowKey, buf []byte) (comp FlowValue, n int, err error) {
-	fv := &FlowVal{}
+func NewFlowGeneric(ft FlowType) FlowValue {
+	return &FlowGeneric{
+		Type: ft,
+	}
+}
+
+func (fv *FlowGeneric) Unmarshal(buf []byte, cps caps.Caps) (int, error) {
+	n := 0
 	for len(buf) > 0 {
 		if len(buf) < 2 {
-			return nil, 0, ErrLength
+			return 0, ErrLength
 		}
 
 		// operator
 		op := FlowOp(buf[0])
 		buf = buf[1:]
 		n += 1
-		switch ft {
+		switch fv.Type {
 		case FLOW_TCP_FLAGS, FLOW_FRAG: // the only bitmask_op values
 			op |= FLOW_OP_IS_BITMASK
 		}
@@ -451,7 +583,7 @@ func ParseFlowVal(ft FlowKey, buf []byte) (comp FlowValue, n int, err error) {
 		// value
 		vlen := op.Len()
 		if len(buf) < vlen {
-			return nil, 0, ErrLength
+			return 0, ErrLength
 		}
 		valb := buf[:vlen]
 		buf = buf[vlen:]
@@ -480,10 +612,10 @@ func ParseFlowVal(ft FlowKey, buf []byte) (comp FlowValue, n int, err error) {
 		}
 	}
 
-	return fv, n, nil
+	return n, nil
 }
 
-func (f *FlowVal) Marshal(dst []byte, cps caps.Caps) []byte {
+func (f *FlowGeneric) Marshal(dst []byte, cps caps.Caps) []byte {
 	last := len(f.Op) - 1
 	for i := range f.Op {
 		op := f.Op[i]
@@ -514,7 +646,7 @@ func (f *FlowVal) Marshal(dst []byte, cps caps.Caps) []byte {
 	return dst
 }
 
-func (f *FlowVal) ToJSON(dst []byte) []byte {
+func (f *FlowGeneric) ToJSON(dst []byte) []byte {
 	dst = append(dst, '[')
 	for i := range f.Op {
 		op := f.Op[i]
@@ -551,7 +683,7 @@ func (f *FlowVal) ToJSON(dst []byte) []byte {
 			}
 
 			dst = append(dst, `,"val":`...)
-			dst = strconv.AppendUint(dst, uint64(val), 10)
+			dst = strconv.AppendUint(dst, val, 10)
 
 		} else {
 			switch op & FLOW_OP_BIT {
@@ -566,10 +698,11 @@ func (f *FlowVal) ToJSON(dst []byte) []byte {
 			}
 
 			dst = append(dst, `,"len":`...)
-			dst = strconv.AppendInt(dst, int64(op.Len()), 10)
+			dst = strconv.AppendUint(dst, uint64(op.Len()), 10)
 
-			dst = append(dst, `"`...)
-			dst = strconv.AppendUint(dst, uint64(val), 16)
+			dst = append(dst, `,"val":`...)
+			dst = append(dst, `"0x`...)
+			dst = strconv.AppendUint(dst, val, 16)
 			dst = append(dst, `"`...)
 		}
 
@@ -577,4 +710,94 @@ func (f *FlowVal) ToJSON(dst []byte) []byte {
 	}
 	dst = append(dst, ']')
 	return dst
+}
+
+func (f *FlowGeneric) FromJSON(src []byte) (err error) {
+	f.Op = f.Op[:0]
+	f.Val = f.Val[:0]
+	return json.ArrayEach(src, func(val []byte) error {
+		// parse op+val definition
+		var fop FlowOp
+		var fval uint64
+		err := json.ObjectEach(val, func(key, val []byte) error {
+			switch json.S(key) {
+			case "and":
+				and, err := json.UnBool(val)
+				if err != nil {
+					return err
+				}
+				if and {
+					fop |= FLOW_OP_AND
+				}
+
+			case "op":
+				switch json.SQ(val) {
+				case "false", "FALSE":
+					fop |= 0b000
+				case "==":
+					fop |= 0b001
+				case ">":
+					fop |= 0b010
+				case ">=":
+					fop |= 0b011
+				case "<":
+					fop |= 0b100
+				case "<=":
+					fop |= 0b101
+				case "!=":
+					fop |= 0b110
+				case "true", "TRUE":
+					fop |= 0b111
+				case "ANY", "any":
+					fop |= FLOW_OP_IS_BITMASK
+				case "ALL", "all":
+					fop |= FLOW_OP_IS_BITMASK | 0b01
+				case "NONE", "none":
+					fop |= FLOW_OP_IS_BITMASK | 0b10
+				case "NOT-ALL", "not-all":
+					fop |= FLOW_OP_IS_BITMASK | 0b11
+				default:
+					return ErrValue
+				}
+
+			case "val":
+				val, err := strconv.ParseUint(json.SQ(val), 0, 64)
+				if err != nil {
+					return err
+				}
+				fval = val
+
+			case "len":
+				l, err := strconv.ParseUint(json.SQ(val), 10, 64)
+				if err != nil {
+					return err
+				}
+				switch l {
+				case 1:
+					fop |= 0b00 << 4
+				case 2:
+					fop |= 0b01 << 4
+				case 4:
+					fop |= 0b10 << 4
+				case 8:
+					fop |= 0b11 << 4
+				default:
+					return ErrValue
+				}
+
+			default:
+				return ErrValue
+			}
+
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
+		// add to f, iterate to next (operator, value) element
+		f.Op = append(f.Op, fop)
+		f.Val = append(f.Val, fval)
+		return nil
+	})
 }

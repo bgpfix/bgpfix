@@ -433,17 +433,17 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 		switch i++; i {
 		case 0: // time
 			if typ == jsp.String && len(val) > 0 {
-				msg.Time, err = time.Parse(JSON_TIME, json.BS(val))
+				msg.Time, err = time.Parse(JSON_TIME, json.S(val))
 			}
 
 		case 1: // seq number
 			if typ == jsp.Number {
-				msg.Seq, err = strconv.ParseInt(json.BS(val), 10, 64)
+				msg.Seq, err = strconv.ParseInt(json.S(val), 10, 64)
 			}
 
 		case 2: // direction
 			if typ == jsp.String {
-				msg.Dir, err = DirString(json.BS(val))
+				msg.Dir, err = DirString(json.S(val))
 			} else if typ == jsp.Number {
 				var v byte
 				v, err = json.UnByte(val)
@@ -452,7 +452,7 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 
 		case 3: // type
 			if typ == jsp.String {
-				msg.Type, err = TypeString(json.BS(val))
+				msg.Type, err = TypeString(json.S(val))
 			} else if typ == jsp.Number {
 				var v byte
 				v, err = json.UnByte(val)
