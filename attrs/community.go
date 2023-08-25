@@ -2,12 +2,10 @@ package attrs
 
 import (
 	"bytes"
-	"errors"
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
-	jsp "github.com/buger/jsonparser"
 )
 
 // Community represents ATTR_COMMUNITY
@@ -66,31 +64,23 @@ func (a *Community) ToJSON(dst []byte) []byte {
 
 func (a *Community) FromJSON(src []byte) error {
 	sep := []byte(":")
-	var errs []error
-	jsp.ArrayEach(src, func(value []byte, dataType jsp.ValueType, _ int, _ error) {
-		if dataType != jsp.String {
-			return
-		}
-
-		d := bytes.Split(value, sep)
+	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
+		d := bytes.Split(val, sep)
 		if len(d) != 2 {
-			errs = append(errs, ErrValue)
-			return
+			return ErrValue
 		}
 
 		asn, err := strconv.ParseUint(json.S(d[0]), 0, 16)
 		if err != nil {
-			errs = append(errs, err)
-			return
+			return err
 		}
 
-		val, err := strconv.ParseUint(json.S(d[1]), 0, 16)
+		cval, err := strconv.ParseUint(json.S(d[1]), 0, 16)
 		if err != nil {
-			errs = append(errs, err)
-			return
+			return err
 		}
 
-		a.Add(uint16(asn), uint16(val))
+		a.Add(uint16(asn), uint16(cval))
+		return nil
 	})
-	return errors.Join(errs...)
 }

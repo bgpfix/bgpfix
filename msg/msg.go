@@ -13,7 +13,6 @@ import (
 	"github.com/bgpfix/bgpfix/binary"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
-	jsp "github.com/buger/jsonparser"
 )
 
 // Msg represents a BGP message.
@@ -395,7 +394,7 @@ func (msg *Msg) ToJSON(dst []byte) []byte {
 	case UPDATE:
 		dst = msg.Update.ToJSON(dst)
 	case KEEPALIVE:
-		dst = append(dst, `null`...)
+		dst = append(dst, json.Null...)
 	case NOTIFY:
 		dst = append(dst, `"`...)
 		dst = append(dst, msg.Data[2:]...) // FIXME
@@ -421,39 +420,27 @@ func (msg *Msg) ToJSON(dst []byte) []byte {
 
 // FromJSON reads msg JSON representation from src
 func (msg *Msg) FromJSON(src []byte) (reterr error) {
-	// catch ArrayEach errors
-	defer func() {
-		if r, ok := recover().(error); ok {
-			reterr = r
-		}
-	}()
-
-	i := -1
-	_, jserr := jsp.ArrayEach(src, func(val []byte, typ jsp.ValueType, _ int, err error) {
-		switch i++; i {
+	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) (err error) {
+		switch key {
 		case 0: // time
-			if typ == jsp.String && len(val) > 0 {
-				msg.Time, err = time.Parse(JSON_TIME, json.S(val))
-			}
+			msg.Time, err = time.Parse(JSON_TIME, json.S(val))
 
 		case 1: // seq number
-			if typ == jsp.Number {
-				msg.Seq, err = strconv.ParseInt(json.S(val), 10, 64)
-			}
+			msg.Seq, err = strconv.ParseInt(json.S(val), 10, 64)
 
-		case 2: // direction
-			if typ == jsp.String {
+		case 2: // direction TODO: better
+			if typ == json.STRING {
 				msg.Dir, err = DirString(json.S(val))
-			} else if typ == jsp.Number {
+			} else if typ == json.NUMBER {
 				var v byte
 				v, err = json.UnByte(val)
 				msg.Dir = Dir(v)
 			}
 
-		case 3: // type
-			if typ == jsp.String {
+		case 3: // type TODO: better
+			if typ == json.STRING {
 				msg.Type, err = TypeString(json.S(val))
-			} else if typ == jsp.Number {
+			} else if typ == json.NUMBER {
 				var v byte
 				v, err = json.UnByte(val)
 				msg.Type = Type(v)
@@ -462,18 +449,11 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 				msg.SetUp(msg.Type)
 			}
 
-		case 4: // length (ignored)
-
 		case 5: // upper layer
-			if typ == jsp.Null {
-				break // OK, dont touch the upper layer
-			} else if typ == jsp.String {
-				if val[0] == '0' && val[1] == 'x' {
-					msg.buf, err = json.UnHex(msg.buf, val)
-				} else {
-					msg.buf = append(msg.buf[:0], val...) // NB: copy
-				}
+			if typ == json.STRING {
+				msg.buf, err = json.UnHex(val, msg.buf[:0])
 				msg.Data = msg.buf
+				msg.ref = false
 				msg.Upper = INVALID
 			} else {
 				switch msg.Type {
@@ -487,22 +467,11 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 			}
 
 		case 6: // action
-			if typ == jsp.Number {
-				msg.Action, err = json.UnByte(val)
-			}
+			msg.Action, err = json.UnByte(val)
 
 		case 7: // value
 			msg.Value = string(val) // NB: copy
 		}
-
-		if err != nil {
-			panic(fmt.Errorf("JSON[%d]: %w", i, err))
-		}
+		return err
 	})
-
-	if jserr != nil {
-		return fmt.Errorf("JSON: %w", jserr)
-	} else {
-		return nil
-	}
 }

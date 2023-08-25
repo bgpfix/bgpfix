@@ -46,10 +46,10 @@ func (c *Raw) Common(cap2 Cap) Cap {
 func (c *Raw) ToJSON(dst []byte) []byte {
 	switch len(c.Raw) {
 	case 0:
-		dst = append(dst, `true`...)
+		dst = append(dst, json.True...)
 	case 1:
 		if len(c.Raw[0]) == 0 {
-			return append(dst, `true`...)
+			return append(dst, json.True...)
 		} else {
 			dst = json.Hex(dst, c.Raw[0])
 		}

@@ -6,7 +6,6 @@ import (
 	"github.com/bgpfix/bgpfix/af"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
-	jsp "github.com/buger/jsonparser"
 )
 
 // MPPrefixes represents ATTR_MP for the generic RFC4760 IP prefix encoding
@@ -89,19 +88,19 @@ func (a *MPPrefixes) ToJSON(dst []byte) []byte {
 }
 
 func (a *MPPrefixes) FromJSON(src []byte) error {
-	return jsp.ObjectEach(src, func(key, value []byte, dataType jsp.ValueType, offset int) (err error) {
-		switch json.S(key) {
+	return json.ObjectEach(src, func(key string, val []byte, typ json.Type) (err error) {
+		switch key {
 		case "nexthop":
 			if a.Code() == ATTR_MP_REACH {
-				a.NextHop, err = netip.ParseAddr(json.S(value))
+				a.NextHop, err = netip.ParseAddr(json.S(val))
 			}
 		case "link-local":
 			if a.Code() == ATTR_MP_REACH {
-				a.LinkLocal, err = netip.ParseAddr(json.S(value))
+				a.LinkLocal, err = netip.ParseAddr(json.S(val))
 			}
 		case "prefixes":
-			a.Prefixes, err = json.UnPrefixes(a.Prefixes, value)
+			a.Prefixes, err = json.UnPrefixes(val, a.Prefixes)
 		}
-		return
+		return err
 	})
 }

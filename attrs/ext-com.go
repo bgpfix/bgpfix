@@ -6,11 +6,10 @@ import (
 
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
-	jsp "github.com/buger/jsonparser"
 )
 
-// ExtCom represents ATTR_EXT_COMMUNITY
-type ExtCom struct {
+// Extcom represents ATTR_EXT_COMMUNITY
+type Extcom struct {
 	CodeFlags
 
 	Type  []ExtcomType  // top 2 bytes (always the "Extended" type)
@@ -94,6 +93,23 @@ var ExtcomNewFuncs = map[ExtcomType]ExtcomNewFunc{
 	EXTCOM_IP4: NewExtcomAddr,
 }
 
+func NewExtcom(at CodeFlags) Attr {
+	return &Extcom{CodeFlags: at}
+}
+
+// NewExtcomValue returns a new ExtcomValue for given ExtcomType
+func NewExtcomValue(et ExtcomType) ExtcomValue {
+	var ev ExtcomValue
+	if newfunc, ok := ExtcomNewFuncs[et.Value()]; ok {
+		ev = newfunc(et.Value())
+	} else if newfunc, ok := ExtcomNewFuncs[et.Type()]; ok {
+		ev = newfunc(et.Type())
+	} else {
+		ev = NewExtcomRaw(et)
+	}
+	return ev
+}
+
 // Value returns et with the transitive bit set to 0 (meaning transitive across ASes)
 func (et ExtcomType) Value() ExtcomType {
 	return et & (^EXTCOM_TRANSITIVE)
@@ -139,11 +155,7 @@ func (et *ExtcomType) FromJSON(src []byte) error {
 	return nil
 }
 
-func NewExtCom(at CodeFlags) Attr {
-	return &ExtCom{CodeFlags: at}
-}
-
-func (a *ExtCom) Unmarshal(buf []byte, cps caps.Caps) error {
+func (a *Extcom) Unmarshal(buf []byte, cps caps.Caps) error {
 	for len(buf) > 0 {
 		if len(buf) < 8 {
 			return ErrLength
@@ -156,26 +168,17 @@ func (a *ExtCom) Unmarshal(buf []byte, cps caps.Caps) error {
 		buf = buf[8:]                  // next ext com.
 
 		// interpret and store
-		var val ExtcomValue
-		if newfunc, ok := ExtcomNewFuncs[et.Value()]; ok {
-			val = newfunc(et.Value())
-		} else if cb, ok := ExtcomNewFuncs[et.Type()]; ok {
-			val = cb(et.Type())
-		} else {
-			val = NewExtcomRaw(et)
-		}
-		err := val.Unmarshal(u64)
-		if err != nil {
+		ev := NewExtcomValue(et)
+		if err := ev.Unmarshal(u64); err != nil {
 			return err
 		}
-
-		a.Add(et, val)
+		a.Add(et, ev)
 	}
 
 	return nil
 }
 
-func (a *ExtCom) Marshal(dst []byte, cps caps.Caps) []byte {
+func (a *Extcom) Marshal(dst []byte, cps caps.Caps) []byte {
 	tl := 8 * len(a.Type)
 	dst = a.CodeFlags.MarshalLen(dst, tl)
 	for i := range a.Type {
@@ -192,7 +195,7 @@ func (a *ExtCom) Marshal(dst []byte, cps caps.Caps) []byte {
 	return dst
 }
 
-func (a *ExtCom) ToJSON(dst []byte) []byte {
+func (a *Extcom) ToJSON(dst []byte) []byte {
 	dst = append(dst, '[')
 	first := true
 	for i := range a.Type {
@@ -220,66 +223,51 @@ func (a *ExtCom) ToJSON(dst []byte) []byte {
 	return append(dst, ']')
 }
 
-func (a *ExtCom) FromJSON(src []byte) (reterr error) {
-	defer func() {
-		if r := recover(); r != nil {
-			reterr = fmt.Errorf("%w: %v", ErrValue, r)
-		}
-	}()
-
-	jsp.ArrayEach(src, func(value []byte, dataType jsp.ValueType, _ int, _ error) {
-		if dataType != jsp.Object {
+func (a *Extcom) FromJSON(src []byte) error {
+	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
+		if typ != json.OBJECT {
 			panic("not an object")
 		}
 
 		// get community type
 		var et ExtcomType
-		v, _, _, err := jsp.Get(value, "type")
-		if err != nil {
-			panic("could not get type")
-		} else if et.FromJSON(v) != nil {
-			panic("could not parse type")
+		v := json.Get(val, "type")
+		if v == nil {
+			return ErrExtcomType
+		} else if err := et.FromJSON(v); err != nil {
+			return fmt.Errorf("%w: %w", ErrExtcomType, err)
 		}
 
 		// transitive? (best-effort)
-		if nont, _ := jsp.GetBoolean(value, "nontransitive"); nont {
-			et |= EXTCOM_TRANSITIVE // set transitive bit, meaning "non-transitive" (sic)
+		if json.GetBool(val, "nontransitive") {
+			et |= EXTCOM_TRANSITIVE // set the transitive bit, meaning "non-transitive" (sic)
 		}
 
 		// get community value
-		v, _, _, err = jsp.Get(value, "value")
-		if err != nil {
-			panic("could not get value")
+		v = json.Get(val, "value")
+		if v == nil {
+			return ErrExtcomValue
 		}
 
-		// parse the value
-		var val ExtcomValue
-		if newfunc, ok := ExtcomNewFuncs[et.Value()]; ok {
-			val = newfunc(et.Value())
-		} else if newfunc, ok := ExtcomNewFuncs[et.Type()]; ok {
-			val = newfunc(et.Type())
-		} else {
-			val = NewExtcomRaw(et)
+		// parse and store
+		ev := NewExtcomValue(et)
+		if err := ev.FromJSON(v); err != nil {
+			return fmt.Errorf("%w: %w", ErrExtcomValue, err)
 		}
-		if err := val.FromJSON(v); err != nil {
-			panic(err.Error())
-		}
-
-		// store
 		a.Type = append(a.Type, et)
-		a.Value = append(a.Value, val)
+		a.Value = append(a.Value, ev)
+		return nil
 	})
-	return
 }
 
 // Add appends extended community type et with value val
-func (a *ExtCom) Add(et ExtcomType, val ExtcomValue) {
+func (a *Extcom) Add(et ExtcomType, val ExtcomValue) {
 	a.Type = append(a.Type, et)
 	a.Value = append(a.Value, val)
 }
 
 // Drop drops extended community type et
-func (a *ExtCom) Drop(et ExtcomType) {
+func (a *Extcom) Drop(et ExtcomType) {
 	for i, et2 := range a.Type {
 		if et2 == et {
 			a.Value[i] = nil
@@ -288,7 +276,7 @@ func (a *ExtCom) Drop(et ExtcomType) {
 }
 
 // Find returns index of community type et, or -1
-func (a *ExtCom) Find(et ExtcomType) int {
+func (a *Extcom) Find(et ExtcomType) int {
 	for i, et2 := range a.Type {
 		if et2 == et && a.Value[i] != nil {
 			return i

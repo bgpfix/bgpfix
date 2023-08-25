@@ -1,6 +1,7 @@
 package attrs
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -101,7 +102,7 @@ var NewFuncs = map[Code]NewFunc{
 	ATTR_MP_REACH:        NewMP,
 	ATTR_MP_UNREACH:      NewMP,
 	ATTR_COMMUNITY:       NewCommunity,
-	ATTR_EXT_COMMUNITY:   NewExtCom,
+	ATTR_EXT_COMMUNITY:   NewExtcom,
 	ATTR_LARGE_COMMUNITY: NewLargeCom,
 	ATTR_AGGREGATOR:      NewAggregator,
 	ATTR_AS4AGGREGATOR:   NewAggregator,
@@ -188,18 +189,17 @@ func (ac Code) ToJSON(dst []byte) []byte {
 }
 
 // FromJSON() sets ac from JSON in src
-func (ac *Code) FromJSON(src []byte) error {
-	name := json.SQ(src)
-	if val, ok := CodeValue[name]; ok {
+func (ac *Code) FromJSON(src string) error {
+	if val, ok := CodeValue[src]; ok {
 		*ac = val
-	} else if aft, ok := strings.CutPrefix(name, `ATTR_`); ok {
+	} else if aft, ok := strings.CutPrefix(src, `ATTR_`); ok {
 		val, err := strconv.ParseUint(aft, 0, 8)
 		if err != nil {
-			return err
+			return fmt.Errorf("%w: %w", ErrAttrCode, err)
 		}
 		*ac = Code(val)
 	} else {
-		return ErrValue
+		return ErrAttrCode
 	}
 	return nil
 }
@@ -238,8 +238,11 @@ func (af *Flags) FromJSON(src []byte) error {
 			*af |= ATTR_EXTENDED
 		default:
 			fv, err := json.UnByte(src[i:])
+			if err != nil {
+				return ErrAttrFlags
+			}
 			*af |= Flags(fv)
-			return err
+			return nil
 		}
 	}
 	return nil

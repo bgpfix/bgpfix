@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"net/netip"
-	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
@@ -277,16 +276,16 @@ func (o *Open) String() string {
 // ToJSON appends JSON representation of o to dst
 func (o *Open) ToJSON(dst []byte) []byte {
 	dst = append(dst, `{"bgp":`...)
-	dst = strconv.AppendUint(dst, uint64(o.Version), 10)
+	dst = json.Byte(dst, o.Version)
 
 	dst = append(dst, `,"asn":`...)
-	dst = strconv.AppendUint(dst, uint64(o.GetASN()), 10)
+	dst = json.Int(dst, o.GetASN())
 
 	dst = append(dst, `,"id":"`...)
-	dst = o.Identifier.AppendTo(dst)
+	dst = json.Addr(dst, o.Identifier)
 
 	dst = append(dst, `","hold":`...)
-	dst = strconv.AppendUint(dst, uint64(o.HoldTime), 10)
+	dst = json.Uint16(dst, o.HoldTime)
 
 	if o.Caps.Valid() {
 		dst = append(dst, `,"caps":`...)
@@ -302,5 +301,31 @@ func (o *Open) ToJSON(dst []byte) []byte {
 
 // FromJSON reads o JSON representation from src
 func (o *Open) FromJSON(src []byte) error {
-	return nil // TODO
+	return json.ObjectEach(src, func(key string, val []byte, typ json.Type) (err error) {
+		switch key {
+		case "bgp":
+			o.Version, err = json.UnByte(val)
+
+		case "asn":
+			asn, err := json.UnUint32(val)
+			if err != nil {
+				return err
+			}
+			o.SetASN(int(asn))
+
+		case "id":
+			o.Identifier, err = json.UnAddr(val)
+
+		case "hold":
+			o.HoldTime, err = json.UnUint16(val)
+
+		case "caps":
+			err = o.Caps.FromJSON(val)
+
+		case "params":
+			o.Params, err = json.UnHex(val, o.Params[:0])
+
+		}
+		return err
+	})
 }

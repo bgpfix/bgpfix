@@ -2,12 +2,10 @@ package attrs
 
 import (
 	"bytes"
-	"errors"
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
-	jsp "github.com/buger/jsonparser"
 )
 
 // LargeCom represents ATTR_LARGE_COMMUNITY
@@ -75,37 +73,28 @@ func (a *LargeCom) ToJSON(dst []byte) []byte {
 
 func (a *LargeCom) FromJSON(src []byte) error {
 	sep := []byte(":")
-	var errs []error
-	jsp.ArrayEach(src, func(value []byte, dataType jsp.ValueType, _ int, _ error) {
-		if dataType != jsp.String {
-			return
-		}
-
-		d := bytes.Split(value, sep)
+	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
+		d := bytes.Split(val, sep)
 		if len(d) != 3 {
-			errs = append(errs, ErrValue)
-			return
+			return ErrValue
 		}
 
 		asn, err := strconv.ParseUint(json.S(d[0]), 0, 32)
 		if err != nil {
-			errs = append(errs, err)
-			return
+			return err
 		}
 
 		val1, err := strconv.ParseUint(json.S(d[1]), 0, 32)
 		if err != nil {
-			errs = append(errs, err)
-			return
+			return err
 		}
 
 		val2, err := strconv.ParseUint(json.S(d[2]), 0, 32)
 		if err != nil {
-			errs = append(errs, err)
-			return
+			return err
 		}
 
 		a.Add(uint32(asn), uint32(val1), uint32(val2))
+		return nil
 	})
-	return errors.Join(errs...)
 }

@@ -10,7 +10,6 @@ import (
 	"github.com/bgpfix/bgpfix/attrs"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
-	jsp "github.com/buger/jsonparser"
 )
 
 // Update represents a BGP UPDATE message
@@ -290,24 +289,19 @@ func (u *Update) ToJSON(dst []byte) []byte {
 
 // FromJSON reads u JSON representation from src
 func (u *Update) FromJSON(src []byte) error {
-	return jsp.ObjectEach(src, func(key, val []byte, typ jsp.ValueType, _ int) (err error) {
-		switch json.S(key) {
+	return json.ObjectEach(src, func(key string, val []byte, typ json.Type) (err error) {
+		switch key {
 		case "reach":
-			u.Reach, err = json.UnPrefixes(u.Reach[:0], val)
+			u.Reach, err = json.UnPrefixes(val, u.Reach[:0])
 		case "unreach":
-			u.Unreach, err = json.UnPrefixes(u.Unreach[:0], val)
+			u.Unreach, err = json.UnPrefixes(val, u.Unreach[:0])
 		case "attrs":
-			if typ == jsp.String {
-				u.RawAttrs, err = json.UnHex(u.RawAttrs[:0], val)
-			} else if typ == jsp.Object {
+			if typ == json.STRING {
+				u.RawAttrs, err = json.UnHex(val, u.RawAttrs[:0])
+			} else {
 				err = u.Attrs.FromJSON(val)
 			}
 		}
-
-		if err != nil {
-			return fmt.Errorf("update[%s]: %w", key, err)
-		} else {
-			return nil
-		}
+		return err
 	})
 }

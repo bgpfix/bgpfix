@@ -6,11 +6,10 @@
 package attrs
 
 import (
-	"fmt"
 	"sort"
 
 	"github.com/bgpfix/bgpfix/binary"
-	jsp "github.com/buger/jsonparser"
+	"github.com/bgpfix/bgpfix/json"
 )
 
 var msb = binary.Msb
@@ -170,43 +169,41 @@ func (ats *Attrs) ToJSON(dst []byte) []byte {
 }
 
 func (ats *Attrs) FromJSON(src []byte) error {
-	mkerr := func(key []byte, err error) error {
-		return fmt.Errorf("attrs[%s]: %w", key, err)
-	}
-
-	return jsp.ObjectEach(src, func(key, val []byte, _ jsp.ValueType, _ int) error {
+	return json.ObjectEach(src, func(key string, val []byte, typ json.Type) error {
 		// is key a valid attribute code?
 		var acode Code
-		if acode.FromJSON(key) != nil {
-			return mkerr(key, ErrAttrCode)
+		if err := acode.FromJSON(key); err != nil {
+			return err
 		}
 		attr := ats.Use(acode)
 
-		// fetch the value and flags
-		fval, _, _, ferr := jsp.Get(val, "flags")
-		vval, _, _, verr := jsp.Get(val, "value")
-
 		// has flags?
-		if ferr == nil {
+		v := json.Get(val, "flags")
+		if v != nil {
 			var af Flags
-			if af.FromJSON(fval) != nil {
-				return mkerr(key, ErrAttrFlags)
+			if err := af.FromJSON(v); err != nil {
+				return err
 			}
 			attr.SetFlags(af)
-		} else { // use default flags, try to use whole buf as vval
-			vval = val
-			verr = nil
+
+			// fetch the value
+			v = json.Get(val, "value")
+		} else {
+			// no flags (use defults), try to use the whole val
+			v = val
 		}
 
 		// has the value?
-		if verr != nil || len(vval) == 0 {
-			return mkerr(key, ErrValue)
+		if len(v) == 0 {
+			return ErrAttrValue
 		}
 
-		// parse
-		if err := attr.FromJSON(vval); err != nil {
-			return mkerr(key, err)
+		// parse?
+		if err := attr.FromJSON(v); err != nil {
+			return err
 		}
+
+		// success!
 		return nil
 	})
 }

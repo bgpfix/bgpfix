@@ -11,7 +11,6 @@ import (
 	"github.com/bgpfix/bgpfix/af"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
-	jsp "github.com/buger/jsonparser"
 )
 
 // NewMPFlowspec returns, for a parent mp attribute, a new MPValue implementing Flowspec
@@ -246,8 +245,8 @@ func (a *MPFlowspec) ToJSON(dst []byte) []byte {
 }
 
 func (a *MPFlowspec) FromJSON(src []byte) error {
-	return jsp.ObjectEach(src, func(key, val []byte, dataType jsp.ValueType, offset int) (err error) {
-		switch json.S(key) {
+	return json.ObjectEach(src, func(key string, val []byte, typ json.Type) (err error) {
+		switch key {
 		case "nexthop":
 			if a.Code() == ATTR_MP_REACH {
 				a.NextHop, err = netip.ParseAddr(json.S(val))
@@ -257,9 +256,9 @@ func (a *MPFlowspec) FromJSON(src []byte) error {
 				a.LinkLocal, err = netip.ParseAddr(json.S(val))
 			}
 		case "rules":
-			return json.ArrayEach(val, func(arrval []byte) error {
+			return json.ArrayEach(val, func(key int, val []byte, typ json.Type) error {
 				rule := make(FlowRule)
-				err := rule.FromJSON(arrval, a.Afi())
+				err := rule.FromJSON(val, a.Afi())
 				if err != nil {
 					return err
 				}
@@ -317,18 +316,18 @@ func (fr FlowRule) ToJSON(dst []byte) []byte {
 }
 
 func (fr FlowRule) FromJSON(src []byte, afi af.AFI) error {
-	return json.ObjectEach(src, func(key, val []byte) error {
+	return json.ObjectEach(src, func(key string, val []byte, typ json.Type) error {
 		// lookup flow type
-		ftype, ok := FlowTypeValue[json.S(key)]
+		ftype, ok := FlowTypeValue[key]
 		if !ok {
-			return fmt.Errorf("%s: %w", key, ErrFlowType)
+			return ErrFlowType
 		}
 
 		// create and read json
 		fval := NewFlowValue(ftype, afi)
 		err := fval.FromJSON(val)
 		if err != nil {
-			return fmt.Errorf("%s: %w: %w", key, ErrFlowValue, err)
+			return fmt.Errorf("%w: %w", ErrFlowValue, err)
 		}
 
 		// store
@@ -360,7 +359,7 @@ func (f *FlowRaw) ToJSON(dst []byte) []byte {
 }
 
 func (f *FlowRaw) FromJSON(src []byte) (err error) {
-	f.Raw, err = json.UnHex(f.Raw[:0], src)
+	f.Raw, err = json.UnHex(src, f.Raw[:0])
 	return err
 }
 
@@ -715,12 +714,12 @@ func (f *FlowGeneric) ToJSON(dst []byte) []byte {
 func (f *FlowGeneric) FromJSON(src []byte) (err error) {
 	f.Op = f.Op[:0]
 	f.Val = f.Val[:0]
-	return json.ArrayEach(src, func(val []byte) error {
+	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
 		// parse op+val definition
 		var fop FlowOp
 		var fval uint64
-		err := json.ObjectEach(val, func(key, val []byte) error {
-			switch json.S(key) {
+		err := json.ObjectEach(val, func(key string, val []byte, typ json.Type) error {
+			switch key {
 			case "and":
 				and, err := json.UnBool(val)
 				if err != nil {

@@ -2,13 +2,11 @@ package attrs
 
 import (
 	"bytes"
-	"fmt"
 	"net/netip"
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
-	jsp "github.com/buger/jsonparser"
 )
 
 // Raw represents generic raw attribute
@@ -38,14 +36,14 @@ func (a *Raw) ToJSON(dst []byte) []byte {
 	if len(a.Raw) > 0 {
 		dst = json.Hex(dst, a.Raw)
 	} else {
-		dst = append(dst, `true`...)
+		dst = append(dst, json.True...)
 	}
 	return dst
 }
 
 func (a *Raw) FromJSON(src []byte) (err error) {
-	if !bytes.Equal(src, []byte(`true`)) {
-		a.Raw, err = json.UnHex(a.Raw[:0], src)
+	if !bytes.Equal(src, json.True) {
+		a.Raw, err = json.UnHex(src, a.Raw[:0])
 	}
 	return
 }
@@ -127,11 +125,11 @@ func (a *U32) Marshal(dst []byte, cps caps.Caps) []byte {
 }
 
 func (a *U32) ToJSON(dst []byte) []byte {
-	return json.U32(dst, a.Val)
+	return json.Uint32(dst, a.Val)
 }
 
 func (a *U32) FromJSON(src []byte) (err error) {
-	a.Val, err = json.UnU32(src)
+	a.Val, err = json.UnUint32(src)
 	return
 }
 
@@ -196,12 +194,12 @@ func (a *Aggregator) ToJSON(dst []byte) []byte {
 }
 
 func (a *Aggregator) FromJSON(src []byte) error {
-	return jsp.ObjectEach(src, func(key, value []byte, dataType jsp.ValueType, offset int) (err error) {
-		switch json.S(key) {
+	return json.ObjectEach(src, func(key string, val []byte, typ json.Type) (err error) {
+		switch key {
 		case "asn":
-			a.ASN, err = json.UnU32(value)
+			a.ASN, err = json.UnUint32(val)
 		case "addr":
-			a.Addr, err = netip.ParseAddr(json.S(value))
+			a.Addr, err = netip.ParseAddr(json.S(val))
 		}
 		return
 	})
@@ -326,25 +324,16 @@ func (a *IPList) ToJSON(dst []byte) []byte {
 }
 
 func (a *IPList) FromJSON(src []byte) (reterr error) {
-	defer func() {
-		if r, ok := recover().(string); ok {
-			reterr = fmt.Errorf("%w: %s", ErrValue, r)
-		}
-	}()
-
-	jsp.ArrayEach(src, func(value []byte, dataType jsp.ValueType, _ int, _ error) {
-		addr, err := netip.ParseAddr(json.S(value))
+	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
+		addr, err := netip.ParseAddr(json.S(val))
 		if err != nil {
-			panic(err)
+			return err
 		}
 		if addr.Is6() != a.IPv6 {
-			if a.IPv6 {
-				panic("not an IPv6 address")
-			} else {
-				panic("not an IPv4 address")
-			}
+			return ErrAF
 		}
 		a.Addr = append(a.Addr, addr)
+		return nil
 	})
 
 	return

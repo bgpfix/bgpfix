@@ -7,7 +7,6 @@ import (
 
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
-	jsp "github.com/buger/jsonparser"
 )
 
 type ExtcomFlowRate struct {
@@ -108,12 +107,8 @@ func (e *ExtcomFlowAction) ToJSON(dst []byte) []byte {
 }
 
 func (e *ExtcomFlowAction) FromJSON(src []byte) error {
-	if v, _ := jsp.GetBoolean(src, "terminal"); v {
-		e.Terminal = true
-	}
-	if v, _ := jsp.GetBoolean(src, "sample"); v {
-		e.Sample = true
-	}
+	e.Terminal = json.GetBool(src, "terminal")
+	e.Sample = json.GetBool(src, "sample")
 	return nil
 }
 
@@ -146,9 +141,7 @@ func (e *ExtcomFlowRedirectNH) ToJSON(dst []byte) []byte {
 }
 
 func (e *ExtcomFlowRedirectNH) FromJSON(src []byte) error {
-	if v, _ := jsp.GetBoolean(src, "copy"); v {
-		e.Copy = true
-	}
+	e.Copy = json.GetBool(src, "copy")
 	return nil
 }
 

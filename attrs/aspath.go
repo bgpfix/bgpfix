@@ -6,7 +6,6 @@ import (
 
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
-	jsp "github.com/buger/jsonparser"
 )
 
 // Aspath represents ATTR_ASPATH or ATTR_AS4PATH
@@ -142,57 +141,40 @@ func (a *Aspath) ToJSON(dst []byte) []byte {
 	return dst
 }
 
-func (a *Aspath) FromJSON(src []byte) (reterr error) {
-	defer func() {
-		if r, ok := recover().(string); ok {
-			reterr = fmt.Errorf("%w: %s", ErrValue, r)
-		}
-	}()
+func (a *Aspath) FromJSON(src []byte) error {
+	var seg AspathSegment
 
-	parse_set := func(src []byte) {
-		seg := AspathSegment{IsSet: true}
-		jsp.ArrayEach(src, func(value []byte, dataType jsp.ValueType, _ int, _ error) {
-			if dataType != jsp.Number {
-				panic("AS_SET not number")
-			}
-
-			v, err := strconv.ParseUint(json.S(value), 0, 32)
-			if err != nil {
-				panic("AS_SET invalid value")
-			}
-
+	// seg_add adds asn to seg.List
+	seg_add := func(asn []byte) error {
+		v, err := strconv.ParseUint(json.S(asn), 0, 32)
+		if err == nil {
 			seg.List = append(seg.List, uint32(v))
-		})
+		}
+		return err
+	}
+
+	// seg_push adds seg to a.Segments if needed
+	seg_push := func() {
 		if len(seg.List) > 0 {
 			a.Segments = append(a.Segments, seg)
 		}
+		seg = AspathSegment{} // clear
 	}
 
-	var seg AspathSegment
-	jsp.ArrayEach(src, func(value []byte, dataType jsp.ValueType, _ int, _ error) {
+	err := json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
 		// is an AS_SET?
-		if dataType == jsp.Array {
-			if len(seg.List) > 0 {
-				a.Segments = append(a.Segments, seg)
-				seg = AspathSegment{} // clear
-			}
-			parse_set(value)
-			return
+		if typ == json.ARRAY {
+			seg_push()
+			err := json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
+				return seg_add(val)
+			})
+			seg.IsSet = true
+			seg_push()
+			return err
 		}
 
-		if dataType != jsp.Number {
-			panic("AS_PATH not number")
-		}
-
-		v, err := strconv.ParseUint(json.S(value), 0, 32)
-		if err != nil {
-			panic("AS_PATH invalid value")
-		}
-
-		seg.List = append(seg.List, uint32(v))
+		return seg_add(val)
 	})
-	if len(seg.List) > 0 {
-		a.Segments = append(a.Segments, seg)
-	}
-	return
+	seg_push()
+	return err
 }

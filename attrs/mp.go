@@ -4,7 +4,6 @@ import (
 	"github.com/bgpfix/bgpfix/af"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
-	jsp "github.com/buger/jsonparser"
 )
 
 // MP represents ATTR_MP_REACH and ATTR_MP_UNREACH attributes
@@ -54,6 +53,16 @@ func NewMP(at CodeFlags) Attr {
 	return &MP{CodeFlags: at}
 }
 
+// NewMPValue returns a new MPValue for parent mp,
+// or nil if its AFI/SAFI pair is not supported.
+func NewMPValue(mp *MP) MPValue {
+	if newfunc, ok := MPNewFuncs[mp.AS]; ok {
+		return newfunc(mp)
+	} else {
+		return nil
+	}
+}
+
 func (mp *MP) Unmarshal(buf []byte, cps caps.Caps) error {
 	// afi + safi
 	if len(buf) < 3 {
@@ -82,8 +91,8 @@ func (mp *MP) Unmarshal(buf []byte, cps caps.Caps) error {
 	mp.Data = buf
 
 	// parse the value?
-	if newfunc, ok := MPNewFuncs[mp.AS]; ok {
-		mp.Value = newfunc(mp)
+	mp.Value = NewMPValue(mp)
+	if mp.Value != nil {
 		return mp.Value.Unmarshal(cps)
 	}
 
@@ -131,39 +140,26 @@ func (mp *MP) ToJSON(dst []byte) []byte {
 }
 
 func (mp *MP) FromJSON(src []byte) error {
-	// has "af"?
-	afsrc, _, _, err := jsp.Get(src, "af")
-	if err != nil {
-		return ErrValue
-	}
-
-	// decode afi/safi
-	err = mp.AS.FromJSON(afsrc)
+	// parse generic attributes
+	err := json.ObjectEach(src, func(key string, val []byte, typ json.Type) (err error) {
+		switch key {
+		case "af":
+			err = mp.AS.FromJSON(val)
+		case "nh":
+			mp.NH, err = json.UnHex(val, mp.NH[:0])
+		case "data":
+			mp.Data, err = json.UnHex(val, mp.Data[:0])
+		}
+		return err
+	})
 	if err != nil {
 		return err
 	}
 
-	// do we have a parser for it?
-	if newfunc, ok := MPNewFuncs[mp.AS]; ok {
-		mp.Value = newfunc(mp)
+	// do we have a specific parser for it?
+	mp.Value = NewMPValue(mp)
+	if mp.Value != nil {
 		return mp.Value.FromJSON(src)
-	} // else nope, parse "nh"
-
-	// has "nh"?
-	if v, _, _, err := jsp.Get(src, "nh"); err == nil {
-		mp.NH, err = json.UnHex(mp.NH[:0], v)
-		if err != nil {
-			return err
-		}
 	}
-
-	// has "data"?
-	if v, _, _, err := jsp.Get(src, "data"); err == nil {
-		mp.Data, err = json.UnHex(mp.Data[:0], v)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil // success
+	return nil
 }

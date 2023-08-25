@@ -1,4 +1,4 @@
-// Package caps represents BGP capabilities.
+// Package caps implements BGP capabilities.
 //
 // This package can store a set of BGP capabilities in a thread-safe map
 // using the Caps type, and read/write a particular BGP capability
@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"github.com/bgpfix/bgpfix/binary"
+	"github.com/bgpfix/bgpfix/json"
 	"github.com/puzpuzpuz/xsync/v2"
 )
 
@@ -28,109 +29,109 @@ type Caps struct {
 
 // Init initializes Caps and makes it fully thread-safe after return.
 // Can be called multiple times for lazy init.
-func (caps *Caps) Init() {
-	if caps.db == nil {
-		caps.db = xsync.NewIntegerMapOf[Code, Cap]()
+func (cps *Caps) Init() {
+	if cps.db == nil {
+		cps.db = xsync.NewIntegerMapOf[Code, Cap]()
 	}
 }
 
 // Valid returns true iff Caps has already been initialized
-func (caps *Caps) Valid() bool {
-	return caps.db != nil
+func (cps *Caps) Valid() bool {
+	return cps.db != nil
 }
 
 // Reset resets Caps back to initial state. Thread-unsafe.
-func (caps *Caps) Reset() {
-	caps.db = nil
+func (cps *Caps) Reset() {
+	cps.db = nil
 }
 
 // Clear drops all capabilities.
-func (caps *Caps) Clear() {
-	if caps.Valid() {
-		caps.db.Clear()
+func (cps *Caps) Clear() {
+	if cps.Valid() {
+		cps.db.Clear()
 	}
 }
 
 // Len returns the number of capabilites
-func (caps *Caps) Len() int {
-	if caps.Valid() {
-		return caps.db.Size()
+func (cps *Caps) Len() int {
+	if cps.Valid() {
+		return cps.db.Size()
 	} else {
 		return 0
 	}
 }
 
-// SetFrom sets all capabilities from src, overwriting caps[cc] for existing capability codes
-func (caps *Caps) SetFrom(src Caps) {
+// SetFrom sets all capabilities from src, overwriting cps[cc] for existing capability codes
+func (cps *Caps) SetFrom(src Caps) {
 	if !src.Valid() {
 		return
 	}
 
-	caps.Init()
+	cps.Init()
 	src.db.Range(func(cc Code, cap Cap) bool {
-		caps.db.Store(cc, cap)
+		cps.db.Store(cc, cap)
 		return true
 	})
 }
 
-// Get returns caps[cc] or nil if not possible.
-func (caps *Caps) Get(cc Code) (cap Cap) {
-	if caps.Valid() {
-		cap, _ = caps.db.Load(cc)
+// Get returns cps[cc] or nil if not possible.
+func (cps *Caps) Get(cc Code) (cap Cap) {
+	if cps.Valid() {
+		cap, _ = cps.db.Load(cc)
 	}
 	return
 }
 
-// Has returns true iff caps[cc] is set and non-nil
-func (caps *Caps) Has(cc Code) bool {
-	return caps.Get(cc) != nil
+// Has returns true iff cps[cc] is set and non-nil
+func (cps *Caps) Has(cc Code) bool {
+	return cps.Get(cc) != nil
 }
 
-// Drop drops caps[cc].
-func (caps *Caps) Drop(cc Code) {
-	if caps.Valid() {
-		caps.db.Delete(cc)
+// Drop drops cps[cc].
+func (cps *Caps) Drop(cc Code) {
+	if cps.Valid() {
+		cps.db.Delete(cc)
 	}
 }
 
-// Set overwrites caps[cc] with value.
-func (caps *Caps) Set(cc Code, value Cap) {
-	caps.Init()
-	caps.db.Store(cc, value)
+// Set overwrites cps[cc] with value.
+func (cps *Caps) Set(cc Code, value Cap) {
+	cps.Init()
+	cps.db.Store(cc, value)
 }
 
-// Use returns caps[cc] if its already there (may be nil).
-// Otherwise, it adds a new instance of cc in caps.
-func (caps *Caps) Use(cc Code) Cap {
+// Use returns cps[cc] if its already there (may be nil).
+// Otherwise, it adds a new instance of cc in cps.
+func (cps *Caps) Use(cc Code) Cap {
 	// already there?
-	if caps.Valid() {
-		if cap, ok := caps.db.Load(cc); ok {
+	if cps.Valid() {
+		if cap, ok := cps.db.Load(cc); ok {
 			return cap
 		}
 	} else {
-		caps.Init()
+		cps.Init()
 	}
 
 	// create a new instance, store, return the winner
 	cap := NewCap(cc)
-	cap, _ = caps.db.LoadOrStore(cc, cap)
+	cap, _ = cps.db.LoadOrStore(cc, cap)
 	return cap
 }
 
-// Each executes cb for each non-nil capability in caps,
+// Each executes cb for each non-nil capability in cps,
 // in an ascending order of capability codes.
-func (caps *Caps) Each(cb func(i int, cc Code, cap Cap)) {
-	if !caps.Valid() {
+func (cps *Caps) Each(cb func(i int, cc Code, cap Cap)) {
+	if !cps.Valid() {
 		return
 	}
 
-	// dump caps into todo
+	// dump cps into todo
 	type capcode struct {
 		cc  Code
 		cap Cap
 	}
 	var todo []capcode
-	caps.db.Range(func(cc Code, cap Cap) bool {
+	cps.db.Range(func(cc Code, cap Cap) bool {
 		if cap != nil {
 			todo = append(todo, capcode{cc, cap})
 		}
@@ -148,17 +149,17 @@ func (caps *Caps) Each(cb func(i int, cc Code, cap Cap)) {
 	}
 }
 
-func (caps *Caps) MarshalJSON() (dst []byte, err error) {
-	return caps.ToJSON(nil), nil
+func (cps *Caps) MarshalJSON() (dst []byte, err error) {
+	return cps.ToJSON(nil), nil
 }
 
-func (caps *Caps) ToJSON(dst []byte) []byte {
-	if !caps.Valid() {
+func (cps *Caps) ToJSON(dst []byte) []byte {
+	if !cps.Valid() {
 		return append(dst, "null"...)
 	}
 
 	dst = append(dst, '{')
-	caps.Each(func(i int, cc Code, cap Cap) {
+	cps.Each(func(i int, cc Code, cap Cap) {
 		if i > 0 {
 			dst = append(dst, `,"`...)
 		} else {
@@ -169,4 +170,25 @@ func (caps *Caps) ToJSON(dst []byte) []byte {
 		dst = cap.ToJSON(dst)
 	})
 	return append(dst, '}')
+}
+
+func (cps *Caps) FromJSON(src []byte) error {
+	return json.ObjectEach(src, func(key string, val []byte, typ json.Type) error {
+		return ErrTODO
+
+		// is key a valid capability code?
+		// var cc Code
+		// if err := cc.FromJSON(key); err != nil {
+		// 	return err
+		// }
+		// c := cps.Use(cc)
+
+		// parse?
+		// if err := c.FromJSON(val); err != nil {
+		// 	return err
+		// }
+
+		// success!
+		// return nil
+	})
 }
