@@ -1,5 +1,11 @@
 package af
 
+import (
+	"strings"
+
+	"github.com/bgpfix/bgpfix/json"
+)
+
 // ASV represents AFI+SAFI+VAL as afi(16) + 0(8) + safi(8) + val(32)
 type ASV uint64
 
@@ -26,8 +32,34 @@ func (asv ASV) ToJSONAfi(dst []byte) []byte {
 	dst = append(dst, '/')
 	dst = append(dst, asv.Safi().String()...)
 	dst = append(dst, '/')
-	afi := AFI(asv.Val())
-	dst = append(dst, afi.String()...)
+	afi2 := AFI(asv.Val())
+	dst = append(dst, afi2.String()...)
 	dst = append(dst, '"')
 	return dst
+}
+
+// FromJSONAfi interprets Val as an AFI
+func (asv *ASV) FromJSONAfi(src []byte) error {
+	d := strings.Split(json.SQ(src), "/")
+	if len(d) != 3 {
+		return ErrValue
+	}
+
+	afi, err := AFIString(d[0])
+	if err != nil {
+		return err
+	}
+
+	safi, err := SAFIString(d[1])
+	if err != nil {
+		return err
+	}
+
+	afi2, err := AFIString(d[2])
+	if err != nil {
+		return err
+	}
+
+	*asv = AfiSafiVal(afi, safi, uint32(afi2))
+	return nil
 }

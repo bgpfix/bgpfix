@@ -6,6 +6,7 @@
 package caps
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/bgpfix/bgpfix/binary"
@@ -161,12 +162,10 @@ func (cps *Caps) ToJSON(dst []byte) []byte {
 	dst = append(dst, '{')
 	cps.Each(func(i int, cc Code, cap Cap) {
 		if i > 0 {
-			dst = append(dst, `,"`...)
-		} else {
-			dst = append(dst, `"`...)
+			dst = append(dst, ',')
 		}
-		dst = append(dst, cc.String()...)
-		dst = append(dst, `":`...)
+		dst = cc.ToJSON(dst)
+		dst = append(dst, ':')
 		dst = cap.ToJSON(dst)
 	})
 	return append(dst, '}')
@@ -174,21 +173,19 @@ func (cps *Caps) ToJSON(dst []byte) []byte {
 
 func (cps *Caps) FromJSON(src []byte) error {
 	return json.ObjectEach(src, func(key string, val []byte, typ json.Type) error {
-		return ErrTODO
-
 		// is key a valid capability code?
-		// var cc Code
-		// if err := cc.FromJSON(key); err != nil {
-		// 	return err
-		// }
-		// c := cps.Use(cc)
+		var cc Code
+		if err := cc.FromJSON(key); err != nil {
+			return fmt.Errorf("%w: %w", ErrCapCode, err)
+		}
+		c := cps.Use(cc)
 
 		// parse?
-		// if err := c.FromJSON(val); err != nil {
-		// 	return err
-		// }
+		if err := c.FromJSON(val); err != nil {
+			return err
+		}
 
 		// success!
-		// return nil
+		return nil
 	})
 }

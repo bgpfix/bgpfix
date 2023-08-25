@@ -42,10 +42,11 @@ func (a *Raw) ToJSON(dst []byte) []byte {
 }
 
 func (a *Raw) FromJSON(src []byte) (err error) {
-	if !bytes.Equal(src, json.True) {
+	a.Raw = nil
+	if !bytes.Equal(json.Q(src), json.True) {
 		a.Raw, err = json.UnHex(src, a.Raw[:0])
 	}
-	return
+	return err
 }
 
 // Origin represents ATTR_ORIGIN
@@ -335,6 +336,4 @@ func (a *IPList) FromJSON(src []byte) (reterr error) {
 		a.Addr = append(a.Addr, addr)
 		return nil
 	})
-
-	return
 }

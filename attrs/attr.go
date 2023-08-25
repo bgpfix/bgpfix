@@ -1,7 +1,6 @@
 package attrs
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -195,11 +194,11 @@ func (ac *Code) FromJSON(src string) error {
 	} else if aft, ok := strings.CutPrefix(src, `ATTR_`); ok {
 		val, err := strconv.ParseUint(aft, 0, 8)
 		if err != nil {
-			return fmt.Errorf("%w: %w", ErrAttrCode, err)
+			return err
 		}
 		*ac = Code(val)
 	} else {
-		return ErrAttrCode
+		return ErrValue
 	}
 	return nil
 }
@@ -239,7 +238,7 @@ func (af *Flags) FromJSON(src []byte) error {
 		default:
 			fv, err := json.UnByte(src[i:])
 			if err != nil {
-				return ErrAttrFlags
+				return err
 			}
 			*af |= Flags(fv)
 			return nil

@@ -6,6 +6,7 @@
 package attrs
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/bgpfix/bgpfix/binary"
@@ -173,7 +174,7 @@ func (ats *Attrs) FromJSON(src []byte) error {
 		// is key a valid attribute code?
 		var acode Code
 		if err := acode.FromJSON(key); err != nil {
-			return err
+			return fmt.Errorf("%w: %w", ErrAttrCode, err)
 		}
 		attr := ats.Use(acode)
 
@@ -182,7 +183,7 @@ func (ats *Attrs) FromJSON(src []byte) error {
 		if v != nil {
 			var af Flags
 			if err := af.FromJSON(v); err != nil {
-				return err
+				return fmt.Errorf("%w: %w", ErrAttrFlags, err)
 			}
 			attr.SetFlags(af)
 

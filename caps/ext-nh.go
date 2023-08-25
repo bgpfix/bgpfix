@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/json"
 )
 
 // ExtNH implements CAP_EXTENDED_NEXTHOP rfc8950
@@ -97,11 +98,22 @@ func (c *ExtNH) Marshal(dst []byte) []byte {
 
 func (c *ExtNH) ToJSON(dst []byte) []byte {
 	dst = append(dst, '[')
-	for i, as := range c.Sorted() {
+	for i, asv := range c.Sorted() {
 		if i > 0 {
 			dst = append(dst, `,`...)
 		}
-		dst = as.ToJSONAfi(dst)
+		dst = asv.ToJSONAfi(dst)
 	}
 	return append(dst, ']')
+}
+
+func (c *ExtNH) FromJSON(src []byte) (err error) {
+	var asv af.ASV
+	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
+		if err := asv.FromJSONAfi(val); err != nil {
+			return err
+		}
+		c.Proto[asv] = true
+		return nil
+	})
 }

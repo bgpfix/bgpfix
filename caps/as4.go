@@ -1,7 +1,7 @@
 package caps
 
 import (
-	"strconv"
+	"github.com/bgpfix/bgpfix/json"
 )
 
 // AS4 implements CAP_AS4 rfc6793
@@ -33,5 +33,10 @@ func (c *AS4) Marshal(dst []byte) []byte {
 }
 
 func (c *AS4) ToJSON(dst []byte) []byte {
-	return strconv.AppendUint(dst, uint64(c.ASN), 10)
+	return json.Uint32(dst, c.ASN)
+}
+
+func (c *AS4) FromJSON(src []byte) (err error) {
+	c.ASN, err = json.UnUint32(src)
+	return err
 }

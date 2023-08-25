@@ -66,6 +66,36 @@ func (c *Raw) ToJSON(dst []byte) []byte {
 	return dst
 }
 
+func (c *Raw) FromJSON(src []byte) error {
+	c.Raw = nil
+
+	// just "true"?
+	if bytes.Equal(json.Q(src), json.True) {
+		return nil
+	}
+
+	// app_hex parses val as hex and apppends to c.Raw
+	app_hex := func(val []byte) error {
+		raw, err := json.UnHex(val, nil)
+		if err != nil {
+			return err
+		} else {
+			c.Raw = append(c.Raw, raw)
+			return nil
+		}
+	}
+
+	// array of hex values?
+	if src[0] == '[' {
+		return json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
+			return app_hex(val)
+		})
+	}
+
+	// a single hex value?
+	return app_hex(src)
+}
+
 func (c *Raw) Marshal(dst []byte) []byte {
 	// special case
 	if len(c.Raw) == 0 {

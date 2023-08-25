@@ -1,5 +1,12 @@
 package caps
 
+import (
+	"strconv"
+	"strings"
+
+	"github.com/bgpfix/bgpfix/json"
+)
+
 // Cap represents a particular BGP capability
 type Cap interface {
 	// Common returns a new instance of the same capability that
@@ -17,6 +24,9 @@ type Cap interface {
 
 	// ToJSON appends JSON representation of the value to dst
 	ToJSON(dst []byte) []byte
+
+	// FromJSON reads from JSON representation in src
+	FromJSON(src []byte) error
 }
 
 // Code represents BGP capability code
@@ -69,4 +79,32 @@ func NewCap(cc Code) Cap {
 
 	// call the newfunc with proper attr type value
 	return newfunc(cc)
+}
+
+// ToJSON() appends cc name as a JSON string to dst
+func (cc Code) ToJSON(dst []byte) []byte {
+	dst = append(dst, '"')
+	if name, ok := CodeName[cc]; ok {
+		dst = append(dst, name...)
+	} else {
+		dst = append(dst, `CAP_`...)
+		dst = json.Byte(dst, byte(cc))
+	}
+	return append(dst, '"')
+}
+
+// FromJSON() sets ac from JSON in src
+func (cc *Code) FromJSON(src string) error {
+	if val, ok := CodeValue[src]; ok {
+		*cc = val
+	} else if aft, ok := strings.CutPrefix(src, `CAP_`); ok {
+		val, err := strconv.ParseUint(aft, 0, 8)
+		if err != nil {
+			return err
+		}
+		*cc = Code(val)
+	} else {
+		return ErrValue
+	}
+	return nil
 }

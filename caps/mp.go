@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/json"
 )
 
 // MP implements CAP_MP rfc4760
@@ -12,9 +13,7 @@ type MP struct {
 }
 
 func NewMP(cc Code) Cap {
-	return &MP{
-		Proto: make(map[af.AS]bool),
-	}
+	return &MP{make(map[af.AS]bool)}
 }
 
 func (c *MP) Unmarshal(buf []byte, caps Caps) error {
@@ -86,4 +85,15 @@ func (c *MP) ToJSON(dst []byte) []byte {
 		dst = as.ToJSON(dst)
 	}
 	return append(dst, ']')
+}
+
+func (c *MP) FromJSON(src []byte) (err error) {
+	var as af.AS
+	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
+		if err := as.FromJSON(val); err != nil {
+			return err
+		}
+		c.Proto[as] = true
+		return nil
+	})
 }
