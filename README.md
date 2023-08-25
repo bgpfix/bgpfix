@@ -1,4 +1,4 @@
- # BGPFIX
+ # BGPFix Golang Library
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/bgpfix/bgpfix.svg)](https://pkg.go.dev/github.com/bgpfix/bgpfix)
 
@@ -32,7 +32,7 @@ Each [Msg](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/msg#Msg) sent to t
 
 # Example
 
-A basic sketch of how to use bgpfix in Go:
+A basic example on how to establish a BGP session with a router, and print all messages as JSON to stdout:
 
 ```go
 package main
@@ -55,18 +55,18 @@ func main() {
 	p.Options.Tstamp = true
 
 	// add our callback and event handlers
-	p.Options.OnTxRx(print)
-	p.Options.OnEvent(event)
+	p.Options.OnTxRx(print)   // call print() on every BGP message in TX or RX direction
+	p.Options.OnEvent(event)  // call event() on any pipe event
 
 	// attach a BGP speaker
 	spk := speaker.NewSpeaker(context.Background())
 	spk.Options.Passive = false
 	spk.Options.LocalASN = 65055
 	spk.Options.LocalId = netip.MustParseAddr("1.1.1.1")
-	spk.Attach(p)
+	spk.Attach(p)             // attach spk to p using callbacks
 
 	// dial the target
-	conn, err := net.Dial("tcp", os.Args[1]) // remember to add :179
+	conn, err := net.Dial("tcp", os.Args[1]) // assumes a ":179" suffix
 	if err != nil {
 		panic(err)
 	}
@@ -91,7 +91,9 @@ func event(p *pipe.Pipe, ev *pipe.Event) bool {
 
 # JSON
 
-bgpfix has full, BGP to JSON and vice-versa translation support. For example, below we connect to the Flowspec version of the great [BGP Blackholing project](https://lukasz.bromirski.net/bgp-fs-blackholing/) by [@LukaszBromirski](https://twitter.com/LukaszBromirski):
+bgpfix has full, bidirectional BGP to JSON translation support.
+
+For example, below we connect to the Flowspec version of the great [BGP Blackholing project](https://lukasz.bromirski.net/bgp-fs-blackholing/) by [@LukaszBromirski](https://twitter.com/LukaszBromirski):
 ```
 pjf@pjf:~/bgp2json$ ./bgp2json -active -asn 65055 85.232.240.180:179 | jq .
 [
