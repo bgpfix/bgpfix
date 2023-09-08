@@ -2,7 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/bgpfix/bgpfix.svg)](https://pkg.go.dev/github.com/bgpfix/bgpfix)
 
-**WORK IN PROGRESS PREVIEW 08/2023**
+**WORK IN PROGRESS PREVIEW 09/2023**
 
 A generic-purpose, high-performance Golang library for [bridging the gaps in BGP](https://twitter.com/ACM_IMC2021/status/1445725066403196928).
 
@@ -13,6 +13,7 @@ The main idea is it can "fix" or "extend" BGP sessions in-flight, possibly addin
  * Flowspec firewalls using [Linux Netfilter](https://netfilter.org/),
  * passive inspection (and storage) of ongoing BGP sessions, like in [tcpdump](https://www.tcpdump.org/),
  * cool new BGP extensions for legacy speakers, eg. [RPKI](https://en.wikipedia.org/wiki/Resource_Public_Key_Infrastructure) and [ASPA](https://www.manrs.org/2023/02/unpacking-the-first-route-leak-prevented-by-aspa/) validation, [Only To Customer (OTC)](https://www.manrs.org/2023/04/there-is-still-hope-for-bgp-route-leak-prevention/) attribute, or even [BGPSec](https://en.wikipedia.org/wiki/BGPsec),
+ * protecting from [grave flaws in BGP error handling](https://blog.benjojo.co.uk/post/bgp-path-attributes-grave-error-handling) (and possibly other flaws found using [recent BGP fuzzing projects](https://github.com/Forescout/bgp_boofuzzer))
  * academic research ideas, eg. [Pretty Good BGP](https://www.cs.princeton.edu/~jrex/papers/pgbgp.pdf) or protection against [distributed prefix de-aggregation attacks](https://arxiv.org/abs/2210.10676).
 
 If you're interested in bgpfix, you might also want to see:
@@ -26,9 +27,9 @@ The overall idea is presented below. You don't need to use the whole library, eg
 
 ![bgpfix idea](bgpfix.png)
 
-The above explains the concept of a [Pipe](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Pipe): it has two *directions* - RX and TX - used to exchange BGP messages between 2 speakers on the Left-Hand Side (LHS) and Right-Hand Side (RHS) of the picture.
+The above explains the concept of a [Pipe](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Pipe): it has two *directions* used to exchange BGP messages between 2 speakers on the left (L) and right (R) hand side of the picture.
 
-Each [Msg](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/msg#Msg) sent to the [In](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Dir) channel of a particular direction will go through a set of *callbacks* (think "plugins") configured in the [pipe Options](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Options). Each callback can read, write, modify, synthesize, or drop messages before they reach the Out channel. In addition to BGP messages, callbacks may emit [Events](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Event) - such as [the standard events of the Pipe](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#pkg-variables) - which [event handlers may subscribe to](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Options.OnEvent) in the pipe Options.
+Each [Msg](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/msg#Msg) sent to the [In](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Direction) channel of a particular direction will go through a set of *callbacks* (think "plugins") configured in the [pipe Options](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Options). Each callback can read, write, modify, synthesize, or drop messages before they reach the Out channel. In addition to BGP messages, callbacks may emit [Events](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Event) - such as [the standard events of the Pipe](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#pkg-variables) - which [event handlers may subscribe to](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Options.OnEvent) in the pipe Options.
 
 # Example
 
@@ -55,7 +56,7 @@ func main() {
 	p.Options.Tstamp = true
 
 	// add our callback and event handlers
-	p.Options.OnTxRx(print)   // call print() on every BGP message in TX or RX direction
+	p.Options.OnTR(print)   // call print() on every BGP message in L or R direction
 	p.Options.OnEvent(event)  // call event() on any pipe event
 
 	// attach a BGP speaker
@@ -71,8 +72,8 @@ func main() {
 		panic(err)
 	}
 
-	// 1. read from conn -> write to p.Rx.In
-	// 2. read from p.Tx.Out -> write to conn
+	// 1. read from conn -> write to p.R.In
+	// 2. read from p.L.Out -> write to conn
 	util.CopyThrough(p, conn, nil)
 }
 
@@ -99,7 +100,7 @@ pjf@pjf:~/bgp2json$ ./bgp2json -active -asn 65055 85.232.240.180:179 | jq .
 [
   "2023-08-18T11:33:41.298",
   1,
-  "TX",
+  "L",
   "OPEN",
   -1,
   {
@@ -123,7 +124,7 @@ pjf@pjf:~/bgp2json$ ./bgp2json -active -asn 65055 85.232.240.180:179 | jq .
 [
   "2023-08-18T11:33:41.324",
   1,
-  "RX",
+  "R",
   "OPEN",
   56,
   {
@@ -149,7 +150,7 @@ pjf@pjf:~/bgp2json$ ./bgp2json -active -asn 65055 85.232.240.180:179 | jq .
 [
   "2023-08-18T11:33:41.325",
   2,
-  "TX",
+  "L",
   "KEEPALIVE",
   0,
   null
@@ -157,7 +158,7 @@ pjf@pjf:~/bgp2json$ ./bgp2json -active -asn 65055 85.232.240.180:179 | jq .
 [
   "2023-08-18T11:33:41.348",
   2,
-  "RX",
+  "R",
   "KEEPALIVE",
   0,
   null
@@ -165,7 +166,7 @@ pjf@pjf:~/bgp2json$ ./bgp2json -active -asn 65055 85.232.240.180:179 | jq .
 [
   "2023-08-18T11:33:46.352",
   3,
-  "RX",
+  "R",
   "UPDATE",
   316,
   {
@@ -232,7 +233,7 @@ pjf@pjf:~/bgp2json$ ./bgp2json -active -asn 65055 85.232.240.180:179 | jq .
 [
   "2023-08-18T11:33:46.455",
   9,
-  "RX",
+  "R",
   "UPDATE",
   10,
   {

@@ -20,9 +20,9 @@ var (
 		Descr: "message parse error",
 		Value: "error message",
 	}
-	EVENT_RX_TIMEOUT = &pipe.EventType{
-		Name:  "speaker/RX_TIMEOUT",
+	EVENT_R_TIMEOUT = &pipe.EventType{
+		Name:  "speaker/R_TIMEOUT",
 		Descr: "remote hold timer expired",
-		Value: "nanoseconds till last RX message",
+		Value: "nanoseconds till last R message",
 	}
 )

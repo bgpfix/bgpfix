@@ -12,13 +12,18 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// Pipe processes BGP messages sent/received from a BGP peer, or
-// exchanged between two BGP peers.
+// Pipe processes BGP messages exchanged between two BGP peers,
+// L (for "left" or "local") and R (for "right" or "remote"),
+// allowing for building callback-based pipelines in both directions,
+// plus an internal event system. It can also track OPEN messages
+// to find out the negotiated BGP capabilities on a session.
 //
-// Use NewPipe() to get a new object, then modify its .Options,
-// and call Start() to start the message flow. For each direction
-// available under .Rx and .Tx in the pipe, write incoming messages
-// to the .In channel, and read processed messages from the .Out channel.
+// Write messages destined for R to Pipe.R.In, and read the results
+// from Pipe.R.Out. Similarly, write messages destined for L to
+// Pipe.L.In, and read the results from Pipe.L.Out.
+//
+// Use NewPipe() to get a new object and modify its Pipe.Options.
+// Then call Pipe.Start() to start the message flow.
 type Pipe struct {
 	zerolog.Logger
 
@@ -26,19 +31,17 @@ type Pipe struct {
 	cancel context.CancelFunc
 
 	msgpool *sync.Pool     // message pool
-	rxwg    sync.WaitGroup // RX Input handler
-	txwg    sync.WaitGroup // TX Input handler
+	rwg     sync.WaitGroup // R Input handler
+	twg     sync.WaitGroup // L Input handler
 	evwg    sync.WaitGroup // event handler
 
 	started atomic.Bool // true iff Start() called
 	stopped atomic.Bool // true iff Stop() called
 
-	// do not use before Start
-	Rx *Dir // messages from peer; do not use before Start()
-	Tx *Dir // messages to peer; do not use before Start()
+	Options Options // BGP pipe options; do not modify after Start()
 
-	// do not modify after Start
-	Options Options // BGP pipe options
+	L *Direction // messages for L; do not use before Start()
+	R *Direction // messages for R; do not use before Start()
 
 	// use anytime, thread-safe
 	Caps   caps.Caps   // BGP capability context
@@ -69,30 +72,30 @@ func (p *Pipe) apply(opts *Options) {
 		p.msgpool = new(sync.Pool)
 	}
 
-	p.Rx = &Dir{p: p, dir: msg.RX}
-	if opts.RxInput != nil {
-		p.Rx.In = opts.RxInput
+	p.R = &Direction{p: p, dir: msg.DIR_R}
+	if opts.Rin != nil {
+		p.R.In = opts.Rin
 	} else {
-		p.Rx.In = make(chan *msg.Msg, opts.RxLen)
+		p.R.In = make(chan *msg.Msg, opts.Rlen)
 	}
 
-	if opts.RxOutput != nil {
-		p.Rx.Out = opts.RxOutput
+	if opts.Rout != nil {
+		p.R.Out = opts.Rout
 	} else {
-		p.Rx.Out = make(chan *msg.Msg, opts.RxLen)
+		p.R.Out = make(chan *msg.Msg, opts.Rlen)
 	}
 
-	p.Tx = &Dir{p: p, dir: msg.TX}
-	if opts.TxInput != nil {
-		p.Tx.In = opts.TxInput
+	p.L = &Direction{p: p, dir: msg.DIR_L}
+	if opts.Lin != nil {
+		p.L.In = opts.Lin
 	} else {
-		p.Tx.In = make(chan *msg.Msg, opts.TxLen)
+		p.L.In = make(chan *msg.Msg, opts.Llen)
 	}
 
-	if opts.TxOutput != nil {
-		p.Tx.Out = opts.TxOutput
+	if opts.Lout != nil {
+		p.L.Out = opts.Lout
 	} else {
-		p.Tx.Out = make(chan *msg.Msg, opts.TxLen)
+		p.L.Out = make(chan *msg.Msg, opts.Llen)
 	}
 
 	// rewrite callbacks to sides, respecting their order
@@ -110,23 +113,23 @@ func (p *Pipe) apply(opts *Options) {
 			continue
 		}
 		switch cb.Dir {
-		case msg.TXRX:
-			p.Tx.addCallback(cb)
-			p.Rx.addCallback(cb)
-		case msg.TX:
-			p.Tx.addCallback(cb)
-		case msg.RX:
-			p.Rx.addCallback(cb)
+		case msg.DIR_ANY:
+			p.L.addCallback(cb)
+			p.R.addCallback(cb)
+		case msg.DIR_L:
+			p.L.addCallback(cb)
+		case msg.DIR_R:
+			p.R.addCallback(cb)
 		}
 	}
 
 	// very first OPEN handlers
-	opts.Events[EVENT_RX_OPEN] = append([]EventFunc{p.open}, opts.Events[EVENT_RX_OPEN]...)
-	opts.Events[EVENT_TX_OPEN] = append([]EventFunc{p.open}, opts.Events[EVENT_TX_OPEN]...)
+	opts.Events[EVENT_R_OPEN] = append([]EventFunc{p.open}, opts.Events[EVENT_R_OPEN]...)
+	opts.Events[EVENT_L_OPEN] = append([]EventFunc{p.open}, opts.Events[EVENT_L_OPEN]...)
 }
 
-// Start starts given number of rx/tx message handlers in background,
-// by default rx/tx = 1/1 (single-threaded, strictly ordered processing).
+// Start starts given number of r/t message handlers in background,
+// by default r/t = 1/1 (single-threaded, strictly ordered processing).
 func (p *Pipe) Start() {
 	if p.started.Swap(true) || p.stopped.Load() {
 		return // already started or stopped
@@ -136,24 +139,24 @@ func (p *Pipe) Start() {
 	opts := &p.Options
 	p.apply(opts)
 
-	// start RX handlers
-	for i := 0; i < opts.RxHandlers; i++ {
-		p.rxwg.Add(1)
-		go p.Rx.Handler(&p.rxwg)
+	// start R handlers
+	for i := 0; i < opts.Rprocs; i++ {
+		p.rwg.Add(1)
+		go p.R.Handler(&p.rwg)
 	}
 	go func() {
-		p.rxwg.Wait() // @1 after s.Rx.Input is closed (or no handlers)
-		p.Rx.CloseOutput()
+		p.rwg.Wait() // @1 after s.R.Input is closed (or no handlers)
+		p.R.CloseOutput()
 	}()
 
-	// start TX handlers
-	for i := 0; i < opts.TxHandlers; i++ {
-		p.txwg.Add(1)
-		go p.Tx.Handler(&p.txwg)
+	// start L handlers
+	for i := 0; i < opts.Lprocs; i++ {
+		p.twg.Add(1)
+		go p.L.Handler(&p.twg)
 	}
 	go func() {
-		p.txwg.Wait() // @1 after s.Tx.Input is closed (or no handlers)
-		p.Tx.CloseOutput()
+		p.twg.Wait() // @1 after s.L.Input is closed (or no handlers)
+		p.L.CloseOutput()
 	}()
 
 	// start event handlers
@@ -173,28 +176,28 @@ func (p *Pipe) Start() {
 // open emits EVENT_OPEN when both sides have seen OPEN + fills p.Caps if enabled
 func (p *Pipe) open(_ *Pipe, ev *Event) bool {
 	// already seen OPEN for both directions?
-	rx, tx := p.Rx.Open.Load(), p.Tx.Open.Load()
-	if rx == nil || tx == nil {
+	r, t := p.R.Open.Load(), p.L.Open.Load()
+	if r == nil || t == nil {
 		return true // not yet
 	}
 
 	// find out common caps
 	if p.Options.Caps {
 		p.Caps.Clear()
-		p.Caps.SetFrom(rx.Caps)
+		p.Caps.SetFrom(r.Caps)
 
 		// verify vs. what we sent
-		p.Caps.Each(func(i int, cc caps.Code, rxcap caps.Cap) {
-			txcap := tx.Caps.Get(cc)
+		p.Caps.Each(func(i int, cc caps.Code, rcap caps.Cap) {
+			tcap := t.Caps.Get(cc)
 
 			// no common support for cc at all? delete it
-			if rxcap == nil || txcap == nil {
+			if rcap == nil || tcap == nil {
 				p.Caps.Drop(cc)
 				return
 			}
 
-			// dive into rxcap vs txcap
-			if common := rxcap.Common(txcap); common != nil {
+			// dive into rcap vs tcap
+			if common := rcap.Common(tcap); common != nil {
 				p.Caps.Set(cc, common)
 			}
 		})
@@ -223,11 +226,11 @@ func (p *Pipe) Stop() {
 	p.cancel()
 
 	// stop the input handlers and wait for them to finish
-	p.Rx.CloseInput()
-	p.Tx.CloseInput()
-	p.rxwg.Wait()
-	p.txwg.Wait()
-	// NB: now @1 will close the RX/TX outputs
+	p.R.CloseInput()
+	p.L.CloseInput()
+	p.rwg.Wait()
+	p.twg.Wait()
+	// NB: now @1 will close the R/L outputs
 
 	// safely stop the event handler and wait for it to finish
 	func() {
@@ -239,8 +242,8 @@ func (p *Pipe) Stop() {
 
 // Wait blocks until all handlers finish.
 func (p *Pipe) Wait() {
-	p.rxwg.Wait()
-	p.txwg.Wait()
+	p.rwg.Wait()
+	p.twg.Wait()
 	p.evwg.Wait()
 }
 
@@ -279,12 +282,14 @@ func (p *Pipe) Put(m *msg.Msg) {
 	}
 }
 
-// Write writes raw BGP data to p.Rx.Input
+// Write writes raw BGP data to p.R.In.
+// Must not be used concurrently (use p.R.In directly for that).
 func (p *Pipe) Write(b []byte) (n int, err error) {
-	return p.Rx.Write(b)
+	return p.R.Write(b)
 }
 
-// Read reads raw BGP data from p.Tx.Output
+// Read reads raw BGP data from p.L.Out.
+// Must not be used concurrently (use p.L.Out directly for that).
 func (p *Pipe) Read(b []byte) (n int, err error) {
-	return p.Tx.Read(b)
+	return p.L.Read(b)
 }

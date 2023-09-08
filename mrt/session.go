@@ -35,7 +35,7 @@ func NewBgpSession(bgp *pipe.Pipe) (*BgpSession, error) {
 }
 
 // Write implements io.Writer and reads all MRT-BGP4MP messages from p
-// into BGP session Rx channel. See session.Session.Write for more context.
+// into BGP session R channel. See session.Session.Write for more context.
 func (s *BgpSession) Write(p []byte) (n int, err error) {
 	// prepare
 	lenp := len(p)
@@ -99,7 +99,7 @@ func (s *BgpSession) Write(p []byte) (n int, err error) {
 		}
 
 		// write BGP4MP raw data to BGP session
-		_, perr = s.Bgp.Rx.WriteTime(bgp4mp.Data, bgp4mp.msg.Time)
+		_, perr = s.Bgp.R.WriteTime(bgp4mp.Data, bgp4mp.msg.Time)
 		if perr != nil {
 			return lenp, perr
 		}

@@ -11,8 +11,8 @@ import (
 	"github.com/bgpfix/bgpfix/msg"
 )
 
-// Dir represents a particular direction of messages in Pipe
-type Dir struct {
+// Direction represents a particular direction of messages in Pipe
+type Direction struct {
 	p   *Pipe
 	dir msg.Dir
 
@@ -55,14 +55,14 @@ type Stats struct {
 
 // CloseInput safely closes the Input channel.
 // The Output channel will eventually be closed too, after all queued messages have been processed.
-func (d *Dir) CloseInput() {
+func (d *Direction) CloseInput() {
 	defer func() { recover() }()
 	close(d.In)
 }
 
 // CloseOutput safely closes the Output channel.
 // Input handlers will keep running until Input is closed.
-func (d *Dir) CloseOutput() {
+func (d *Direction) CloseOutput() {
 	defer func() { recover() }()
 	close(d.Out)
 }
@@ -77,7 +77,7 @@ func (d *Dir) CloseOutput() {
 // untill it returns a nil err.
 //
 // Must not be used concurrently.
-func (d *Dir) Write(src []byte) (n int, err error) {
+func (d *Direction) Write(src []byte) (n int, err error) {
 	if d.p.Options.Tstamp {
 		return d.WriteTime(src, time.Now().UTC())
 	} else {
@@ -86,7 +86,7 @@ func (d *Dir) Write(src []byte) (n int, err error) {
 }
 
 // WriteTime is Write that sets time of all messages in p to now.
-func (d *Dir) WriteTime(src []byte, now time.Time) (n int, err error) {
+func (d *Direction) WriteTime(src []byte, now time.Time) (n int, err error) {
 	n = len(src) // NB: always return n=len(src)
 
 	// append src and switch to inbuf if needed
@@ -163,7 +163,7 @@ func (d *Dir) WriteTime(src []byte, now time.Time) (n int, err error) {
 // messages to be dropped on the floor (and re-used).
 //
 // Exits when dir.Input closes and is emptied. wg may be nil.
-func (d *Dir) Handler(wg *sync.WaitGroup) {
+func (d *Direction) Handler(wg *sync.WaitGroup) {
 	output_closed := d.handler(d.Out)
 	if output_closed {
 		d.handler(nil)
@@ -173,7 +173,7 @@ func (d *Dir) Handler(wg *sync.WaitGroup) {
 	}
 }
 
-func (d *Dir) handler(output chan *msg.Msg) (output_closed bool) {
+func (d *Direction) handler(output chan *msg.Msg) (output_closed bool) {
 	var (
 		p      = d.p
 		input  = d.In
@@ -184,9 +184,9 @@ func (d *Dir) handler(output chan *msg.Msg) (output_closed bool) {
 	)
 
 	// OPEN event?
-	open_event := EVENT_RX_OPEN
-	if d.dir == msg.TX {
-		open_event = EVENT_TX_OPEN
+	open_event := EVENT_R_OPEN
+	if d.dir == msg.DIR_L {
+		open_event = EVENT_L_OPEN
 	}
 
 	// catch panic due to write to closed channel
@@ -228,6 +228,7 @@ input:
 		// run callbacks
 		parsed := false
 		for _, cb := range cbs {
+			// TODO: add ability to skip until after a certain callback?
 			// need to parse first?
 			if !cb.Raw && !parsed {
 				err := m.ParseUpper(p.Caps)
@@ -279,8 +280,9 @@ input:
 // Output readers ------------------------------
 
 // Read reads d.Out and writes raw BGP data to dst
+// Must not be used concurrently.
 // TODO: stats
-func (d *Dir) Read(dst []byte) (int, error) {
+func (d *Direction) Read(dst []byte) (int, error) {
 	var (
 		p      = d.p
 		buf    = &d.obuf
@@ -328,7 +330,7 @@ func (d *Dir) Read(dst []byte) (int, error) {
 // ReadCb reads Output through given callback function cb.
 // cb may be nil to drop all output on the floor.
 // ReadCb returns when the Output is closed.
-func (d *Dir) ReadCb(cb CallbackFunc) {
+func (d *Direction) ReadCb(cb CallbackFunc) {
 	p := d.p
 	for m := range d.Out {
 		if cb != nil {
@@ -341,11 +343,11 @@ func (d *Dir) ReadCb(cb CallbackFunc) {
 // --------------------------
 
 // Stats returns dir statistics FIXME
-func (d *Dir) Stats() *Stats {
+func (d *Direction) Stats() *Stats {
 	return &d.stats
 }
 
-func (d *Dir) addCallback(cb *Callback) {
+func (d *Direction) addCallback(cb *Callback) {
 	if cb == nil || cb.Func == nil {
 		return
 	}

@@ -24,9 +24,9 @@ type Speaker struct {
 
 	Options Options // options; do not modify after Attach()
 
-	state  State        // speaker state
-	lastrx atomic.Int64 // last received UPDATE or KA
-	lasttx atomic.Int64 // last sent UPDATE or KA
+	state State        // speaker state
+	lastr atomic.Int64 // last received UPDATE or KA
+	lastt atomic.Int64 // last sent UPDATE or KA
 }
 
 // State tracks where in a BGP session we are
@@ -49,7 +49,7 @@ func NewSpeaker(ctx context.Context) *Speaker {
 
 // Attach attaches the speaker to given pipe.
 // Must not be called more than once.
-// TODO: support more than 1/1 tx/rx handlers in pipe
+// TODO: support more than 1/1 t/r handlers in pipe
 func (s *Speaker) Attach(p *pipe.Pipe) error {
 	opts := &s.Options
 	s.Logger = opts.Logger
@@ -71,8 +71,8 @@ func (s *Speaker) Attach(p *pipe.Pipe) error {
 	s.pipe = p
 	p.Options.OnStart(s.onStart)
 	p.Options.OnOpen(s.onOpen)
-	p.Options.OnRx(s.onRx).Raw = true
-	p.Options.OnTx(s.onTx).Raw = true
+	p.Options.OnMsg(s.onR, msg.DIR_R).Raw = true
+	p.Options.OnMsg(s.onT, msg.DIR_L).Raw = true
 
 	return nil
 }
@@ -84,7 +84,7 @@ func (s *Speaker) onStart(p *pipe.Pipe, ev *pipe.Event) bool {
 	p.Event(EVENT_INIT, nil)
 
 	if opts.Mode == SPEAKER_FULL && !opts.Passive {
-		s.txOpen(p, nil)
+		s.sendOpen(p, nil)
 	}
 
 	return false // no way back
@@ -100,15 +100,15 @@ func (s *Speaker) onOpen(p *pipe.Pipe, ev *pipe.Event) bool {
 	p.Event(EVENT_ESTABLISHED, nil)
 
 	if opts.Mode == SPEAKER_FULL {
-		ht := min(p.Rx.Open.Load().HoldTime, p.Tx.Open.Load().HoldTime)
+		ht := min(p.R.Open.Load().HoldTime, p.L.Open.Load().HoldTime)
 		go s.keepaliver(p, ht)
 	}
 
 	return false // no way back
 }
 
-// txOpen generates a new OPEN and writes it to pipe.Tx
-func (s *Speaker) txOpen(p *pipe.Pipe, ro *msg.Open) {
+// sendOpen generates a new OPEN and writes it to pipe.L
+func (s *Speaker) sendOpen(p *pipe.Pipe, ro *msg.Open) {
 	opts := &s.Options
 
 	o := &p.Get(msg.OPEN).Open
@@ -148,15 +148,15 @@ func (s *Speaker) txOpen(p *pipe.Pipe, ro *msg.Open) {
 	o.Caps.SetFrom(p.Caps)
 	o.Caps.SetFrom(opts.LocalCaps)
 
-	// queue for TX
-	p.Tx.In <- o.Msg
+	// queue for L
+	p.L.In <- o.Msg
 }
 
 // keepaliver sends a KEEPALIVE message, and keeps sending them to respect the hold time.
 // it is run only in full speaker mode.
 func (s *Speaker) keepaliver(p *pipe.Pipe, negotiated uint16) {
 	// send the first KA to confirm the pipe is established
-	p.Tx.In <- p.Get(msg.KEEPALIVE)
+	p.L.In <- p.Get(msg.KEEPALIVE)
 
 	// check the hold time
 	if negotiated == 0 {
@@ -180,23 +180,23 @@ func (s *Speaker) keepaliver(p *pipe.Pipe, negotiated uint16) {
 
 		// get data
 		now := nanotime()
-		lrx := s.lastrx.Load()
-		ltx := s.lasttx.Load()
+		lr := s.lastr.Load()
+		lt := s.lastt.Load()
 
 		// timeout?
-		if now-lrx > hold {
+		if now-lr > hold {
 			s.Warn().Msg("remote hold timer expired")
-			p.Event(EVENT_RX_TIMEOUT, nil, now-lrx)
+			p.Event(EVENT_R_TIMEOUT, nil, now-lr)
 		}
 
 		// need to send our next KA?
-		if now-ltx >= each {
-			p.Tx.In <- p.Get(msg.KEEPALIVE)
+		if now-lt >= each {
+			p.L.In <- p.Get(msg.KEEPALIVE)
 		}
 	}
 }
 
-func (s *Speaker) onRx(p *pipe.Pipe, m *msg.Msg) {
+func (s *Speaker) onR(p *pipe.Pipe, m *msg.Msg) {
 	opts := &s.Options
 
 	// check if m too long vs. extmsg?
@@ -225,11 +225,11 @@ func (s *Speaker) onRx(p *pipe.Pipe, m *msg.Msg) {
 		// TODO: drop if in state established and seen an update?
 		// TODO: drop if wrong caps / other params?
 		if opts.Mode == SPEAKER_FULL && opts.Passive {
-			s.txOpen(p, &m.Open)
+			s.sendOpen(p, &m.Open)
 		}
 
 	case msg.UPDATE, msg.KEEPALIVE:
-		s.lastrx.Store(nanotime())
+		s.lastr.Store(nanotime())
 
 	case msg.NOTIFY:
 		// TODO
@@ -238,13 +238,13 @@ func (s *Speaker) onRx(p *pipe.Pipe, m *msg.Msg) {
 
 	default:
 		if s.Options.ErrorDrop {
-			s.Error().Msgf("Rx: dropping invalid type %s", m.Type)
+			s.Error().Msgf("R: dropping invalid type %s", m.Type)
 			m.Action |= pipe.ACTION_DROP
 		}
 	}
 }
 
-func (s *Speaker) onTx(p *pipe.Pipe, m *msg.Msg) {
+func (s *Speaker) onT(p *pipe.Pipe, m *msg.Msg) {
 	opts := &s.Options
 
 	// check if m too long vs. extmsg
@@ -272,7 +272,7 @@ func (s *Speaker) onTx(p *pipe.Pipe, m *msg.Msg) {
 		break // OK
 
 	case msg.UPDATE, msg.KEEPALIVE:
-		s.lasttx.Store(nanotime())
+		s.lastt.Store(nanotime())
 
 	case msg.NOTIFY:
 		// TODO
@@ -281,7 +281,7 @@ func (s *Speaker) onTx(p *pipe.Pipe, m *msg.Msg) {
 
 	default:
 		if s.Options.ErrorDrop {
-			s.Error().Msgf("Tx: dropping invalid type %s", m.Type)
+			s.Error().Msgf("L: dropping invalid type %s", m.Type)
 			m.Action |= pipe.ACTION_DROP
 		}
 	}

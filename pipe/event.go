@@ -22,18 +22,18 @@ var (
 		Descr: "could not parse the message before its callback",
 		Value: "the error message",
 	}
-	EVENT_RX_OPEN = &EventType{
-		Name:  "pipe/RX_OPEN",
-		Descr: "OPEN seen on RX direction",
+	EVENT_R_OPEN = &EventType{
+		Name:  "pipe/R_OPEN",
+		Descr: "OPEN seen on R direction",
 	}
-	EVENT_TX_OPEN = &EventType{
-		Name:  "pipe/TX_OPEN",
-		Descr: "OPEN seen on TX direction",
+	EVENT_L_OPEN = &EventType{
+		Name:  "pipe/L_OPEN",
+		Descr: "OPEN seen on L direction",
 	}
 	EVENT_OPEN = &EventType{
 		Name:  "pipe/OPEN",
 		Descr: "OPEN messages seen in both directions",
-		// now both pipe.Rx.Open and pipe.Tx.Open are available
+		// now both pipe.R.Open and pipe.L.Open are available
 	}
 )
 
@@ -47,7 +47,7 @@ type Event struct {
 
 	// event details
 	Type  any `json:"type"`  // type, usually a *reference* to a pkg variable
-	Value any `json:"value"` // value, type-specific
+	Value any `json:"value"` // value, type-specific, may be nil
 }
 
 // EventType is the recommended - but not required - type to use for events

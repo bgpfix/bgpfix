@@ -45,11 +45,11 @@ type Msg struct {
 // BGP message direction
 type Dir byte
 
-//go:generate go run github.com/dmarkham/enumer -type Dir
+//go:generate go run github.com/dmarkham/enumer -type Dir -trimprefix DIR_
 const (
-	TXRX Dir = 0 // no particular direction
-	TX   Dir = 1 // transmit
-	RX   Dir = 2 // receive
+	DIR_ANY Dir = 0 // no particular direction
+	DIR_L   Dir = 1 // destined to L, for "left" or "local"
+	DIR_R   Dir = 2 // destined to R, for "right" or "remote"
 )
 
 // BGP message type

@@ -12,12 +12,12 @@ import (
 
 // Default BGP pipe options
 var DefaultOptions = Options{
-	Logger:     log.Logger,
-	RxLen:      10,
-	RxHandlers: 1,
-	TxLen:      10,
-	TxHandlers: 1,
-	Caps:       true,
+	Logger: log.Logger,
+	Rlen:   10,
+	Rprocs: 1,
+	Llen:   10,
+	Lprocs: 1,
+	Caps:   true,
 }
 
 // BGP pipe options
@@ -28,15 +28,15 @@ type Options struct {
 	Tstamp bool // add timestamps to messages?
 	Caps   bool // fill pipe.Caps using OPEN messages?
 
-	RxInput    chan *msg.Msg // RxInput channel (nil=create)
-	RxOutput   chan *msg.Msg // RxOutput channel (nil=create)
-	RxLen      int           // Rx channel length (if need to create)
-	RxHandlers int           // number of RX handler goroutines
+	Rin    chan *msg.Msg // R.In channel (nil=create)
+	Rout   chan *msg.Msg // R.Out channel (nil=create)
+	Rlen   int           // R channel length (if need to create)
+	Rprocs int           // number of R handler goroutines
 
-	TxInput    chan *msg.Msg // TxInput channel (nil=create)
-	TxOutput   chan *msg.Msg // TxOutput channel (nil=create)
-	TxLen      int           // Tx channel length (if need to create)
-	TxHandlers int           // number of TX handler goroutines
+	Lin    chan *msg.Msg // L.In channel (nil=create)
+	Lout   chan *msg.Msg // L.Out channel (nil=create)
+	Llen   int           // L channel lengths (if need to create)
+	Lprocs int           // number of L handler goroutines
 
 	Callbacks []*Callback         // BGP message callbacks
 	Events    map[any][]EventFunc // pipe event handlers
@@ -86,77 +86,28 @@ func (o *Options) AddCallback(cbf CallbackFunc, tpl ...*Callback) *Callback {
 	return &cb
 }
 
-// OnTxRx adds a callback for all messages of given types
-func (o *Options) OnTxRx(cb CallbackFunc, types ...msg.Type) *Callback {
+// OnMsg adds a callback for all messages of given types
+func (o *Options) OnMsg(cb CallbackFunc, dir msg.Dir, types ...msg.Type) *Callback {
 	return o.AddCallback(cb, &Callback{
+		Dir:   dir,
 		Types: types,
 	})
 }
 
-// OnTx adds a callback for TX messages of given types
-func (o *Options) OnTx(cb CallbackFunc, types ...msg.Type) *Callback {
-	return o.AddCallback(cb, &Callback{
-		Dir:   msg.TX,
-		Types: types,
-	})
-}
-
-// OnRx adds a callback for all RX messages of given types
-func (o *Options) OnRx(cb CallbackFunc, types ...msg.Type) *Callback {
-	return o.AddCallback(cb, &Callback{
-		Dir:   msg.RX,
-		Types: types,
-	})
-}
-
-// OnTxRxFirst adds a callback as the first for all messages of given types
-func (o *Options) OnTxRxFirst(cb CallbackFunc, types ...msg.Type) *Callback {
+// OnFirst adds a callback as the first for all messages of given types
+func (o *Options) OnFirst(cb CallbackFunc, dir msg.Dir, types ...msg.Type) *Callback {
 	return o.AddCallback(cb, &Callback{
 		Order: -len(o.Callbacks) - 1,
+		Dir:   dir,
 		Types: types,
 	})
 }
 
-// OnTxFirst adds a callback as the first for TX messages of given types
-func (o *Options) OnTxFirst(cb CallbackFunc, types ...msg.Type) *Callback {
-	return o.AddCallback(cb, &Callback{
-		Order: -len(o.Callbacks) - 1,
-		Dir:   msg.TX,
-		Types: types,
-	})
-}
-
-// OnRxFirst adds a callback as the first for RX messages of given types
-func (o *Options) OnRxFirst(cb CallbackFunc, types ...msg.Type) *Callback {
-	return o.AddCallback(cb, &Callback{
-		Order: -len(o.Callbacks) - 1,
-		Dir:   msg.RX,
-		Types: types,
-	})
-}
-
-// OnTxRxLast adds a callback as the last for all messages of given types
-func (o *Options) OnTxRxLast(cb CallbackFunc, types ...msg.Type) *Callback {
+// OnLast adds a callback as the last for all messages of given types
+func (o *Options) OnLast(cb CallbackFunc, dir msg.Dir, types ...msg.Type) *Callback {
 	return o.AddCallback(cb, &Callback{
 		Order: len(o.Callbacks) + 1,
-		Types: types,
-	})
-}
-
-// OnTxLast adds a callback as the last for TX messages of given types
-func (o *Options) OnTxLast(cb CallbackFunc, types ...msg.Type) *Callback {
-	return o.AddCallback(cb, &Callback{
-		Order: len(o.Callbacks) + 1,
-		Dir:   msg.TX,
-		Types: types,
-	})
-}
-
-// OnRxLast adds a callback as the last for all RX messages of given types
-func (o *Options) OnRxLast(cb CallbackFunc, types ...msg.Type) *Callback {
-	return o.AddCallback(cb, &Callback{
-		Order: len(o.Callbacks) + 1,
-		Dir:   msg.RX,
+		Dir:   dir,
 		Types: types,
 	})
 }
