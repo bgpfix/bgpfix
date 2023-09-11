@@ -11,17 +11,23 @@ import (
 	"github.com/bgpfix/bgpfix/msg"
 )
 
-// Direction represents a particular direction of messages in Pipe
+// Direction represents a particular direction of messages in a Pipe
 type Direction struct {
-	p   *Pipe
-	dir msg.Dir
+	p *Pipe
 
-	// Input: write messages before callbacks.
-	// Get empty messages from pipe.Get().
+	// destination of messages flowing in this Direction
+	Dst msg.Dst
+
+	// In is the pipe input, where you write messages to be processed.
+	//
+	// You can get empty messages using Pipe.Get(). If your message
+	// has a Pipe.Context with a Callback set, processing will start
+	// just after that Callback (if found in the pipe).
 	In chan *msg.Msg
 
-	// Output: read messages after callbacks.
-	// Dispose used messages using pipe.Put().
+	// Out is the pipe output, where you read processed messages.
+	//
+	// You should dispose used messages using Pipe.Put().
 	Out chan *msg.Msg
 
 	// stores the first OPEN message that made it to Out
@@ -38,12 +44,12 @@ type Direction struct {
 	stats Stats
 
 	// callbacks
-	open         []Callback
-	update       []Callback
-	keepalive    []Callback
-	notification []Callback
-	refresh      []Callback
-	invalid      []Callback
+	open         []*Callback
+	update       []*Callback
+	keepalive    []*Callback
+	notification []*Callback
+	refresh      []*Callback
+	invalid      []*Callback
 }
 
 // BGP dir statistics
@@ -140,7 +146,7 @@ func (d *Direction) WriteTime(src []byte, now time.Time) (n int, err error) {
 		}
 
 		// fill metadata
-		m.Dir = d.dir
+		m.Dst = d.Dst
 		m.Seq = d.seq.Add(1)
 		m.Time = now
 
@@ -179,13 +185,13 @@ func (d *Direction) handler(output chan *msg.Msg) (output_closed bool) {
 		input  = d.In
 		tstamp = p.Options.Tstamp
 		m      *msg.Msg
-		cbs    []Callback
+		cbs    []*Callback
 		fo     bool // first open
 	)
 
-	// OPEN event?
+	// which event to generate in case of an OPEN message?
 	open_event := EVENT_R_OPEN
-	if d.dir == msg.DIR_L {
+	if d.Dst == msg.DST_L {
 		open_event = EVENT_L_OPEN
 	}
 
@@ -201,7 +207,7 @@ func (d *Direction) handler(output chan *msg.Msg) (output_closed bool) {
 input:
 	for m = range input {
 		// metadata
-		m.Dir = d.dir
+		m.Dst = d.Dst
 		if m.Seq == 0 {
 			m.Seq = d.seq.Add(1)
 		}
@@ -225,43 +231,57 @@ input:
 			cbs = d.invalid
 		}
 
+		// setup pipe context
+		pc := PipeContext(m)
+		pc.Pipe = p
+		pc.Direction = d
+		pc.Action.Clear()
+
+		// skip past a callback?
+		if pc.Callback != nil {
+			from := 0
+			for i, cb := range cbs {
+				if cb == pc.Callback {
+					from = i + 1
+				} else if from > 0 {
+					break
+				}
+			}
+			cbs = cbs[from:]
+		}
+
 		// run callbacks
-		parsed := false
 		for _, cb := range cbs {
-			// TODO: add ability to skip until after a certain callback?
+			// set the current callback
+			pc.Callback = cb
+
 			// need to parse first?
-			if !cb.Raw && !parsed {
-				err := m.ParseUpper(p.Caps)
-				if err != nil {
+			if !cb.Raw && m.Upper == msg.INVALID {
+				if err := m.ParseUpper(p.Caps); err != nil {
 					p.Event(EVENT_PARSE, m, err)
 					continue input // next message
 				}
-				parsed = true
 			}
 
-			// wait for the callback
-			cb.Func(p, m)
+			// run and wait
+			pc.Action |= cb.Func(m)
 
 			// what's next?
-			if ActionIs(m, ACTION_DROP) {
+			if pc.Action.Is(ACTION_DROP) {
 				p.Put(m)
 				continue input // next message
-			} else if ActionIs(m, ACTION_FINAL) {
+			} else if pc.Action.Is(ACTION_ACCEPT) {
 				break // take it as-is
 			}
 		}
 
 		// the first valid OPEN? keep it
 		if !fo && m.Type == msg.OPEN && m.ParseUpper(p.Caps) == nil {
-			old_action := m.Action  // just in case [3]
-			m.Action |= ACTION_KEEP // don't re-use in pool
-			fo = true               // it's now or never
-
 			if d.Open.CompareAndSwap(nil, &m.Open) {
+				pc.Action |= ACTION_BORROW // don't re-use in pool
 				p.Event(open_event, m)
-			} else {
-				m.Action = old_action // other handler was faster [3]
 			}
+			fo = true // no more tries
 		}
 
 		// forward to output if possible
@@ -327,19 +347,6 @@ func (d *Direction) Read(dst []byte) (int, error) {
 	return n, err
 }
 
-// ReadCb reads Output through given callback function cb.
-// cb may be nil to drop all output on the floor.
-// ReadCb returns when the Output is closed.
-func (d *Direction) ReadCb(cb CallbackFunc) {
-	p := d.p
-	for m := range d.Out {
-		if cb != nil {
-			cb(p, m)
-		}
-		p.Put(m)
-	}
-}
-
 // --------------------------
 
 // Stats returns dir statistics FIXME
@@ -353,29 +360,29 @@ func (d *Direction) addCallback(cb *Callback) {
 	}
 
 	if len(cb.Types) == 0 {
-		d.open = append(d.open, *cb)
-		d.keepalive = append(d.keepalive, *cb)
-		d.update = append(d.update, *cb)
-		d.notification = append(d.notification, *cb)
-		d.refresh = append(d.refresh, *cb)
-		d.invalid = append(d.invalid, *cb)
+		d.open = append(d.open, cb)
+		d.keepalive = append(d.keepalive, cb)
+		d.update = append(d.update, cb)
+		d.notification = append(d.notification, cb)
+		d.refresh = append(d.refresh, cb)
+		d.invalid = append(d.invalid, cb)
 		return
 	}
 
 	for _, t := range cb.Types {
 		switch t {
 		case msg.OPEN:
-			d.open = append(d.open, *cb)
+			d.open = append(d.open, cb)
 		case msg.KEEPALIVE:
-			d.keepalive = append(d.keepalive, *cb)
+			d.keepalive = append(d.keepalive, cb)
 		case msg.UPDATE:
-			d.update = append(d.update, *cb)
+			d.update = append(d.update, cb)
 		case msg.NOTIFY:
-			d.notification = append(d.notification, *cb)
+			d.notification = append(d.notification, cb)
 		case msg.REFRESH:
-			d.refresh = append(d.refresh, *cb)
+			d.refresh = append(d.refresh, cb)
 		default:
-			d.invalid = append(d.invalid, *cb)
+			d.invalid = append(d.invalid, cb)
 		}
 	}
 }

@@ -40,6 +40,9 @@ var (
 // Event represents an arbitrary event for a BGP pipe.
 // Seq and Time will be set by the handler if non-zero.
 type Event struct {
+	// parent pipe
+	Pipe *Pipe
+
 	// optional metadata
 	Seq  uint64    `json:"seq,omitempty"`  // event sequence number
 	Time time.Time `json:"time,omitempty"` // event timestamp
@@ -62,6 +65,7 @@ func (p *Pipe) Event(et any, msg *msg.Msg, val ...any) {
 	defer func() { recover() }() // in case of closed p.Events
 
 	ev := &Event{
+		Pipe: p,
 		Time: time.Now().UTC(),
 		Msg:  msg,
 		Type: et,
@@ -69,7 +73,7 @@ func (p *Pipe) Event(et any, msg *msg.Msg, val ...any) {
 
 	// make sure the message isn't re-used before event handlers finish [1]
 	if msg != nil {
-		msg.Action |= ACTION_KEEP
+		PipeAction(msg).Set(ACTION_BORROW)
 	}
 
 	if len(val) > 0 {
@@ -79,7 +83,7 @@ func (p *Pipe) Event(et any, msg *msg.Msg, val ...any) {
 	select {
 	case <-p.ctx.Done():
 		// context cancelled
-	case p.Events <- ev:
+	case p.events <- ev:
 		// success
 	}
 }
@@ -96,7 +100,7 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 		wcbs = opts.Events[nil] // wildcard handlers - for any event type
 	)
 
-	for ev := range p.Events {
+	for ev := range p.events {
 		// metadata
 		if ev.Seq == 0 {
 			seq++
@@ -112,7 +116,7 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 			if cb == nil {
 				continue
 			}
-			if !cb(p, ev) {
+			if !cb(ev) {
 				cbs[i] = nil
 			}
 		}
@@ -122,7 +126,7 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 			if cb == nil {
 				continue
 			}
-			if !cb(p, ev) {
+			if !cb(ev) {
 				wcbs[i] = nil
 			}
 		}

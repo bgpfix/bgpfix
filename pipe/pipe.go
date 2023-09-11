@@ -30,25 +30,23 @@ type Pipe struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	msgpool *sync.Pool     // message pool
-	rwg     sync.WaitGroup // R Input handler
-	twg     sync.WaitGroup // L Input handler
-	evwg    sync.WaitGroup // event handler
-
 	started atomic.Bool // true iff Start() called
 	stopped atomic.Bool // true iff Stop() called
 
-	Options Options // BGP pipe options; do not modify after Start()
+	pool *sync.Pool     // message pool
+	twg  sync.WaitGroup // L Input handlers
+	rwg  sync.WaitGroup // R Input handlers
 
-	L *Direction // messages for L; do not use before Start()
-	R *Direction // messages for R; do not use before Start()
+	events chan *Event    // pipe events
+	evwg   sync.WaitGroup // event handler
 
-	// use anytime, thread-safe
-	Caps   caps.Caps   // BGP capability context
-	Events chan *Event // pipe events
+	Options Options    // pipe options; modify before Start()
+	L       *Direction // messages for L, call Start() before use
+	R       *Direction // messages for R; call Start() before use
+	Caps    caps.Caps  // BGP capability context; thread-safe
 }
 
-// NewPipe returns a new pipe, which can be configured through .Options.
+// NewPipe returns a new pipe, which can be configured through its Options.
 // To start/stop the pipe, call Start() and Stop().
 func NewPipe(ctx context.Context) *Pipe {
 	p := &Pipe{}
@@ -57,8 +55,18 @@ func NewPipe(ctx context.Context) *Pipe {
 	p.Options = DefaultOptions
 	p.Options.Events = make(map[any][]EventFunc)
 
+	p.L = &Direction{
+		p:   p,
+		Dst: msg.DST_L,
+	}
+
+	p.R = &Direction{
+		p:   p,
+		Dst: msg.DST_R,
+	}
+
 	p.Caps.Init() // NB: make it thread-safe
-	p.Events = make(chan *Event, 10)
+	p.events = make(chan *Event, 10)
 
 	return p
 }
@@ -67,38 +75,26 @@ func (p *Pipe) apply(opts *Options) {
 	p.Logger = opts.Logger
 
 	if opts.MsgPool != nil {
-		p.msgpool = opts.MsgPool
+		p.pool = opts.MsgPool
 	} else {
-		p.msgpool = new(sync.Pool)
+		p.pool = new(sync.Pool)
 	}
 
-	p.R = &Direction{p: p, dir: msg.DIR_R}
-	if opts.Rin != nil {
-		p.R.In = opts.Rin
-	} else {
-		p.R.In = make(chan *msg.Msg, opts.Rlen)
-	}
-
-	if opts.Rout != nil {
-		p.R.Out = opts.Rout
-	} else {
-		p.R.Out = make(chan *msg.Msg, opts.Rlen)
-	}
-
-	p.L = &Direction{p: p, dir: msg.DIR_L}
-	if opts.Lin != nil {
-		p.L.In = opts.Lin
-	} else {
+	if p.L.In == nil {
 		p.L.In = make(chan *msg.Msg, opts.Llen)
 	}
-
-	if opts.Lout != nil {
-		p.L.Out = opts.Lout
-	} else {
+	if p.L.Out == nil {
 		p.L.Out = make(chan *msg.Msg, opts.Llen)
 	}
 
-	// rewrite callbacks to sides, respecting their order
+	if p.R.In == nil {
+		p.R.In = make(chan *msg.Msg, opts.Rlen)
+	}
+	if p.R.Out == nil {
+		p.R.Out = make(chan *msg.Msg, opts.Rlen)
+	}
+
+	// rewrite callbacks to sides, respecting their options
 	sort.SliceStable(opts.Callbacks, func(i, j int) bool {
 		cbi := opts.Callbacks[i]
 		cbj := opts.Callbacks[j]
@@ -109,21 +105,18 @@ func (p *Pipe) apply(opts *Options) {
 		}
 	})
 	for _, cb := range opts.Callbacks {
-		if cb == nil {
-			continue
-		}
 		switch cb.Dir {
-		case msg.DIR_ANY:
+		case msg.DST_X:
 			p.L.addCallback(cb)
 			p.R.addCallback(cb)
-		case msg.DIR_L:
+		case msg.DST_L:
 			p.L.addCallback(cb)
-		case msg.DIR_R:
+		case msg.DST_R:
 			p.R.addCallback(cb)
 		}
 	}
 
-	// very first OPEN handlers
+	// prepend very first OPEN handlers
 	opts.Events[EVENT_R_OPEN] = append([]EventFunc{p.open}, opts.Events[EVENT_R_OPEN]...)
 	opts.Events[EVENT_L_OPEN] = append([]EventFunc{p.open}, opts.Events[EVENT_L_OPEN]...)
 }
@@ -140,26 +133,26 @@ func (p *Pipe) Start() {
 	p.apply(opts)
 
 	// start R handlers
-	for i := 0; i < opts.Rprocs; i++ {
+	for i := 0; i < opts.Rproc; i++ {
 		p.rwg.Add(1)
 		go p.R.Handler(&p.rwg)
 	}
 	go func() {
-		p.rwg.Wait() // @1 after s.R.Input is closed (or no handlers)
+		p.rwg.Wait() // [1] after s.R.Input is closed (or no handlers)
 		p.R.CloseOutput()
 	}()
 
 	// start L handlers
-	for i := 0; i < opts.Lprocs; i++ {
+	for i := 0; i < opts.Lproc; i++ {
 		p.twg.Add(1)
 		go p.L.Handler(&p.twg)
 	}
 	go func() {
-		p.twg.Wait() // @1 after s.L.Input is closed (or no handlers)
+		p.twg.Wait() // [1] after s.L.Input is closed (or no handlers)
 		p.L.CloseOutput()
 	}()
 
-	// start event handlers
+	// start event handler
 	p.evwg.Add(1)
 	go p.eventHandler(&p.evwg)
 
@@ -174,7 +167,7 @@ func (p *Pipe) Start() {
 }
 
 // open emits EVENT_OPEN when both sides have seen OPEN + fills p.Caps if enabled
-func (p *Pipe) open(_ *Pipe, ev *Event) bool {
+func (p *Pipe) open(ev *Event) bool {
 	// already seen OPEN for both directions?
 	r, t := p.R.Open.Load(), p.L.Open.Load()
 	if r == nil || t == nil {
@@ -230,12 +223,12 @@ func (p *Pipe) Stop() {
 	p.L.CloseInput()
 	p.rwg.Wait()
 	p.twg.Wait()
-	// NB: now @1 will close the R/L outputs
+	// NB: now [1] will close the R/L outputs
 
 	// safely stop the event handler and wait for it to finish
 	func() {
 		defer func() { recover() }()
-		close(p.Events)
+		close(p.events)
 	}()
 	p.evwg.Wait()
 }
@@ -259,12 +252,16 @@ func (p *Pipe) Stopped() bool {
 
 // Get returns empty msg from pool, or a new msg object
 func (p *Pipe) Get(typ ...msg.Type) (m *msg.Msg) {
-	v := p.msgpool.Get()
+	v := p.pool.Get()
 	if v == nil {
 		m = msg.NewMsg()
 	} else {
 		m = v.(*msg.Msg)
 	}
+
+	// add pipe context
+	pc := PipeContext(m)
+	pc.Pipe = p
 
 	// prepare the upper layer?
 	if len(typ) > 0 {
@@ -276,10 +273,21 @@ func (p *Pipe) Get(typ ...msg.Type) (m *msg.Msg) {
 
 // Put resets msg and returns it to pool, which might free it
 func (p *Pipe) Put(m *msg.Msg) {
-	if m != nil && ActionNot(m, ACTION_KEEP) {
-		m.Reset()
-		p.msgpool.Put(m)
+	// NOP
+	if m == nil {
+		return
 	}
+
+	// do not re-use?
+	pc := PipeContext(m)
+	if pc.Action.Is(ACTION_BORROW) {
+		return
+	}
+
+	// re-use
+	pc.Reset()
+	m.Reset()
+	p.pool.Put(m)
 }
 
 // Write writes raw BGP data to p.R.In.

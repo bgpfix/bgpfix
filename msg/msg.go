@@ -5,7 +5,6 @@ package msg
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"strconv"
 	"time"
@@ -23,7 +22,7 @@ type Msg struct {
 	buf []byte // internal buffer
 
 	// optional metadata
-	Dir  Dir       // message direction
+	Dst  Dst       // message destination
 	Seq  int64     // sequence number
 	Time time.Time // message timestamp
 
@@ -38,18 +37,26 @@ type Msg struct {
 	Update Update // parsed BGP UPDATE message
 
 	// for optional use beyond this pkg
-	Action byte // eg. drop / keep message
-	Value  any  // anything, set to nil on reset
+	Value Value // NB: not affected by Reset()
 }
 
-// BGP message direction
-type Dir byte
+// Value represents an optional, arbitrary value attached to a message
+type Value interface {
+	// ToJSON appends JSON representation of the value to dst
+	ToJSON(dst []byte) []byte
 
-//go:generate go run github.com/dmarkham/enumer -type Dir -trimprefix DIR_
+	// FromJSON reads from JSON representation in src
+	FromJSON(src []byte) error
+}
+
+// BGP message destination (message direction)
+type Dst byte
+
+//go:generate go run github.com/dmarkham/enumer -type Dst -trimprefix DST_
 const (
-	DIR_ANY Dir = 0 // no particular direction
-	DIR_L   Dir = 1 // destined to L, for "left" or "local"
-	DIR_R   Dir = 2 // destined to R, for "right" or "remote"
+	DST_X Dst = 0 // no particular destination (ie. both L and R)
+	DST_L Dst = 1 // destined for L ("left" or "local")
+	DST_R Dst = 2 // destined for R ("right" or "remote")
 )
 
 // BGP message type
@@ -112,7 +119,7 @@ func (msg *Msg) Reset() *Msg {
 		msg.buf = nil
 	}
 
-	msg.Dir = 0
+	msg.Dst = 0
 	msg.Seq = 0
 	msg.Time = time.Time{}
 
@@ -122,7 +129,6 @@ func (msg *Msg) Reset() *Msg {
 	msg.Upper = INVALID
 	msg.Dirty = false
 
-	msg.Action = 0
 	msg.Value = nil
 
 	return msg
@@ -372,7 +378,7 @@ func (msg *Msg) ToJSON(dst []byte) []byte {
 
 	// [2] direction
 	dst = append(dst, `,"`...)
-	dst = append(dst, msg.Dir.String()...) // TODO: or number
+	dst = append(dst, msg.Dst.String()...) // TODO: or number
 
 	// [3] type
 	dst = append(dst, `","`...)
@@ -403,15 +409,12 @@ func (msg *Msg) ToJSON(dst []byte) []byte {
 		dst = json.Hex(dst, msg.Data)
 	}
 
-	// [6] action, if needed
-	if msg.Action != 0 || msg.Value != nil {
-		dst = append(dst, ',')
-		dst = strconv.AppendUint(dst, uint64(msg.Action), 10)
-	}
-
-	// [7] value, if non-nil
+	// [6] value TODO: json serialize
+	dst = append(dst, ',')
 	if msg.Value != nil {
-		dst = append(dst, fmt.Sprintf(`,"%v"`, msg.Value)...)
+		dst = msg.Value.ToJSON(dst)
+	} else {
+		dst = append(dst, `null`...)
 	}
 
 	dst = append(dst, ']')
@@ -428,13 +431,13 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 		case 1: // seq number
 			msg.Seq, err = strconv.ParseInt(json.S(val), 10, 64)
 
-		case 2: // direction TODO: better
+		case 2: // dst TODO: better
 			if typ == json.STRING {
-				msg.Dir, err = DirString(json.S(val))
+				msg.Dst, err = DstString(json.S(val))
 			} else if typ == json.NUMBER {
 				var v byte
 				v, err = json.UnByte(val)
-				msg.Dir = Dir(v)
+				msg.Dst = Dst(v)
 			}
 
 		case 3: // type TODO: better
@@ -466,11 +469,10 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 				}
 			}
 
-		case 6: // action
-			msg.Action, err = json.UnByte(val)
-
-		case 7: // value
-			msg.Value = string(val) // NB: copy
+		case 6: // value
+			if msg.Value != nil && typ != json.NULL {
+				err = msg.Value.FromJSON(val)
+			}
 		}
 		return err
 	})
