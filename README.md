@@ -56,7 +56,7 @@ func main() {
 	p.Options.Tstamp = true
 
 	// add our callback and event handlers
-	p.Options.OnTR(print)   // call print() on every BGP message in L or R direction
+	p.Options.OnMsg(print, 0) // call print() on every BGP message in L or R direction
 	p.Options.OnEvent(event)  // call event() on any pipe event
 
 	// attach a BGP speaker
@@ -77,11 +77,12 @@ func main() {
 	util.CopyThrough(p, conn, nil)
 }
 
-func print(p *pipe.Pipe, m *msg.Msg) {
+func print(m *msg.Msg) pipe.Action {
 	fmt.Printf("%s\n", m.ToJSON(nil))
+	return 0
 }
 
-func event(p *pipe.Pipe, ev *pipe.Event) bool {
+func event(ev *pipe.Event) bool {
 	switch ev.Type {
 	case pipe.EVENT_OPEN:
 		fmt.Printf("OPEN sent and received, caps=%s", p.Caps.ToJSON(nil))
