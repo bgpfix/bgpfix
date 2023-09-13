@@ -2,7 +2,6 @@ package pipe
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -13,7 +12,8 @@ import (
 
 // Direction represents a particular direction of messages in a Pipe
 type Direction struct {
-	p *Pipe
+	// parent Pipe
+	Pipe *Pipe
 
 	// destination of messages flowing in this Direction
 	Dst msg.Dst
@@ -84,16 +84,8 @@ func (d *Direction) CloseOutput() {
 //
 // Must not be used concurrently.
 func (d *Direction) Write(src []byte) (n int, err error) {
-	if d.p.Options.Tstamp {
-		return d.WriteTime(src, time.Now().UTC())
-	} else {
-		return d.WriteTime(src, time.Time{})
-	}
-}
-
-// WriteTime is Write that sets time of all messages in p to now.
-func (d *Direction) WriteTime(src []byte, now time.Time) (n int, err error) {
 	n = len(src) // NB: always return n=len(src)
+	now := time.Now().UTC()
 
 	// append src and switch to inbuf if needed
 	raw := src
@@ -102,7 +94,7 @@ func (d *Direction) WriteTime(src []byte, now time.Time) (n int, err error) {
 		raw = d.ibuf // [1]
 	}
 
-	// on return, leave remainder at start of s.inbuf?
+	// on return, leave the remainder at the start of d.inbuf?
 	defer func() {
 		if len(raw) == 0 {
 			d.ibuf = d.ibuf[:0]
@@ -111,16 +103,8 @@ func (d *Direction) WriteTime(src []byte, now time.Time) (n int, err error) {
 		} // otherwise there is something left, but already @ s.inbuf[0:]
 	}()
 
-	// catch panic due to write to closed channel
-	catch := false
-	defer func() {
-		if catch && recover() != nil {
-			err = fmt.Errorf("input channel closed, data lost")
-		}
-	}()
-
 	// process until raw is empty
-	p := d.p
+	p := d.Pipe
 	ss := &d.stats
 	for len(raw) > 0 {
 		// grab memory, parse raw, take mem reference
@@ -145,19 +129,33 @@ func (d *Direction) WriteTime(src []byte, now time.Time) (n int, err error) {
 			return n, perr
 		}
 
-		// fill metadata
-		m.Dst = d.Dst
-		m.Seq = d.seq.Add(1)
+		// prepare m
 		m.Time = now
+		m.CopyData()
 
-		// pass the message deeper
-		catch = true
-		d.In <- m.CopyData() // TODO: warning if full?
-		catch = false
+		// send
+		if err := d.WriteMsg(m); err != nil {
+			return n, perr
+		}
 	}
 
 	// exactly len(src) bytes consumed and processed, no error
 	return n, nil
+}
+
+// WriteMsg safely sends m to d.In, setting m.Seq if needed.
+// It returns an error iff d.In was closed (instead of a panic).
+func (d *Direction) WriteMsg(m *msg.Msg) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = ErrInClosed
+		}
+	}()
+	if m.Seq == 0 {
+		m.Seq = d.seq.Add(1)
+	}
+	d.In <- m
+	return
 }
 
 // Handling callbacks ------------------------------
@@ -181,12 +179,11 @@ func (d *Direction) Handler(wg *sync.WaitGroup) {
 
 func (d *Direction) handler(output chan *msg.Msg) (output_closed bool) {
 	var (
-		p      = d.p
-		input  = d.In
-		tstamp = p.Options.Tstamp
-		m      *msg.Msg
-		cbs    []*Callback
-		fo     bool // first open
+		p     = d.Pipe
+		input = d.In
+		m     *msg.Msg
+		cbs   []*Callback
+		fo    bool // first open
 	)
 
 	// which event to generate in case of an OPEN message?
@@ -211,7 +208,7 @@ input:
 		if m.Seq == 0 {
 			m.Seq = d.seq.Add(1)
 		}
-		if tstamp && m.Time.IsZero() {
+		if m.Time.IsZero() {
 			m.Time = time.Now().UTC()
 		}
 
@@ -234,7 +231,7 @@ input:
 		// setup pipe context
 		pc := PipeContext(m)
 		pc.Pipe = p
-		pc.Direction = d
+		pc.Dir = d
 		pc.Action.Clear()
 
 		// skip past a callback?
@@ -304,7 +301,7 @@ input:
 // TODO: stats
 func (d *Direction) Read(dst []byte) (int, error) {
 	var (
-		p      = d.p
+		p      = d.Pipe
 		buf    = &d.obuf
 		enough = len(dst) - 10*1024 // ditch the last 10KiB
 		err    = io.EOF             // default error

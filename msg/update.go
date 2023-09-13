@@ -26,7 +26,7 @@ type Update struct {
 }
 
 const (
-	UPDATE_MINLEN = 23 - MSG_HEADLEN // rfc4271/4.3
+	UPDATE_MINLEN = 23 - HEADLEN // rfc4271/4.3
 )
 
 // Init initializes u to use parent m

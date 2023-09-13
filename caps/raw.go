@@ -23,7 +23,7 @@ func (c *Raw) Unmarshal(buf []byte, caps Caps) error {
 	return nil
 }
 
-func (c *Raw) Common(cap2 Cap) Cap {
+func (c *Raw) Intersect(cap2 Cap) Cap {
 	c2, ok := cap2.(*Raw)
 	if !ok || c.Code != c2.Code {
 		return nil

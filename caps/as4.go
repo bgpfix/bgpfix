@@ -22,7 +22,7 @@ func (c *AS4) Unmarshal(buf []byte, caps Caps) error {
 	return nil
 }
 
-func (c *AS4) Common(cap2 Cap) Cap {
+func (c *AS4) Intersect(cap2 Cap) Cap {
 	return nil
 }
 

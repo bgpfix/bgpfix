@@ -7,13 +7,16 @@ import (
 
 // Context tracks message processing progress in a pipe
 type Context struct {
-	Pipe      *Pipe      // pipe processing the message
-	Direction *Direction // pipe direction
-	Callback  *Callback  // the current callback
-	Action    Action     // actions requested so far
+	Pipe     *Pipe      // pipe processing the message
+	Dir      *Direction // pipe direction
+	Callback *Callback  // the current callback
+
+	Action Action // actions requested so far
+
+	kv map[string]interface{} // generic Key-Value store
 }
 
-// PipeContext returns pipe Context for given message m,
+// PipeContext returns pipe Context inside message m,
 // updating m.Value if needed.
 func PipeContext(m *msg.Msg) *Context {
 	if m == nil {
@@ -43,6 +46,19 @@ func (pc *Context) Clear() {
 	action := pc.Action
 	pc.Reset()
 	pc.Action = action
+}
+
+// HasKV returns true iff the context already has a Key-Value store.
+func (pc *Context) HasKV() bool {
+	return pc.kv != nil
+}
+
+// KV returns a generic Key-Value store, creating it first if needed.
+func (pc *Context) KV() map[string]any {
+	if pc.kv == nil {
+		pc.kv = make(map[string]interface{})
+	}
+	return pc.kv
 }
 
 // TODO

@@ -42,11 +42,11 @@ type MPNewFunc func(mp *MP) MPValue
 
 // MPNewFuncs maps ATTR_MP_* afi/safi pairs to their NewFunc
 var MPNewFuncs = map[af.AS]MPNewFunc{
-	af.AfiSafi(af.AFI_IPV4, af.SAFI_UNICAST):  NewMPPrefixes,
-	af.AfiSafi(af.AFI_IPV4, af.SAFI_FLOWSPEC): NewMPFlowspec,
+	af.NewAS(af.AFI_IPV4, af.SAFI_UNICAST):  NewMPPrefixes,
+	af.NewAS(af.AFI_IPV4, af.SAFI_FLOWSPEC): NewMPFlowspec,
 
-	af.AfiSafi(af.AFI_IPV6, af.SAFI_UNICAST):  NewMPPrefixes,
-	af.AfiSafi(af.AFI_IPV6, af.SAFI_FLOWSPEC): NewMPFlowspec,
+	af.NewAS(af.AFI_IPV6, af.SAFI_UNICAST):  NewMPPrefixes,
+	af.NewAS(af.AFI_IPV6, af.SAFI_FLOWSPEC): NewMPFlowspec,
 }
 
 func NewMP(at CodeFlags) Attr {
@@ -68,7 +68,7 @@ func (mp *MP) Unmarshal(buf []byte, cps caps.Caps) error {
 	if len(buf) < 3 {
 		return ErrLength
 	}
-	mp.AS = af.AfiSafiFrom(buf[0:3])
+	mp.AS = af.NewASBytes(buf[0:3])
 	buf = buf[3:]
 
 	// nexthop?

@@ -22,8 +22,8 @@ func (c *ExtNH) Unmarshal(buf []byte, caps Caps) error {
 			return ErrLength
 		}
 
-		asf := af.AfiSafiFrom(buf[0:4])
-		nhf := af.AFI(msb.Uint16(buf[4:6]))
+		asf := af.NewASBytes(buf[0:4])
+		nhf := af.NewAFIBytes(buf[4:6])
 		buf = buf[6:]
 
 		c.Add(asf.Afi(), asf.Safi(), nhf)
@@ -33,15 +33,15 @@ func (c *ExtNH) Unmarshal(buf []byte, caps Caps) error {
 }
 
 func (c *ExtNH) Add(afi af.AFI, safi af.SAFI, nhf af.AFI) {
-	c.Proto[af.AfiSafiVal(afi, safi, uint32(nhf))] = true
+	c.Proto[af.NewASV(afi, safi, uint32(nhf))] = true
 }
 
 func (c *ExtNH) Has(afi af.AFI, safi af.SAFI, nhf af.AFI) bool {
-	return c.Proto[af.AfiSafiVal(afi, safi, uint32(nhf))]
+	return c.Proto[af.NewASV(afi, safi, uint32(nhf))]
 }
 
 func (c *ExtNH) Drop(afi af.AFI, safi af.SAFI, nhf af.AFI) {
-	delete(c.Proto, af.AfiSafiVal(afi, safi, uint32(nhf)))
+	delete(c.Proto, af.NewASV(afi, safi, uint32(nhf)))
 }
 
 func (c *ExtNH) Sorted() (dst []af.ASV) {
@@ -56,7 +56,7 @@ func (c *ExtNH) Sorted() (dst []af.ASV) {
 	return
 }
 
-func (c *ExtNH) Common(cap2 Cap) Cap {
+func (c *ExtNH) Intersect(cap2 Cap) Cap {
 	c2, ok := cap2.(*ExtNH)
 	if !ok {
 		return nil

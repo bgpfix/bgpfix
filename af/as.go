@@ -13,13 +13,13 @@ var msb = binary.Msb
 // AS represents AFI+SAFI as afi(16) + 0(8) + safi(8)
 type AS uint32
 
-// AfiSafi returns AS for given Afi and Safi
-func AfiSafi(afi AFI, safi SAFI) AS {
+// NewAS returns AS for given Afi and Safi
+func NewAS(afi AFI, safi SAFI) AS {
 	return AS(uint32(afi)<<16 | uint32(safi))
 }
 
-// AfiSafiFrom reads AS from wire representation in buf
-func AfiSafiFrom(buf []byte) AS {
+// NewASBytes reads AS from wire representation in buf
+func NewASBytes(buf []byte) AS {
 	if len(buf) == 4 {
 		return AS(uint32(msb.Uint16(buf[0:2]))<<16 | uint32(buf[3]))
 	} else if len(buf) == 3 {
@@ -75,6 +75,6 @@ func (as *AS) FromJSON(src []byte) error {
 		return err
 	}
 
-	*as = AfiSafi(afi, safi)
+	*as = NewAS(afi, safi)
 	return nil
 }

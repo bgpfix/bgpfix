@@ -9,11 +9,9 @@ import (
 
 // Cap represents a particular BGP capability
 type Cap interface {
-	// Common returns a new instance of the same capability that
-	// represents its intersection with cap2.
-	//
-	// May return nil, eg. if cap and cap2 are equal.
-	Common(cap2 Cap) Cap
+	// Intersect returns a new instance of the capability that
+	// represents its intersection with cap2. Returns nil if equal.
+	Intersect(cap2 Cap) Cap
 
 	// Unmarshal parses wire representation from src.
 	// It must support multiple calls for the same message.

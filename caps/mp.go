@@ -22,21 +22,21 @@ func (c *MP) Unmarshal(buf []byte, caps Caps) error {
 	}
 
 	// ignore buf[2]
-	af := af.AfiSafiFrom(buf[:4])
+	af := af.NewASBytes(buf[:4])
 	c.Add(af.Afi(), af.Safi())
 	return nil
 }
 
 func (c *MP) Add(afi af.AFI, safi af.SAFI) {
-	c.Proto[af.AfiSafi(afi, safi)] = true
+	c.Proto[af.NewAS(afi, safi)] = true
 }
 
 func (c *MP) Has(afi af.AFI, safi af.SAFI) bool {
-	return c.Proto[af.AfiSafi(afi, safi)]
+	return c.Proto[af.NewAS(afi, safi)]
 }
 
 func (c *MP) Drop(afi af.AFI, safi af.SAFI) {
-	delete(c.Proto, af.AfiSafi(afi, safi))
+	delete(c.Proto, af.NewAS(afi, safi))
 }
 
 func (c *MP) Sorted() (dst []af.AS) {
@@ -51,7 +51,7 @@ func (c *MP) Sorted() (dst []af.AS) {
 	return
 }
 
-func (c *MP) Common(cap2 Cap) Cap {
+func (c *MP) Intersect(cap2 Cap) Cap {
 	c2, ok := cap2.(*MP)
 	if !ok {
 		return nil

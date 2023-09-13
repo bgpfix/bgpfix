@@ -9,7 +9,7 @@ import (
 // ASV represents AFI+SAFI+VAL as afi(16) + 0(8) + safi(8) + val(32)
 type ASV uint64
 
-func AfiSafiVal(afi AFI, safi SAFI, val uint32) ASV {
+func NewASV(afi AFI, safi SAFI, val uint32) ASV {
 	return ASV(uint64(afi)<<48 | uint64(safi)<<32 | uint64(val))
 }
 
@@ -60,6 +60,6 @@ func (asv *ASV) FromJSONAfi(src []byte) error {
 		return err
 	}
 
-	*asv = AfiSafiVal(afi, safi, uint32(afi2))
+	*asv = NewASV(afi, safi, uint32(afi2))
 	return nil
 }

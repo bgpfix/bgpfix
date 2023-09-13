@@ -208,7 +208,7 @@ func (s *Speaker) onR(m *msg.Msg) pipe.Action {
 	p := s.pipe
 
 	// check if m too long vs. extmsg?
-	if m.Length() > msg.MSG_MAXLEN && !p.Caps.Has(caps.CAP_EXTENDED_MESSAGE) {
+	if m.Length() > msg.MAXLEN && !p.Caps.Has(caps.CAP_EXTENDED_MESSAGE) {
 		p.Event(EVENT_TOO_LONG, m)
 		// TODO: notify + teardown
 		return s.erraction
@@ -253,7 +253,7 @@ func (s *Speaker) onT(m *msg.Msg) pipe.Action {
 	p := s.pipe
 
 	// check if m too long vs. extmsg
-	if m.Length() > msg.MSG_MAXLEN && !p.Caps.Has(caps.CAP_EXTENDED_MESSAGE) {
+	if m.Length() > msg.MAXLEN && !p.Caps.Has(caps.CAP_EXTENDED_MESSAGE) {
 		p.Event(EVENT_TOO_LONG, m)
 		return s.erraction
 	}

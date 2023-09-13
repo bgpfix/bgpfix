@@ -9,6 +9,7 @@ import (
 
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/msg"
+	"github.com/puzpuzpuz/xsync/v2"
 	"github.com/rs/zerolog"
 )
 
@@ -41,9 +42,12 @@ type Pipe struct {
 	evwg   sync.WaitGroup // event handler
 
 	Options Options    // pipe options; modify before Start()
+	Caps    caps.Caps  // BGP capability context; always thread-safe
 	L       *Direction // messages for L, call Start() before use
 	R       *Direction // messages for R; call Start() before use
-	Caps    caps.Caps  // BGP capability context; thread-safe
+
+	// generic Key-Value store, always thread-safe
+	KV *xsync.MapOf[string, any]
 }
 
 // NewPipe returns a new pipe, which can be configured through its Options.
@@ -56,17 +60,19 @@ func NewPipe(ctx context.Context) *Pipe {
 	p.Options.Events = make(map[any][]EventFunc)
 
 	p.L = &Direction{
-		p:   p,
-		Dst: msg.DST_L,
+		Pipe: p,
+		Dst:  msg.DST_L,
 	}
 
 	p.R = &Direction{
-		p:   p,
-		Dst: msg.DST_R,
+		Pipe: p,
+		Dst:  msg.DST_R,
 	}
 
 	p.Caps.Init() // NB: make it thread-safe
 	p.events = make(chan *Event, 10)
+
+	p.KV = xsync.NewMapOf[any]()
 
 	return p
 }
@@ -105,7 +111,7 @@ func (p *Pipe) apply(opts *Options) {
 		}
 	})
 	for _, cb := range opts.Callbacks {
-		switch cb.Dir {
+		switch cb.Dst {
 		case msg.DST_X:
 			p.L.addCallback(cb)
 			p.R.addCallback(cb)
@@ -176,24 +182,26 @@ func (p *Pipe) open(ev *Event) bool {
 
 	// find out common caps
 	if p.Options.Caps {
-		p.Caps.Clear()
-		p.Caps.SetFrom(r.Caps)
-
-		// verify vs. what we sent
-		p.Caps.Each(func(i int, cc caps.Code, rcap caps.Cap) {
+		// collect common caps into common
+		var common caps.Caps
+		r.Caps.Each(func(i int, cc caps.Code, rcap caps.Cap) {
+			// support on both ends?
 			tcap := t.Caps.Get(cc)
-
-			// no common support for cc at all? delete it
-			if rcap == nil || tcap == nil {
-				p.Caps.Drop(cc)
+			if tcap == nil {
 				return
 			}
 
-			// dive into rcap vs tcap
-			if common := rcap.Common(tcap); common != nil {
-				p.Caps.Set(cc, common)
+			// needs an intersection?
+			if icap := rcap.Intersect(tcap); icap != nil {
+				common.Set(cc, icap) // use the new intersection value
+			} else {
+				common.Set(cc, rcap) // just reference the received
 			}
 		})
+
+		// overwrite p.Caps
+		p.Caps.Clear()
+		p.Caps.SetFrom(common)
 	}
 
 	// announce both OPENs were seen, Caps ready for use

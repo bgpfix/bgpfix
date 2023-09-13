@@ -25,7 +25,7 @@ type Open struct {
 }
 
 const (
-	OPEN_MINLEN   = 29 - MSG_HEADLEN // rfc4271/4.2
+	OPEN_MINLEN   = 29 - HEADLEN // rfc4271/4.2
 	OPEN_VERSION  = 4
 	OPEN_HOLDTIME = 90
 

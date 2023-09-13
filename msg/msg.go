@@ -32,7 +32,7 @@ type Msg struct {
 
 	// upper layer
 	Upper  Type   // which of the upper layer is valid?
-	Dirty  bool   // if true, no sync between the upper layer and Data (needs marshal)
+	Dirty  bool   // if true, probably needs a marshal (Data does not reflect Upper)
 	Open   Open   // parsed BGP OPEN message
 	Update Update // parsed BGP UPDATE message
 
@@ -74,13 +74,13 @@ const (
 
 const (
 	// BGP header length, per rfc4271/4.1
-	MSG_HEADLEN = 19 // = marker(16) + length(2) + type(1)
+	HEADLEN = 19 // = marker(16) + length(2) + type(1)
 
 	// BGP maximum message length, per rfc4271
-	MSG_MAXLEN = 4096
+	MAXLEN = 4096
 
 	// BGP maximum extended message length, per rfc8654
-	MSG_MAXLEN_EXT = 65535
+	MAXLEN_EXT = 65535
 
 	// JSON date and time format
 	JSON_TIME = `2006-01-02T15:04:05.000`
@@ -136,7 +136,7 @@ func (msg *Msg) Reset() *Msg {
 
 // Length returns total BGP message length, including header
 func (msg *Msg) Length() int {
-	return len(msg.Data) + MSG_HEADLEN
+	return len(msg.Data) + HEADLEN
 }
 
 // SetUp prepares to make use of and modify the upper layer of given type.
@@ -156,11 +156,6 @@ func (msg *Msg) SetData(data []byte) *Msg {
 		msg.Dirty = true
 	}
 	return msg
-}
-
-// DropData drops message data
-func (msg *Msg) DropData() *Msg {
-	return msg.SetData(nil)
 }
 
 // Own tags msg as the owner of referenced data. Does not copy the data.
@@ -200,7 +195,7 @@ func (msg *Msg) CopyData() *Msg {
 // Returns the number of parsed bytes from raw.
 func (msg *Msg) Parse(raw []byte) (off int, err error) {
 	// enough data for marker + length + type?
-	if len(raw) < MSG_HEADLEN {
+	if len(raw) < HEADLEN {
 		return off, io.ErrUnexpectedEOF
 	}
 	data := raw
@@ -219,7 +214,7 @@ func (msg *Msg) Parse(raw []byte) (off int, err error) {
 	data = raw[off:]
 
 	// check length
-	dlen := l - MSG_HEADLEN
+	dlen := l - HEADLEN
 	if dlen < 0 {
 		return off, ErrLength
 	} else if dlen > len(data) {
@@ -304,7 +299,7 @@ func (msg *Msg) MarshalUpper(caps caps.Caps) error {
 		}
 		err = u.Marshal(caps)
 	case KEEPALIVE:
-		msg.DropData()
+		msg.SetData(nil)
 	default:
 		err = ErrType
 	}
@@ -322,7 +317,7 @@ func (msg *Msg) WriteTo(w io.Writer) (n int64, err error) {
 
 	// data length ok?
 	l := msg.Length()
-	if l > MSG_MAXLEN {
+	if l > MAXLEN {
 		return 0, ErrLength
 	}
 

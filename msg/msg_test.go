@@ -38,27 +38,27 @@ func TestMsg_Parse(t *testing.T) {
 		{
 			"invalid length 1",
 			append(bgp_marker[:], 0x00, 0x01, 0x00),
-			nil, MSG_HEADLEN, ErrLength,
+			nil, HEADLEN, ErrLength,
 		},
 		{
 			"EOF 65k",
 			append(bgp_marker[:], 0xff, 0xff, 0x00),
-			nil, MSG_HEADLEN, io.ErrUnexpectedEOF,
+			nil, HEADLEN, io.ErrUnexpectedEOF,
 		},
 		{
 			"EOF 1",
-			append(bgp_marker[:], 0x00, MSG_HEADLEN+1, 0x00),
-			nil, MSG_HEADLEN, io.ErrUnexpectedEOF,
+			append(bgp_marker[:], 0x00, HEADLEN+1, 0x00),
+			nil, HEADLEN, io.ErrUnexpectedEOF,
 		},
 		{
 			"OPEN empty",
-			append(bgp_marker[:], 0x00, MSG_HEADLEN, byte(OPEN), 0x31, 0x37),
-			opMsg, MSG_HEADLEN, nil,
+			append(bgp_marker[:], 0x00, HEADLEN, byte(OPEN), 0x31, 0x37),
+			opMsg, HEADLEN, nil,
 		},
 		{
 			"OPEN data",
-			append(bgp_marker[:], 0x00, MSG_HEADLEN+4, byte(OPEN), 'd', 'a', 't', 'a'),
-			opMsgData, MSG_HEADLEN + 4, nil,
+			append(bgp_marker[:], 0x00, HEADLEN+4, byte(OPEN), 'd', 'a', 't', 'a'),
+			opMsgData, HEADLEN + 4, nil,
 		},
 	}
 

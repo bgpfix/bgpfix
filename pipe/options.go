@@ -25,8 +25,7 @@ type Options struct {
 	Logger  zerolog.Logger // use zerolog.Nop to disable logging
 	MsgPool *sync.Pool     // optional pool for msg.Msg
 
-	Tstamp bool // add timestamps to messages?
-	Caps   bool // fill pipe.Caps using OPEN messages?
+	Caps bool // overwrite pipe.Caps using OPEN messages?
 
 	Rlen  int // R channel length
 	Rproc int // number of R input handlers
@@ -44,7 +43,7 @@ type Callback struct {
 	Order int    // the lower the order, the sooner callback is run
 	Raw   bool   // if true, run on non-parsed message, before non-raw callbacks
 
-	Dir   msg.Dst      // if non-zero, limits the direction
+	Dst   msg.Dst      // if non-zero, limits the direction
 	Types []msg.Type   // if non-empty, limits message types
 	Func  CallbackFunc // the function to call
 }
@@ -83,28 +82,28 @@ func (o *Options) AddCallback(cbf CallbackFunc, tpl ...*Callback) *Callback {
 	return &cb
 }
 
-// OnMsg adds a callback for all messages of given types
-func (o *Options) OnMsg(cb CallbackFunc, dir msg.Dst, types ...msg.Type) *Callback {
+// OnMsg adds a callback for all messages of given types (or all types if not specified).
+func (o *Options) OnMsg(cb CallbackFunc, dst msg.Dst, types ...msg.Type) *Callback {
 	return o.AddCallback(cb, &Callback{
-		Dir:   dir,
+		Dst:   dst,
 		Types: types,
 	})
 }
 
-// OnFirst adds a callback as the first for all messages of given types
-func (o *Options) OnFirst(cb CallbackFunc, dir msg.Dst, types ...msg.Type) *Callback {
+// OnMsgFirst adds a callback as the first for all messages of given types (or all types if not specified).
+func (o *Options) OnMsgFirst(cb CallbackFunc, dst msg.Dst, types ...msg.Type) *Callback {
 	return o.AddCallback(cb, &Callback{
 		Order: -len(o.Callbacks) - 1,
-		Dir:   dir,
+		Dst:   dst,
 		Types: types,
 	})
 }
 
-// OnLast adds a callback as the last for all messages of given types
-func (o *Options) OnLast(cb CallbackFunc, dir msg.Dst, types ...msg.Type) *Callback {
+// OnMsgLast adds a callback as the last for all messages of given types (or all types if not specified).
+func (o *Options) OnMsgLast(cb CallbackFunc, dst msg.Dst, types ...msg.Type) *Callback {
 	return o.AddCallback(cb, &Callback{
 		Order: len(o.Callbacks) + 1,
-		Dir:   dir,
+		Dst:   dst,
 		Types: types,
 	})
 }

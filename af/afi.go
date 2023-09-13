@@ -17,3 +17,12 @@ const (
 	AFI_ROUTING_POLICY  AFI = 16398
 	AFI_MPLS_NAMESPACES AFI = 16399
 )
+
+// NewAFIBytes reads AFI from wire representation in buf
+func NewAFIBytes(buf []byte) AFI {
+	if len(buf) >= 2 {
+		return AFI(msb.Uint16(buf))
+	} else {
+		return 0
+	}
+}
