@@ -54,9 +54,9 @@ type Dst byte
 
 //go:generate go run github.com/dmarkham/enumer -type Dst -trimprefix DST_
 const (
-	DST_X Dst = 0 // no particular destination (ie. both L and R)
-	DST_L Dst = 1 // destined for L ("left" or "local")
-	DST_R Dst = 2 // destined for R ("right" or "remote")
+	DST_LR Dst = 0 // no particular destination (ie. both L and R)
+	DST_L  Dst = 1 // destined for L ("left" or "local")
+	DST_R  Dst = 2 // destined for R ("right" or "remote")
 )
 
 // BGP message type

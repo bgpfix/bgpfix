@@ -12,18 +12,18 @@ import (
 
 // Default BGP pipe options
 var DefaultOptions = Options{
-	Logger: log.Logger,
+	Logger: &log.Logger,
+	Caps:   true,
 	Rlen:   10,
 	Rproc:  1,
 	Llen:   10,
 	Lproc:  1,
-	Caps:   true,
 }
 
 // BGP pipe options
 type Options struct {
-	Logger  zerolog.Logger // use zerolog.Nop to disable logging
-	MsgPool *sync.Pool     // optional pool for msg.Msg
+	Logger  *zerolog.Logger // if nil logging is disabled
+	MsgPool *sync.Pool      // optional pool for msg.Msg
 
 	Caps bool // overwrite pipe.Caps using OPEN messages?
 

@@ -7,11 +7,11 @@ import (
 	"strings"
 )
 
-const _DstName = "XLR"
+const _DstName = "LRLR"
 
-var _DstIndex = [...]uint8{0, 1, 2, 3}
+var _DstIndex = [...]uint8{0, 2, 3, 4}
 
-const _DstLowerName = "xlr"
+const _DstLowerName = "lrlr"
 
 func (i Dst) String() string {
 	if i >= Dst(len(_DstIndex)-1) {
@@ -24,26 +24,26 @@ func (i Dst) String() string {
 // Re-run the stringer command to generate them again.
 func _DstNoOp() {
 	var x [1]struct{}
-	_ = x[DST_X-(0)]
+	_ = x[DST_LR-(0)]
 	_ = x[DST_L-(1)]
 	_ = x[DST_R-(2)]
 }
 
-var _DstValues = []Dst{DST_X, DST_L, DST_R}
+var _DstValues = []Dst{DST_LR, DST_L, DST_R}
 
 var _DstNameToValueMap = map[string]Dst{
-	_DstName[0:1]:      DST_X,
-	_DstLowerName[0:1]: DST_X,
-	_DstName[1:2]:      DST_L,
-	_DstLowerName[1:2]: DST_L,
-	_DstName[2:3]:      DST_R,
-	_DstLowerName[2:3]: DST_R,
+	_DstName[0:2]:      DST_LR,
+	_DstLowerName[0:2]: DST_LR,
+	_DstName[2:3]:      DST_L,
+	_DstLowerName[2:3]: DST_L,
+	_DstName[3:4]:      DST_R,
+	_DstLowerName[3:4]: DST_R,
 }
 
 var _DstNames = []string{
-	_DstName[0:1],
-	_DstName[1:2],
+	_DstName[0:2],
 	_DstName[2:3],
+	_DstName[3:4],
 }
 
 // DstString retrieves an enum value from the enum constants string name.

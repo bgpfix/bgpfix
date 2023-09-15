@@ -26,7 +26,7 @@ import (
 // Use NewPipe() to get a new object and modify its Pipe.Options.
 // Then call Pipe.Start() to start the message flow.
 type Pipe struct {
-	zerolog.Logger
+	*zerolog.Logger
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -78,6 +78,12 @@ func NewPipe(ctx context.Context) *Pipe {
 }
 
 func (p *Pipe) apply(opts *Options) {
+	if opts.Logger != nil {
+		p.Logger = opts.Logger
+	} else {
+		l := zerolog.Nop()
+		p.Logger = &l
+	}
 	p.Logger = opts.Logger
 
 	if opts.MsgPool != nil {
@@ -112,7 +118,7 @@ func (p *Pipe) apply(opts *Options) {
 	})
 	for _, cb := range opts.Callbacks {
 		switch cb.Dst {
-		case msg.DST_X:
+		case msg.DST_LR:
 			p.L.addCallback(cb)
 			p.R.addCallback(cb)
 		case msg.DST_L:
