@@ -135,3 +135,8 @@ func (o *Options) OnStop(cb EventFunc) {
 func (o *Options) OnOpen(cb EventFunc) {
 	o.OnEvent(cb, EVENT_OPEN)
 }
+
+// OnParseError request cb to be called on BGP message parse error.
+func (o *Options) OnParseError(cb EventFunc) {
+	o.OnEvent(cb, EVENT_PARSE)
+}

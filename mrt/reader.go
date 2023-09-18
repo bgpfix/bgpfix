@@ -8,14 +8,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sync/atomic"
 
 	"github.com/bgpfix/bgpfix/pipe"
 	"github.com/rs/zerolog"
 )
 
-// BgpReader reads MRT-BGP4MP messages into a pipe.Direction.
-type BgpReader struct {
+// Reader reads MRT-BGP4MP messages into a pipe.Direction.
+type Reader struct {
 	zerolog.Logger
 
 	ctx    context.Context
@@ -23,16 +22,15 @@ type BgpReader struct {
 
 	Pipe  *pipe.Pipe      // target pipe
 	Dir   *pipe.Direction // target direction
-	Stats BgpReaderStats  // our stats
+	Stats ReaderStats     // our stats
 
-	ibuf []byte       // input buffer
-	seq  atomic.Int64 // last sequence number
-	mrt  Mrt          // raw MRT message
-	bm   BgpMsg       // MRT-BGP message
+	ibuf []byte // input buffer
+	mrt  Mrt    // raw MRT message
+	bm   BgpMsg // MRT-BGP message
 }
 
 // BGP reader statistics
-type BgpReaderStats struct {
+type ReaderStats struct {
 	Parsed     uint64 // parsed messages (total)
 	ParsedBgp  uint64 // parsed BGP4MP messages
 	ParsedSkip uint64 // skipped non-BGP4MP messages
@@ -40,21 +38,23 @@ type BgpReaderStats struct {
 	Garbled    uint64 // parse error
 }
 
-// NewBgpReader returns a new BgpReader for given pipe.Direction.
-func NewBgpReader(ctx context.Context, log *zerolog.Logger, dir *pipe.Direction) *BgpReader {
-	br := &BgpReader{}
+// NewReader returns a new Reader for given pipe.Direction.
+func NewReader(ctx context.Context, log *zerolog.Logger, dst *pipe.Direction) *Reader {
+	br := &Reader{}
 	br.ctx, br.cancel = context.WithCancel(ctx)
 	if log != nil {
 		br.Logger = *log
+	} else {
+		br.Logger = zerolog.Nop()
 	}
-	br.Dir = dir
-	br.Pipe = dir.Pipe
+	br.Dir = dst
+	br.Pipe = dst.Pipe
 	return br
 }
 
 // Write implements io.Writer and reads all MRT-BGP4MP messages from p
 // into br.Direction. Must not be used concurrently.
-func (br *BgpReader) Write(src []byte) (n int, err error) {
+func (br *Reader) Write(src []byte) (n int, err error) {
 	n = len(src) // NB: always return n=len(src)
 
 	// append p and switch to inbuf if needed
@@ -133,7 +133,7 @@ func (br *BgpReader) Write(src []byte) (n int, err error) {
 }
 
 // ReadFromPath opens and reads fpath into br, uncompressing if needed.
-func (br *BgpReader) ReadFromPath(fpath string) (n int64, err error) {
+func (br *Reader) ReadFromPath(fpath string) (n int64, err error) {
 	fh, err := os.Open(fpath)
 	if err != nil {
 		return 0, err
