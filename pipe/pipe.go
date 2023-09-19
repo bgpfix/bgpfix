@@ -35,7 +35,7 @@ type Pipe struct {
 	stopped atomic.Bool // true iff Stop() called
 
 	pool *sync.Pool     // message pool
-	twg  sync.WaitGroup // L Input handlers
+	lwg  sync.WaitGroup // L Input handlers
 	rwg  sync.WaitGroup // R Input handlers
 
 	events chan *Event    // pipe events
@@ -156,17 +156,24 @@ func (p *Pipe) Start() {
 
 	// start L handlers
 	for i := 0; i < opts.Lproc; i++ {
-		p.twg.Add(1)
-		go p.L.Handler(&p.twg)
+		p.lwg.Add(1)
+		go p.L.Handler(&p.lwg)
 	}
 	go func() {
-		p.twg.Wait() // [1] after s.L.Input is closed (or no handlers)
+		p.lwg.Wait() // [1] after s.L.Input is closed (or no handlers)
 		p.L.CloseOutput()
 	}()
 
-	// start event handler
+	// start the event handler
 	p.evwg.Add(1)
 	go p.eventHandler(&p.evwg)
+
+	// stop everything if both directions finish
+	go func() {
+		p.lwg.Wait()
+		p.rwg.Wait()
+		p.Stop()
+	}()
 
 	// stop everything on context cancel
 	go func() {
@@ -179,6 +186,7 @@ func (p *Pipe) Start() {
 }
 
 // open emits EVENT_OPEN when both sides have seen OPEN + fills p.Caps if enabled
+// FIXME: wait for KEEPALIVE, emit ESTABLISH
 func (p *Pipe) open(ev *Event) bool {
 	// already seen OPEN for both directions?
 	r, t := p.R.Open.Load(), p.L.Open.Load()
@@ -229,14 +237,16 @@ func (p *Pipe) Stop() {
 	// publish the event (best-effort)
 	go p.Event(EVENT_STOP, nil)
 
+	// close all inputs
+	p.L.CloseInput()
+	p.R.CloseInput()
+
 	// yank the cable out of blocked calls (hopefully)
 	p.cancel()
 
-	// stop the input handlers and wait for them to finish
-	p.R.CloseInput()
-	p.L.CloseInput()
+	// wait for input handlers
+	p.lwg.Wait()
 	p.rwg.Wait()
-	p.twg.Wait()
 	// NB: now [1] will close the R/L outputs
 
 	// safely stop the event handler and wait for it to finish
@@ -250,7 +260,7 @@ func (p *Pipe) Stop() {
 // Wait blocks until all handlers finish.
 func (p *Pipe) Wait() {
 	p.rwg.Wait()
-	p.twg.Wait()
+	p.lwg.Wait()
 	p.evwg.Wait()
 }
 

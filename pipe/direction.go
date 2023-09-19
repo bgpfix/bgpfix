@@ -30,7 +30,7 @@ type Direction struct {
 	// You should dispose used messages using Pipe.Put().
 	Out chan *msg.Msg
 
-	// stores the first OPEN message that made it to Out
+	// stores the last OPEN message that made it to Out
 	Open atomic.Pointer[msg.Open]
 
 	// input/output buffers
@@ -183,7 +183,6 @@ func (d *Direction) handler(output chan *msg.Msg) (output_closed bool) {
 		input = d.In
 		m     *msg.Msg
 		cbs   []*Callback
-		fo    bool // first open
 	)
 
 	// which event to generate in case of an OPEN message?
@@ -272,13 +271,11 @@ input:
 			}
 		}
 
-		// the first valid OPEN? keep it
-		if !fo && m.Type == msg.OPEN && m.ParseUpper(p.Caps) == nil {
-			if d.Open.CompareAndSwap(nil, &m.Open) {
-				pc.Action |= ACTION_BORROW // don't re-use in pool
-				p.Event(open_event, m)
-			}
-			fo = true // no more tries
+		// a valid OPEN? keep it
+		if m.Type == msg.OPEN && m.ParseUpper(p.Caps) == nil {
+			pc.Action |= ACTION_BORROW // don't re-use in pool
+			d.Open.Swap(&m.Open)
+			p.Event(open_event, m)
 		}
 
 		// forward to output if possible
