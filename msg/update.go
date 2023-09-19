@@ -1,7 +1,6 @@
 package msg
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"net/netip"
@@ -98,7 +97,6 @@ func (u *Update) ParseAttrs(cps caps.Caps) error {
 		raw  = u.RawAttrs    // all attributes
 		atyp attrs.CodeFlags // attribute type
 		alen uint16          // attribute length
-		errs []error         // atribute errors
 		ats  attrs.Attrs     // parsed attributes
 	)
 
@@ -111,6 +109,9 @@ func (u *Update) ParseAttrs(cps caps.Caps) error {
 		// parse attribute type
 		atyp = attrs.CodeFlags(msb.Uint16(raw[0:2]))
 		acode := atyp.Code()
+		if ats.Has(acode) {
+			return fmt.Errorf("%s: %w", acode, ErrAttrDupe)
+		}
 
 		// parse attribute length
 		if !atyp.HasFlags(attrs.ATTR_EXTENDED) {
@@ -130,23 +131,12 @@ func (u *Update) ParseAttrs(cps caps.Caps) error {
 		buf := raw[:alen]
 		raw = raw[alen:]
 
-		// a duplicate?
-		if ats.Has(acode) {
-			errs = append(errs, fmt.Errorf("%s: %w", acode, ErrDupe))
-			continue
-		}
-
 		// create, overwrite flags, try parsing
 		attr := ats.Use(acode)
 		attr.SetFlags(atyp.Flags())
 		if err := attr.Unmarshal(buf, cps); err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", acode, err))
+			return fmt.Errorf("%s: %w", acode, err)
 		}
-	}
-
-	// any errors?
-	if len(errs) > 0 {
-		return fmt.Errorf("%w: %w", ErrAttrs, errors.Join(errs...))
 	}
 
 	// store

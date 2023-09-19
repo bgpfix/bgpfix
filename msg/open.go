@@ -1,7 +1,6 @@
 package msg
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"net/netip"
@@ -96,7 +95,6 @@ func (o *Open) ParseCaps() error {
 		ptyp   byte       // parameter type
 		plen   int        // parameter length
 		pval   []byte     // parameter value
-		errs   []error    // capability errors
 		cps    caps.Caps  // parsed capabilities
 	)
 
@@ -154,14 +152,9 @@ func (o *Open) ParseCaps() error {
 
 			// try parsing
 			if err := cap.Unmarshal(cval, cps); err != nil {
-				errs = append(errs, fmt.Errorf("%s: %w", cc, err))
+				return fmt.Errorf("%s: %w", cc, err)
 			}
 		}
-	}
-
-	// any errors?
-	if len(errs) > 0 {
-		return fmt.Errorf("%w: %w", ErrCaps, errors.Join(errs...))
 	}
 
 	// store
