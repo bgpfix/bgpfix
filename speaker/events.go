@@ -1,28 +1,19 @@
 package speaker
 
-import "github.com/bgpfix/bgpfix/pipe"
-
 var (
-	EVENT_INIT = &pipe.EventType{
-		Name:  "speaker/INIT",
-		Descr: "entered initial state",
-	}
-	EVENT_ESTABLISHED = &pipe.EventType{
-		Name:  "speaker/ESTABLISHED",
-		Descr: "session established",
-	}
-	EVENT_TOO_LONG = &pipe.EventType{
-		Name:  "speaker/TOO_LONG",
-		Descr: "seen a message that is too long",
-	}
-	EVENT_PARSE_ERROR = &pipe.EventType{
-		Name:  "speaker/PARSE_ERROR",
-		Descr: "message parse error",
-		Value: "error message",
-	}
-	EVENT_R_TIMEOUT = &pipe.EventType{
-		Name:  "speaker/R_TIMEOUT",
-		Descr: "remote hold timer expired",
-		Value: "nanoseconds till last R message",
-	}
+	// entered initial state
+	EVENT_INIT = "speaker/INIT"
+
+	// session established
+	EVENT_ESTABLISHED = "speaker/ESTABLISHED"
+
+	// seen a message that is too long
+	EVENT_TOO_LONG = "speaker/TOO_LONG"
+
+	// message parse error
+	EVENT_PARSE_ERROR = "speaker/PARSE_ERROR"
+
+	// remote hold timer expired
+	// val[0] = nanoseconds till last R message
+	EVENT_R_TIMEOUT = "speaker/R_TIMEOUT"
 )

@@ -186,9 +186,9 @@ func (d *Direction) handler(output chan *msg.Msg) (output_closed bool) {
 	)
 
 	// which event to generate in case of an OPEN message?
-	open_event := EVENT_R_OPEN
+	open_event := EVENT_OPEN_R
 	if d.Dst == msg.DST_L {
-		open_event = EVENT_L_OPEN
+		open_event = EVENT_OPEN_L
 	}
 
 	// catch panic due to write to closed channel

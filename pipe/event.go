@@ -1,6 +1,8 @@
 package pipe
 
 import (
+	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -9,83 +11,98 @@ import (
 
 // a collection of events generated internally by pipe
 var (
-	EVENT_START = &EventType{
-		Name:  "pipe/START",
-		Descr: "pipe finished starting",
-	}
-	EVENT_STOP = &EventType{
-		Name:  "pipe/STOP",
-		Descr: "pipe is about to stop",
-	}
-	EVENT_PARSE = &EventType{
-		Name:  "pipe/PARSE",
-		Descr: "could not parse the message before its callback",
-		Value: "the error message",
-	}
-	EVENT_R_OPEN = &EventType{
-		Name:  "pipe/R_OPEN",
-		Descr: "OPEN seen on R direction",
-	}
-	EVENT_L_OPEN = &EventType{
-		Name:  "pipe/L_OPEN",
-		Descr: "OPEN seen on L direction",
-	}
-	EVENT_OPEN = &EventType{
-		Name:  "pipe/OPEN",
-		Descr: "OPEN messages seen in both directions",
-		// now both pipe.R.Open and pipe.L.Open are available
-	}
+	// pipe has finished starting
+	EVENT_START = "bgpfix/pipe.START"
+
+	// pipe is about to stop
+	EVENT_STOP = "bgpfix/pipe.STOP"
+
+	// could not parse the message before its callback
+	EVENT_PARSE = "bgpfix/pipe.PARSE"
+
+	// OPEN made it to R, stored in pipe.R.Open
+	EVENT_OPEN_R = "bgpfix/pipe.OPEN_R"
+
+	// OPEN made it to L, stored in pipe.L.Open
+	EVENT_OPEN_L = "bgpfix/pipe.OPEN_L"
+
+	// OPEN made it to both sides
+	EVENT_OPEN = "bgpfix/pipe.OPEN"
 )
 
 // Event represents an arbitrary event for a BGP pipe.
 // Seq and Time will be set by the handler if non-zero.
 type Event struct {
-	// parent pipe
-	Pipe *Pipe
-
-	// optional metadata
+	Pipe *Pipe     `json:"-"`              // parent pipe
 	Seq  uint64    `json:"seq,omitempty"`  // event sequence number
 	Time time.Time `json:"time,omitempty"` // event timestamp
-	Msg  *msg.Msg  `json:"-"`              // message that caused the event
 
-	// event details
-	Type  any `json:"type"`  // type, usually a *reference* to a pkg variable
-	Value any `json:"value"` // value, type-specific, may be nil
+	Type  string   `json:"type"`  // type, usually "lib/pkg.NAME"
+	Msg   *msg.Msg `json:"-"`     // optional message that caused the event
+	Error error    `json:"err"`   // optional error value
+	Value any      `json:"value"` // optional value, type-specific
 }
 
-// EventType is the recommended - but not required - type to use for events
-type EventType struct {
-	Name  string `json:"name,omitempty"`  // event name, eg. "pkg/NAME"
-	Descr string `json:"descr,omitempty"` // event description
-	Value string `json:"value,omitempty"` // what's in the value?
-}
-
-// Event announces a new event type et to the pipe, with an optional value
-func (p *Pipe) Event(et any, msg *msg.Msg, val ...any) {
+// event sends ev with given ctx; if noblock is true, it never blocks on full channel
+func (p *Pipe) event(ev *Event, ctx context.Context, noblock bool) (sent bool) {
 	defer func() { recover() }() // in case of closed p.Events
 
-	ev := &Event{
-		Pipe: p,
-		Time: time.Now().UTC(),
-		Msg:  msg,
-		Type: et,
+	ev.Pipe = p
+	ev.Time = time.Now().UTC()
+
+	var ctxchan <-chan struct{}
+	if ctx != nil {
+		ctxchan = ctx.Done()
 	}
 
-	// make sure the message isn't re-used before event handlers finish [1]
+	if noblock {
+		select {
+		case <-ctxchan:
+			return false
+		case p.events <- ev:
+			return true
+		default:
+			return false
+		}
+	} else {
+		select {
+		case <-ctxchan:
+			return false
+		case p.events <- ev:
+			return true
+		}
+	}
+}
+
+// Event announces a new event type et to the pipe, with optional message and arguments.
+// Error arguments are joined together into ev.Err, the first non-error argument
+// is used as ev.Val. Returns true iff the event was queued for processing.
+func (p *Pipe) Event(et string, msg *msg.Msg, args ...any) (sent bool) {
+	ev := &Event{Type: et}
+
 	if msg != nil {
-		PipeAction(msg).Set(ACTION_BORROW)
+		PipeAction(msg).Set(ACTION_BORROW) // don't re-use mem [1]
+		ev.Msg = msg
 	}
 
-	if len(val) > 0 {
-		ev.Value = val[0]
+	var errs []error
+	for _, arg := range args {
+		if err, ok := arg.(error); ok {
+			errs = append(errs, err)
+		} else if ev.Value == nil {
+			ev.Value = arg
+		}
+	}
+	switch len(errs) {
+	case 0:
+		ev.Error = nil
+	case 1:
+		ev.Error = errs[0]
+	default:
+		ev.Error = errors.Join(errs...)
 	}
 
-	select {
-	case <-p.ctx.Done():
-		// context cancelled
-	case p.events <- ev:
-		// success
-	}
+	return p.event(ev, p.ctx, false)
 }
 
 // eventHandler reads p.Events and broadcasts events to handlers
@@ -97,7 +114,7 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 	var (
 		seq  uint64
 		opts = &p.Options
-		wcbs = opts.Events[nil] // wildcard handlers - for any event type
+		wcbs = opts.Events[""] // wildcard handlers - for any event type
 	)
 
 	for ev := range p.events {

@@ -57,7 +57,7 @@ func NewPipe(ctx context.Context) *Pipe {
 	p.ctx, p.cancel = context.WithCancel(ctx)
 
 	p.Options = DefaultOptions
-	p.Options.Events = make(map[any][]EventFunc)
+	p.Options.Events = make(map[string][]EventFunc)
 
 	p.L = &Direction{
 		Pipe: p,
@@ -129,8 +129,8 @@ func (p *Pipe) apply(opts *Options) {
 	}
 
 	// prepend very first OPEN handlers
-	opts.Events[EVENT_R_OPEN] = append([]EventFunc{p.open}, opts.Events[EVENT_R_OPEN]...)
-	opts.Events[EVENT_L_OPEN] = append([]EventFunc{p.open}, opts.Events[EVENT_L_OPEN]...)
+	opts.Events[EVENT_OPEN_R] = append([]EventFunc{p.open}, opts.Events[EVENT_OPEN_R]...)
+	opts.Events[EVENT_OPEN_L] = append([]EventFunc{p.open}, opts.Events[EVENT_OPEN_L]...)
 }
 
 // Start starts given number of r/t message handlers in background,
@@ -234,8 +234,8 @@ func (p *Pipe) Stop() {
 		return // already stopped, or not started yet
 	}
 
-	// publish the event (best-effort)
-	go p.Event(EVENT_STOP, nil)
+	// publish the event (ignore the global context)
+	go p.event(&Event{Type: EVENT_STOP}, nil, false)
 
 	// close all inputs
 	p.L.CloseInput()

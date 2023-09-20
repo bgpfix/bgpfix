@@ -77,7 +77,7 @@ func (s *Speaker) Attach(p *pipe.Pipe) error {
 	p.Options.OnStart(s.onStart)
 	p.Options.OnOpen(s.onOpen)
 	p.Options.OnMsg(s.onR, msg.DST_R).Raw = true
-	p.Options.OnMsg(s.onT, msg.DST_L).Raw = true
+	p.Options.OnMsg(s.onL, msg.DST_L).Raw = true
 
 	return nil
 }
@@ -248,7 +248,7 @@ func (s *Speaker) onR(m *msg.Msg) pipe.Action {
 	return 0
 }
 
-func (s *Speaker) onT(m *msg.Msg) pipe.Action {
+func (s *Speaker) onL(m *msg.Msg) pipe.Action {
 	opts := &s.Options
 	p := s.pipe
 

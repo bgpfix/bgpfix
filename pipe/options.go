@@ -33,8 +33,8 @@ type Options struct {
 	Llen  int // L channel length
 	Lproc int // number of L input handlers
 
-	Callbacks []*Callback         // message callbacks
-	Events    map[any][]EventFunc // event handlers
+	Callbacks []*Callback            // message callbacks
+	Events    map[string][]EventFunc // event handlers
 }
 
 // Callback represents a function to call for given messages
@@ -109,11 +109,10 @@ func (o *Options) OnMsgLast(cb CallbackFunc, dst msg.Dst, types ...msg.Type) *Ca
 }
 
 // OnEvent request cb to be called for given event types etypes.
-// Remember to use *references* in etypes (unless you know what you are doing).
 // If no etypes is provided, it requests to call cb on *every* event.
-func (o *Options) OnEvent(cb EventFunc, etypes ...any) {
+func (o *Options) OnEvent(cb EventFunc, etypes ...string) {
 	if len(etypes) == 0 {
-		o.Events[nil] = append(o.Events[nil], cb)
+		o.Events[""] = append(o.Events[""], cb)
 	} else {
 		for _, et := range etypes {
 			o.Events[et] = append(o.Events[et], cb)
