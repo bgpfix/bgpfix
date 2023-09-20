@@ -12,7 +12,6 @@ import (
 // Default BGP speaker options
 var DefaultOptions = Options{
 	Logger:        log.Logger,
-	Mode:          SPEAKER_FULL,
 	Passive:       true,
 	LocalASN:      -1,
 	LocalHoldTime: msg.OPEN_HOLDTIME,
@@ -23,7 +22,6 @@ var DefaultOptions = Options{
 type Options struct {
 	Logger zerolog.Logger // use zerolog.Nop to disable logging
 
-	Mode      Mode // zero means don't do anything
 	Passive   bool // if true, expect the peer to go first with OPEN
 	ErrorDrop bool // drop erronous messages?
 
@@ -37,14 +35,3 @@ type Options struct {
 	RemoteId       netip.Addr // expected remote identifier; unspecified means any
 	RemoteCaps     caps.Caps  // minimum remote capabilities; set to nil to block a capability
 }
-
-// Mode controls how much we should engage in the attached BGP processor
-type Mode int
-
-const (
-	SPEAKER_DISABLED Mode = iota // don't do anything
-
-	SPEAKER_READONLY // readonly, just listen to open / keepalive / notify
-	SPEAKER_INFER    // as READONLY + try to infer capabilities from update messages
-	SPEAKER_FULL     // receive and transmit BGP messages
-)
