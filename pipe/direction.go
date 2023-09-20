@@ -15,6 +15,9 @@ type Direction struct {
 	// parent Pipe
 	Pipe *Pipe
 
+	// opposite pipe direction from the parent pipe
+	Opposite *Direction
+
 	// destination of messages flowing in this Direction
 	Dst msg.Dst
 
@@ -30,8 +33,11 @@ type Direction struct {
 	// You should dispose used messages using Pipe.Put().
 	Out chan *msg.Msg
 
-	// stores the last OPEN message that made it to Out
+	// the last OPEN message that made it to Out
 	Open atomic.Pointer[msg.Open]
+
+	// UNIX timestamp of the last KEEPALIVE message
+	Alive atomic.Int64
 
 	// input/output buffers
 	ibuf []byte
@@ -185,10 +191,10 @@ func (d *Direction) handler(output chan *msg.Msg) (output_closed bool) {
 		cbs   []*Callback
 	)
 
-	// which event to generate in case of an OPEN message?
-	open_event := EVENT_OPEN_R
+	// which events to generate in case of OPEN / KEEPALIVE?
+	event_open, event_alive := EVENT_OPEN_R, EVENT_ALIVE_R
 	if d.Dst == msg.DST_L {
-		open_event = EVENT_OPEN_L
+		event_open, event_alive = EVENT_OPEN_L, EVENT_ALIVE_L
 	}
 
 	// catch panic due to write to closed channel
@@ -254,7 +260,7 @@ input:
 			// need to parse first?
 			if !cb.Raw && m.Upper == msg.INVALID {
 				if err := m.ParseUpper(p.Caps); err != nil {
-					p.Event(EVENT_PARSE, m, err)
+					p.Event(EVENT_PARSE_ERROR, m, err)
 					continue input // next message
 				}
 			}
@@ -271,11 +277,21 @@ input:
 			}
 		}
 
-		// a valid OPEN? keep it
-		if m.Type == msg.OPEN && m.ParseUpper(p.Caps) == nil {
-			pc.Action |= ACTION_BORROW // don't re-use in pool
-			d.Open.Swap(&m.Open)
-			p.Event(open_event, m)
+		// special-purpose message?
+		switch m.Type {
+		case msg.OPEN: // take it if valid
+			if m.ParseUpper(p.Caps) == nil {
+				pc.Action |= ACTION_BORROW // don't re-use in pool
+				d.Open.Swap(&m.Open)
+				p.Event(event_open, m)
+			}
+
+		case msg.KEEPALIVE: // take it if bigger timestamp
+			newt := m.Time.Unix()
+			oldt := d.Alive.Load()
+			if newt > oldt && d.Alive.CompareAndSwap(oldt, newt) {
+				p.Event(event_alive, m)
+			}
 		}
 
 		// forward to output if possible

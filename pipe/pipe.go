@@ -69,6 +69,9 @@ func NewPipe(ctx context.Context) *Pipe {
 		Dst:  msg.DST_R,
 	}
 
+	p.L.Opposite = p.R
+	p.R.Opposite = p.L
+
 	p.Caps.Init() // NB: make it thread-safe
 	p.events = make(chan *Event, 10)
 
@@ -128,9 +131,9 @@ func (p *Pipe) apply(opts *Options) {
 		}
 	}
 
-	// prepend very first OPEN handlers
-	opts.Events[EVENT_OPEN_R] = append([]EventFunc{p.open}, opts.Events[EVENT_OPEN_R]...)
-	opts.Events[EVENT_OPEN_L] = append([]EventFunc{p.open}, opts.Events[EVENT_OPEN_L]...)
+	// prepend very first EVENT_ALIVE_* handlers
+	opts.Events[EVENT_ALIVE_R] = append([]EventFunc{p.alive}, opts.Events[EVENT_ALIVE_R]...)
+	opts.Events[EVENT_ALIVE_L] = append([]EventFunc{p.alive}, opts.Events[EVENT_ALIVE_L]...)
 }
 
 // Start starts given number of r/t message handlers in background,
@@ -185,28 +188,34 @@ func (p *Pipe) Start() {
 	go p.Event(EVENT_START, nil)
 }
 
-// open emits EVENT_OPEN when both sides have seen OPEN + fills p.Caps if enabled
-// FIXME: wait for KEEPALIVE, emit ESTABLISH
-func (p *Pipe) open(ev *Event) bool {
-	// already seen OPEN for both directions?
-	r, t := p.R.Open.Load(), p.L.Open.Load()
-	if r == nil || t == nil {
-		return true // not yet
+// alive is called whenever either direction gets a new KEEPALIVE message.
+// alive emits EVENT_ESTABLISHED + fills p.Caps if enabled.
+func (p *Pipe) alive(ev *Event) bool {
+	// already seen KEEPALIVE in both directions?
+	rstamp, lstamp := p.R.Alive.Load(), p.L.Alive.Load()
+	if rstamp == 0 || lstamp == 0 {
+		return true // not yet, keep trying
+	}
+
+	// seen OPEN for both directions?
+	ropen, lopen := p.R.Open.Load(), p.L.Open.Load()
+	if ropen == nil || lopen == nil {
+		return true // strange, but keep trying
 	}
 
 	// find out common caps
 	if p.Options.Caps {
 		// collect common caps into common
 		var common caps.Caps
-		r.Caps.Each(func(i int, cc caps.Code, rcap caps.Cap) {
+		ropen.Caps.Each(func(i int, cc caps.Code, rcap caps.Cap) {
 			// support on both ends?
-			tcap := t.Caps.Get(cc)
-			if tcap == nil {
+			lcap := lopen.Caps.Get(cc)
+			if lcap == nil {
 				return
 			}
 
 			// needs an intersection?
-			if icap := rcap.Intersect(tcap); icap != nil {
+			if icap := rcap.Intersect(lcap); icap != nil {
 				common.Set(cc, icap) // use the new intersection value
 			} else {
 				common.Set(cc, rcap) // just reference the received
@@ -218,8 +227,8 @@ func (p *Pipe) open(ev *Event) bool {
 		p.Caps.SetFrom(common)
 	}
 
-	// announce both OPENs were seen, Caps ready for use
-	p.Event(EVENT_OPEN, nil)
+	// announce the session is established
+	p.Event(EVENT_ESTABLISHED, nil)
 
 	// no more calls to this callback
 	return false

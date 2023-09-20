@@ -18,7 +18,7 @@ var (
 	EVENT_STOP = "bgpfix/pipe.STOP"
 
 	// could not parse the message before its callback
-	EVENT_PARSE = "bgpfix/pipe.PARSE"
+	EVENT_PARSE_ERROR = "bgpfix/pipe.PARSE_ERROR"
 
 	// OPEN made it to R, stored in pipe.R.Open
 	EVENT_OPEN_R = "bgpfix/pipe.OPEN_R"
@@ -26,8 +26,14 @@ var (
 	// OPEN made it to L, stored in pipe.L.Open
 	EVENT_OPEN_L = "bgpfix/pipe.OPEN_L"
 
-	// OPEN made it to both sides
-	EVENT_OPEN = "bgpfix/pipe.OPEN"
+	// session established = OPEN+KEEPALIVE made it to both sides
+	EVENT_ESTABLISHED = "bgpfix/pipe.ESTABLISHED"
+
+	// new KEEPALIVE timestamp in pipe.R
+	EVENT_ALIVE_R = "bgpfix/pipe.ALIVE_R"
+
+	// new KEEPALIVE timestamp in pipe.L
+	EVENT_ALIVE_L = "bgpfix/pipe.ALIVE_L"
 )
 
 // Event represents an arbitrary event for a BGP pipe.

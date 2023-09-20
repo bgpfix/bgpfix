@@ -130,12 +130,12 @@ func (o *Options) OnStop(cb EventFunc) {
 	o.OnEvent(cb, EVENT_STOP)
 }
 
-// OnOpen request cb to be called when the pipe records OPEN in both directions.
-func (o *Options) OnOpen(cb EventFunc) {
-	o.OnEvent(cb, EVENT_OPEN)
+// OnEstablished request cb to be called when the pipe records OPEN+KEEPALIVE in both directions.
+func (o *Options) OnEstablished(cb EventFunc) {
+	o.OnEvent(cb, EVENT_ESTABLISHED)
 }
 
 // OnParseError request cb to be called on BGP message parse error.
 func (o *Options) OnParseError(cb EventFunc) {
-	o.OnEvent(cb, EVENT_PARSE)
+	o.OnEvent(cb, EVENT_PARSE_ERROR)
 }
