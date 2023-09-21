@@ -338,14 +338,12 @@ func (d *Direction) Read(dst []byte) (int, error) {
 
 		// write m.Data to buf
 		_, err = m.WriteTo(buf)
-		if err != nil {
-			p.Put(m)
-			break
-		}
-
-		// success, what's next?
 		p.Put(m)
-		if buf.Len() >= enough {
+
+		// what's next?
+		if err != nil {
+			break
+		} else if buf.Len() >= enough {
 			break // already enough data buffered
 		} else if len(d.Out) == 0 {
 			break // avoid blocking for more data
@@ -354,6 +352,36 @@ func (d *Direction) Read(dst []byte) (int, error) {
 
 	// rewrite into p, propagate err
 	n, _ := buf.Read(dst)
+	return n, err
+}
+
+// WriteTo implements io.WriterTo interface, writing raw BGP data to w
+func (d *Direction) WriteTo(w io.Writer) (int64, error) {
+	var (
+		n, k int64
+		err  = io.EOF // default error
+		p    = d.Pipe
+	)
+
+	for m := range d.Out {
+		// marshal upper layer to m.Data if needed
+		err = m.MarshalUpper(p.Caps)
+		if err != nil {
+			p.Put(m)
+			break
+		}
+
+		// write m.Data to w
+		k, err = m.WriteTo(w)
+		p.Put(m)
+		n += k
+
+		// continue?
+		if err != nil {
+			break
+		}
+	}
+
 	return n, err
 }
 
