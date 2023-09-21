@@ -71,7 +71,9 @@ func (s *Speaker) onStart(ev *pipe.Event) bool {
 func (s *Speaker) onEstablished(ev *pipe.Event) bool {
 	// start keepaliver with common hold time
 	ht := min(s.up.Open.Load().HoldTime, s.down.Open.Load().HoldTime)
-	go s.keepaliver(ht)
+	if ht > 0 {
+		go s.keepaliver(ht)
+	}
 
 	return false // unregister
 }
@@ -100,13 +102,13 @@ func (s *Speaker) onMsgDown(m *msg.Msg) pipe.Action {
 		// TODO: drop if in state established and seen an update?
 		// TODO: validate received OPEN - drop if wrong caps / other params?
 
-		// confirm it's OK
-		s.sendKeepalive()
-
 		// send our OPEN iff we didn't do that already
 		if opts.Passive {
 			s.sendOpen(&m.Open)
 		}
+
+		// confirm the received OPEN is OK
+		s.sendKeepalive()
 
 	case msg.UPDATE, msg.KEEPALIVE:
 		s.alive_down.Store(nanotime())
@@ -221,10 +223,7 @@ func (s *Speaker) sendKeepalive() {
 func (s *Speaker) keepaliver(negotiated uint16) {
 	p := s.pipe
 
-	// check the hold time
-	if negotiated == 0 {
-		return // done
-	} else if negotiated < 3 {
+	if negotiated < 3 {
 		negotiated = 3
 	}
 
