@@ -322,15 +322,3 @@ func (p *Pipe) Put(m *msg.Msg) {
 	m.Reset()
 	p.pool.Put(m)
 }
-
-// Write writes raw BGP data to p.R.In.
-// Must not be used concurrently (use p.R.In directly for that).
-func (p *Pipe) Write(b []byte) (n int, err error) {
-	return p.R.Write(b)
-}
-
-// Read reads raw BGP data from p.L.Out.
-// Must not be used concurrently (use p.L.Out directly for that).
-func (p *Pipe) Read(b []byte) (n int, err error) {
-	return p.L.Read(b)
-}
