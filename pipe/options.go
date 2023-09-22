@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"runtime"
 	"sync"
+	"sync/atomic"
 
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/rs/zerolog"
@@ -39,9 +40,10 @@ type Options struct {
 
 // Callback represents a function to call for given messages
 type Callback struct {
-	Name  string // optional name
-	Order int    // the lower the order, the sooner callback is run
-	Raw   bool   // if true, run on non-parsed message, before non-raw callbacks
+	Name    string       // optional name
+	Order   int          // the lower the order, the sooner callback is run
+	Raw     bool         // if true, run on non-parsed message, before non-raw callbacks
+	Enabled *atomic.Bool // if non-nil, disables the callback unless true
 
 	Dst   msg.Dst      // if non-zero, limits the direction
 	Types []msg.Type   // if non-empty, limits message types

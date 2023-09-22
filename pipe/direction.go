@@ -254,6 +254,11 @@ input:
 
 		// run callbacks
 		for _, cb := range cbs {
+			// skip?
+			if cb.Enabled != nil && !cb.Enabled.Load() {
+				continue
+			}
+
 			// set the current callback
 			pc.Callback = cb
 
