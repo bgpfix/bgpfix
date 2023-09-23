@@ -51,7 +51,7 @@ type Event struct {
 
 // event sends ev with given ctx; if noblock is true, it never blocks on full channel
 func (p *Pipe) event(ev *Event, ctx context.Context, noblock bool) (sent bool) {
-	defer func() { recover() }() // in case of closed p.Events
+	defer func() { recover() }() // in case of closed p.events
 
 	ev.Pipe = p
 	ev.Time = time.Now().UTC()

@@ -18,7 +18,7 @@ type Reader struct {
 	zerolog.Logger
 
 	ctx    context.Context
-	cancel context.CancelFunc
+	cancel context.CancelCauseFunc
 
 	Pipe  *pipe.Pipe      // target pipe
 	Dir   *pipe.Direction // target direction
@@ -41,7 +41,7 @@ type ReaderStats struct {
 // NewReader returns a new Reader for given pipe.Direction.
 func NewReader(ctx context.Context, log *zerolog.Logger, dst *pipe.Direction) *Reader {
 	br := &Reader{}
-	br.ctx, br.cancel = context.WithCancel(ctx)
+	br.ctx, br.cancel = context.WithCancelCause(ctx)
 	if log != nil {
 		br.Logger = *log
 	} else {
@@ -52,12 +52,22 @@ func NewReader(ctx context.Context, log *zerolog.Logger, dst *pipe.Direction) *R
 	return br
 }
 
-// Write implements io.Writer and reads all MRT-BGP4MP messages from p
+// Write implements io.Writer and reads all MRT-BGP4MP messages from src
 // into br.Direction. Must not be used concurrently.
 func (br *Reader) Write(src []byte) (n int, err error) {
-	n = len(src) // NB: always return n=len(src)
+	var (
+		bs  = &br.Stats
+		mrt = &br.mrt
+		bm  = &br.bm
+	)
 
-	// append p and switch to inbuf if needed
+	// context check
+	if br.ctx.Err() != nil {
+		return 0, context.Cause(br.ctx)
+	}
+
+	// append src and switch to inbuf if needed
+	n = len(src) // NB: always return n=len(src)
 	raw := src
 	if len(br.ibuf) > 0 {
 		br.ibuf = append(br.ibuf, src...)
@@ -72,11 +82,6 @@ func (br *Reader) Write(src []byte) (n int, err error) {
 			br.ibuf = append(br.ibuf[:0], raw...)
 		} // otherwise there is something left, but already @ s.inbuf[0:]
 	}()
-
-	// shortcuts
-	bs := &br.Stats
-	mrt := &br.mrt
-	bm := &br.bm
 
 	// process until raw is empty
 	for len(raw) > 0 {

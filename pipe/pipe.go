@@ -29,7 +29,7 @@ type Pipe struct {
 	*zerolog.Logger
 
 	ctx    context.Context
-	cancel context.CancelFunc
+	cancel context.CancelCauseFunc
 
 	started atomic.Bool // true iff Start() called
 	stopped atomic.Bool // true iff Stop() called
@@ -54,7 +54,7 @@ type Pipe struct {
 // To start/stop the pipe, call Start() and Stop().
 func NewPipe(ctx context.Context) *Pipe {
 	p := &Pipe{}
-	p.ctx, p.cancel = context.WithCancel(ctx)
+	p.ctx, p.cancel = context.WithCancelCause(ctx)
 
 	p.Options = DefaultOptions
 	p.Options.Events = make(map[string][]EventFunc)
@@ -251,18 +251,15 @@ func (p *Pipe) Stop() {
 	p.R.CloseInput()
 
 	// yank the cable out of blocked calls (hopefully)
-	p.cancel()
+	p.cancel(ErrStopped)
 
 	// wait for input handlers
 	p.lwg.Wait()
 	p.rwg.Wait()
 	// NB: now [1] will close the R/L outputs
 
-	// safely stop the event handler and wait for it to finish
-	func() {
-		defer func() { recover() }()
-		close(p.events)
-	}()
+	// stop the event handler and wait for it to finish
+	close(p.events)
 	p.evwg.Wait()
 }
 

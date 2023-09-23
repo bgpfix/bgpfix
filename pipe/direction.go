@@ -90,10 +90,14 @@ func (d *Direction) CloseOutput() {
 //
 // Must not be used concurrently.
 func (d *Direction) Write(src []byte) (n int, err error) {
-	n = len(src) // NB: always return n=len(src)
-	now := time.Now().UTC()
+	var (
+		p   = d.Pipe
+		ss  = &d.stats
+		now = time.Now().UTC()
+	)
 
 	// append src and switch to inbuf if needed
+	n = len(src) // NB: always return n=len(src)
 	raw := src
 	if len(d.ibuf) > 0 {
 		d.ibuf = append(d.ibuf, raw...)
@@ -110,8 +114,6 @@ func (d *Direction) Write(src []byte) (n int, err error) {
 	}()
 
 	// process until raw is empty
-	p := d.Pipe
-	ss := &d.stats
 	for len(raw) > 0 {
 		// grab memory, parse raw, take mem reference
 		m := p.Get()

@@ -18,7 +18,7 @@ type Speaker struct {
 	zerolog.Logger
 
 	ctx    context.Context
-	cancel context.CancelFunc
+	cancel context.CancelCauseFunc
 
 	pipe *pipe.Pipe      // attached BGP pipe
 	up   *pipe.Direction // upstream direction
@@ -34,7 +34,7 @@ type Speaker struct {
 // NewSpeaker returns a new Speaker. Call Speaker.Attach() next.
 func NewSpeaker(ctx context.Context) *Speaker {
 	s := &Speaker{}
-	s.ctx, s.cancel = context.WithCancel(ctx)
+	s.ctx, s.cancel = context.WithCancelCause(ctx)
 	s.Options = DefaultOptions
 	return s
 }
