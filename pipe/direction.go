@@ -168,24 +168,24 @@ func (d *Direction) WriteMsg(m *msg.Msg) (err error) {
 
 // Handling callbacks ------------------------------
 
-// Handler reads Input, runs all callbacks on incoming messages,
+// Process reads Input, runs all callbacks on incoming messages,
 // and forwards the result to Output.
 //
 // The Output *can* be closed anytime, which will cause the resultant
 // messages to be dropped on the floor (and re-used).
 //
 // Exits when dir.Input closes and is emptied. wg may be nil.
-func (d *Direction) Handler(wg *sync.WaitGroup) {
-	output_closed := d.handler(d.Out)
+func (d *Direction) Process(wg *sync.WaitGroup) {
+	output_closed := d.process(d.Out)
 	if output_closed {
-		d.handler(nil)
+		d.process(nil)
 	}
 	if wg != nil {
 		wg.Done()
 	}
 }
 
-func (d *Direction) handler(output chan *msg.Msg) (output_closed bool) {
+func (d *Direction) process(output chan *msg.Msg) (output_closed bool) {
 	var (
 		p     = d.Pipe
 		input = d.In

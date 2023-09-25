@@ -65,7 +65,7 @@ func (p *Pipe) event(ev *Event, ctx context.Context, noblock bool) (sent bool) {
 		select {
 		case <-ctxchan:
 			return false
-		case p.events <- ev:
+		case p.evch <- ev:
 			return true
 		default:
 			return false
@@ -74,7 +74,7 @@ func (p *Pipe) event(ev *Event, ctx context.Context, noblock bool) (sent bool) {
 		select {
 		case <-ctxchan:
 			return false
-		case p.events <- ev:
+		case p.evch <- ev:
 			return true
 		}
 	}
@@ -86,11 +86,13 @@ func (p *Pipe) event(ev *Event, ctx context.Context, noblock bool) (sent bool) {
 func (p *Pipe) Event(et string, msg *msg.Msg, args ...any) (sent bool) {
 	ev := &Event{Type: et}
 
+	// attach a message?
 	if msg != nil {
-		PipeAction(msg).Set(ACTION_BORROW) // don't re-use mem [1]
+		PipeAction(msg).Add(ACTION_BORROW) // don't re-use (will be queued soon)
 		ev.Msg = msg
 	}
 
+	// collect errors and the value
 	var errs []error
 	for _, arg := range args {
 		if err, ok := arg.(error); ok {
@@ -111,19 +113,18 @@ func (p *Pipe) Event(et string, msg *msg.Msg, args ...any) (sent bool) {
 	return p.event(ev, p.ctx, false)
 }
 
-// eventHandler reads p.Events and broadcasts events to handlers
+// eventHandler reads p.evch and broadcasts events to handlers
 func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 	if wg != nil {
 		defer wg.Done()
 	}
 
 	var (
-		seq  uint64
-		opts = &p.Options
-		wcbs = opts.Events[""] // wildcard handlers - for any event type
+		seq uint64
+		whs = p.events[""] // wildcard handlers - for any event type
 	)
 
-	for ev := range p.events {
+	for ev := range p.evch {
 		// metadata
 		if ev.Seq == 0 {
 			seq++
@@ -134,29 +135,30 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 		}
 
 		// call handlers for ev.Type
-		cbs := opts.Events[ev.Type]
-		for i, cb := range cbs {
-			if cb == nil {
-				continue
+		hs := p.events[ev.Type]
+		for i, h := range hs {
+			if h == nil {
+				continue // dropped [2]
 			}
-			if !cb(ev) {
-				cbs[i] = nil
+			if h.Enabled != nil && !h.Enabled.Load() {
+				continue // disabled
+			}
+			if !h.Func(ev) {
+				hs[i] = nil // drop [2]
 			}
 		}
 
 		// call wildcard handlers
-		for i, cb := range wcbs {
-			if cb == nil {
-				continue
+		for i, h := range whs {
+			if h == nil {
+				continue // dropped [3]
 			}
-			if !cb(ev) {
-				wcbs[i] = nil
+			if h.Enabled != nil && !h.Enabled.Load() {
+				continue // disabled
 			}
-		}
-
-		// try to re-use (but see [1])
-		if ev.Msg != nil {
-			p.Put(ev.Msg)
+			if !h.Func(ev) {
+				whs[i] = nil // drop [3]
+			}
 		}
 	}
 }

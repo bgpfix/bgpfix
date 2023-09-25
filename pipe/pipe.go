@@ -38,8 +38,9 @@ type Pipe struct {
 	lwg  sync.WaitGroup // L Input handlers
 	rwg  sync.WaitGroup // R Input handlers
 
-	events chan *Event    // pipe events
-	evwg   sync.WaitGroup // event handler
+	evch   chan *Event           // pipe event input
+	evwg   sync.WaitGroup        // event handler routine
+	events map[string][]*Handler // maps events to their handlers
 
 	Options Options    // pipe options; modify before Start()
 	Caps    caps.Caps  // BGP capability context; always thread-safe
@@ -57,7 +58,6 @@ func NewPipe(ctx context.Context) *Pipe {
 	p.ctx, p.cancel = context.WithCancelCause(ctx)
 
 	p.Options = DefaultOptions
-	p.Options.Events = make(map[string][]EventFunc)
 
 	p.L = &Direction{
 		Pipe: p,
@@ -73,9 +73,10 @@ func NewPipe(ctx context.Context) *Pipe {
 	p.R.Opposite = p.L
 
 	p.Caps.Init() // NB: make it thread-safe
-	p.events = make(chan *Event, 10)
-
 	p.KV = xsync.NewMapOf[any]()
+
+	p.evch = make(chan *Event, 10)
+	p.events = make(map[string][]*Handler)
 
 	return p
 }
@@ -131,9 +132,23 @@ func (p *Pipe) apply(opts *Options) {
 		}
 	}
 
-	// prepend very first EVENT_ALIVE_* handlers
-	opts.Events[EVENT_ALIVE_R] = append([]EventFunc{p.alive}, opts.Events[EVENT_ALIVE_R]...)
-	opts.Events[EVENT_ALIVE_L] = append([]EventFunc{p.alive}, opts.Events[EVENT_ALIVE_L]...)
+	// register very first EVENT_ALIVE_* handlers
+	opts.OnEventFirst(p.alive, EVENT_ALIVE_R, EVENT_ALIVE_L)
+
+	// rewrite handlers
+	sort.SliceStable(opts.Handlers, func(i, j int) bool {
+		cbi := opts.Handlers[i]
+		cbj := opts.Handlers[j]
+		return cbi.Order < cbj.Order
+	})
+	for _, h := range opts.Handlers {
+		if h == nil || h.Func == nil {
+			return
+		}
+		for _, typ := range h.Types {
+			p.events[typ] = append(p.events[typ], h)
+		}
+	}
 }
 
 // Start starts given number of r/t message handlers in background,
@@ -150,7 +165,7 @@ func (p *Pipe) Start() {
 	// start R handlers
 	for i := 0; i < opts.Rproc; i++ {
 		p.rwg.Add(1)
-		go p.R.Handler(&p.rwg)
+		go p.R.Process(&p.rwg)
 	}
 	go func() {
 		p.rwg.Wait() // [1] after s.R.Input is closed (or no handlers)
@@ -160,7 +175,7 @@ func (p *Pipe) Start() {
 	// start L handlers
 	for i := 0; i < opts.Lproc; i++ {
 		p.lwg.Add(1)
-		go p.L.Handler(&p.lwg)
+		go p.L.Process(&p.lwg)
 	}
 	go func() {
 		p.lwg.Wait() // [1] after s.L.Input is closed (or no handlers)
@@ -259,7 +274,7 @@ func (p *Pipe) Stop() {
 	// NB: now [1] will close the R/L outputs
 
 	// stop the event handler and wait for it to finish
-	close(p.events)
+	close(p.evch)
 	p.evwg.Wait()
 }
 

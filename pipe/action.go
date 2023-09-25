@@ -32,8 +32,8 @@ func (ac *Action) Clear() {
 	*ac &= ACTION_BORROW
 }
 
-// Set sets a for action ac
-func (ac *Action) Set(a Action) {
+// Add adds a to action ac
+func (ac *Action) Add(a Action) {
 	*ac |= a
 }
 
