@@ -55,13 +55,16 @@ func (s *Speaker) Attach(upstream *pipe.Direction) error {
 	po := &s.pipe.Options
 	po.OnMsg(s.onMsgUp, s.up.Dst).Raw = true
 	po.OnMsg(s.onMsgDown, s.down.Dst).Raw = true
-	po.OnStart(s.onStart)
 	po.OnEstablished(s.onEstablished)
+	if opts.OnStart {
+		po.OnStart(s.OnStart)
+	}
 
 	return nil
 }
 
-func (s *Speaker) onStart(ev *pipe.Event) bool {
+// OnStart is, by default, called when the pipe starts
+func (s *Speaker) OnStart(_ *pipe.Event) bool {
 	if !s.Options.Passive {
 		s.sendOpen(nil)
 	}
@@ -90,7 +93,6 @@ func (s *Speaker) onMsgDown(m *msg.Msg) pipe.Action {
 	}
 
 	// try to parse
-	// FIXME: MODE_INFER
 	if err := m.ParseUpper(p.Caps); err != nil {
 		p.Event(EVENT_PARSE_ERROR, m, err.Error())
 		// TODO: notify + teardown?
@@ -139,7 +141,6 @@ func (s *Speaker) onMsgUp(m *msg.Msg) pipe.Action {
 	}
 
 	// try to parse
-	// FIXME: MODE_INFER
 	if err := m.ParseUpper(p.Caps); err != nil {
 		p.Event(EVENT_PARSE_ERROR, m, err)
 		// TODO: notify + teardown?
@@ -168,18 +169,25 @@ func (s *Speaker) onMsgUp(m *msg.Msg) pipe.Action {
 	return 0
 }
 
-// sendOpen generates a new OPEN and writes it to s.upstream
-// ro optionally provides received OPEN
+// sendOpen generates a new OPEN and writes it to s.up
 func (s *Speaker) sendOpen(ro *msg.Open) {
+	o := &s.pipe.Get(msg.OPEN).Open // our OPEN
+	if ro == nil {                  // remote OPEN
+		ro = s.down.Open.Load() // in case its already available
+	}
+
 	opts := &s.Options
-
-	o := &s.pipe.Get(msg.OPEN).Open
 	o.Identifier = opts.LocalId
+	if !o.Identifier.IsValid() && ro != nil {
+		o.Identifier = ro.Identifier.Prev()
+	}
 
-	if opts.LocalASN > 0 {
+	if opts.LocalASN >= 0 {
 		o.SetASN(opts.LocalASN) // will add AS4
 	} else if opts.LocalASN < 0 && ro != nil {
 		o.SetASN(ro.GetASN())
+	} else {
+		o.SetASN(0)
 	}
 
 	if opts.LocalHoldTime >= 0 {
@@ -189,10 +197,6 @@ func (s *Speaker) sendOpen(ro *msg.Open) {
 	}
 	if o.HoldTime > 0 && o.HoldTime < 3 {
 		o.HoldTime = 3 // correct
-	}
-
-	if !o.Identifier.IsValid() && ro != nil {
-		o.Identifier = ro.Identifier.Prev()
 	}
 
 	// FIXME: add real capabilities
@@ -210,7 +214,7 @@ func (s *Speaker) sendOpen(ro *msg.Open) {
 	o.Caps.SetFrom(s.pipe.Caps)
 	o.Caps.SetFrom(opts.LocalCaps)
 
-	// queue
+	// queue for sending
 	s.up.WriteMsg(o.Msg)
 }
 
@@ -219,7 +223,6 @@ func (s *Speaker) sendKeepalive() {
 }
 
 // keepaliver sends a KEEPALIVE message, and keeps sending them to respect the hold time.
-// it is run only in full speaker mode.
 func (s *Speaker) keepaliver(negotiated uint16) {
 	p := s.pipe
 
