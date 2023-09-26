@@ -29,6 +29,8 @@ type Speaker struct {
 
 	alive_down atomic.Int64 // last received UPDATE or KA
 	alive_up   atomic.Int64 // last sent UPDATE or KA
+
+	send func(m *msg.Msg) error
 }
 
 // NewSpeaker returns a new Speaker. Call Speaker.Attach() next.
@@ -52,20 +54,23 @@ func (s *Speaker) Attach(upstream *pipe.Direction) error {
 		s.erraction = pipe.ACTION_DROP
 	}
 
+	if opts.Writer != nil {
+		s.send = opts.Writer
+	} else {
+		s.send = upstream.WriteMsg
+	}
+
 	po := &s.pipe.Options
 	po.OnMsg(s.onMsgUp, s.up.Dst).Raw = true
 	po.OnMsg(s.onMsgDown, s.down.Dst).Raw = true
 	po.OnEstablished(s.onEstablished)
-	if opts.Start {
-		po.OnStart(s.Start)
-	}
+	po.OnStart(s.onStart)
 
 	return nil
 }
 
-// Start sends our OPEN message, if the speaker is not passive.
-// By default it is called when the pipe starts.
-func (s *Speaker) Start(_ *pipe.Event) bool {
+// onStart sends our OPEN message, if the speaker is not passive.
+func (s *Speaker) onStart(_ *pipe.Event) bool {
 	if !s.Options.Passive {
 		s.sendOpen(nil)
 	}
@@ -73,8 +78,14 @@ func (s *Speaker) Start(_ *pipe.Event) bool {
 }
 
 func (s *Speaker) onEstablished(ev *pipe.Event) bool {
+	// load last OPENs
+	up, down := s.up.Open.Load(), s.down.Open.Load()
+	if up == nil || down == nil {
+		return true // huh?
+	}
+
 	// start keepaliver with common hold time
-	ht := min(s.up.Open.Load().HoldTime, s.down.Open.Load().HoldTime)
+	ht := min(up.HoldTime, down.HoldTime)
 	if ht > 0 {
 		go s.keepaliver(ht)
 	}
@@ -216,11 +227,11 @@ func (s *Speaker) sendOpen(ro *msg.Open) {
 	o.Caps.SetFrom(opts.LocalCaps)
 
 	// queue for sending
-	s.up.WriteMsg(o.Msg)
+	s.send(o.Msg)
 }
 
 func (s *Speaker) sendKeepalive() {
-	s.up.WriteMsg(s.pipe.Get(msg.KEEPALIVE))
+	s.send(s.pipe.Get(msg.KEEPALIVE))
 }
 
 // keepaliver sends a KEEPALIVE message, and keeps sending them to respect the hold time.
