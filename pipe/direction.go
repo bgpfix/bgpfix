@@ -151,19 +151,54 @@ func (d *Direction) Write(src []byte) (n int, err error) {
 	return n, nil
 }
 
-// WriteMsg safely sends m to d.In, setting m.Seq if needed.
-// It returns an error iff d.In was closed (instead of a panic).
+// WriteMsg safely sends m to d.In, calling d.Prepare(m) just before.
+// It returns an error iff d.In was closed while/before writing (instead of a panic).
 func (d *Direction) WriteMsg(m *msg.Msg) (err error) {
 	defer func() {
 		if recover() != nil {
 			err = ErrInClosed
 		}
 	}()
+	d.Prepare(m)
+	d.In <- m
+	return
+}
+
+// Prepare writes m's metadata and sets up its pipe context.
+// You only need to call it explicitly before writing m to d.In if you want more control over the message processing.
+func (d *Direction) Prepare(m *msg.Msg) *Context {
+	// message metadata
+	m.Dst = d.Dst
 	if m.Seq == 0 {
 		m.Seq = d.seq.Add(1)
 	}
-	d.In <- m
-	return
+	if m.Time.IsZero() {
+		m.Time = time.Now().UTC()
+	}
+
+	// pipe context
+	pc := PipeContext(m)
+	if pc.Dir == nil {
+		pc.Dir = d
+	}
+	if pc.Callbacks == nil {
+		switch m.Type {
+		case msg.UPDATE:
+			pc.Callbacks = d.update
+		case msg.KEEPALIVE:
+			pc.Callbacks = d.keepalive
+		case msg.NOTIFY:
+			pc.Callbacks = d.notification
+		case msg.REFRESH:
+			pc.Callbacks = d.refresh
+		case msg.OPEN:
+			pc.Callbacks = d.open
+		default:
+			pc.Callbacks = d.invalid
+		}
+	}
+
+	return pc
 }
 
 // Handling callbacks ------------------------------
@@ -190,7 +225,6 @@ func (d *Direction) process(output chan *msg.Msg) (output_closed bool) {
 		p     = d.Pipe
 		input = d.In
 		m     *msg.Msg
-		cbs   []*Callback
 	)
 
 	// which events to generate in case of OPEN / KEEPALIVE?
@@ -210,59 +244,22 @@ func (d *Direction) process(output chan *msg.Msg) (output_closed bool) {
 
 input:
 	for m = range input {
-		// metadata
-		m.Dst = d.Dst
-		if m.Seq == 0 {
-			m.Seq = d.seq.Add(1)
-		}
-		if m.Time.IsZero() {
-			m.Time = time.Now().UTC()
-		}
-
-		// select callbacks
-		switch m.Type {
-		case msg.UPDATE:
-			cbs = d.update
-		case msg.KEEPALIVE:
-			cbs = d.keepalive
-		case msg.NOTIFY:
-			cbs = d.notification
-		case msg.REFRESH:
-			cbs = d.refresh
-		case msg.OPEN:
-			cbs = d.open
-		default:
-			cbs = d.invalid
-		}
-
-		// setup pipe context
-		pc := PipeContext(m)
-		pc.Pipe = p
-		pc.Dir = d
+		// prepare m, clear actions except for BORROW
+		pc := d.Prepare(m)
 		pc.Action.Clear()
 
-		// skip past a callback?
-		if pc.Callback != nil {
-			from := 0
-			for i, cb := range cbs {
-				if cb == pc.Callback {
-					from = i + 1
-				} else if from > 0 {
-					break
-				}
-			}
-			cbs = cbs[from:]
-		}
+		// run the callbacks
+		for len(pc.Callbacks) > 0 {
+			// eat first callback
+			cb := pc.Callbacks[0]
+			pc.Callbacks = pc.Callbacks[1:]
 
-		// run callbacks
-		for _, cb := range cbs {
 			// skip?
-			if cb.Enabled != nil && !cb.Enabled.Load() {
+			if pc.cbIndex > cb.Index {
+				continue
+			} else if cb.Enabled != nil && !cb.Enabled.Load() {
 				continue
 			}
-
-			// set the current callback
-			pc.Callback = cb
 
 			// need to parse first?
 			if !cb.Raw && m.Upper == msg.INVALID {
@@ -273,7 +270,9 @@ input:
 			}
 
 			// run and wait
+			pc.Callback = cb
 			pc.Action |= cb.Func(m)
+			pc.Callback = nil
 
 			// what's next?
 			if pc.Action.Is(ACTION_DROP) {
@@ -284,15 +283,15 @@ input:
 			}
 		}
 
-		// special-purpose message?
+		// special-purpose messages?
 		switch m.Type {
 		case msg.OPEN: // take it if valid
 			if m.ParseUpper(p.Caps) == nil {
 				pc.Action |= ACTION_BORROW // don't re-use in pool
-				d.Open.Swap(&m.Open)
-				p.Event(event_open, m)
+				if d.Open.Swap(&m.Open) == nil {
+					p.Event(event_open, m)
+				}
 			}
-
 		case msg.KEEPALIVE: // take it if bigger timestamp
 			newt := m.Time.Unix()
 			oldt := d.Alive.Load()

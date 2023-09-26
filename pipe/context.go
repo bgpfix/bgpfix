@@ -7,13 +7,14 @@ import (
 
 // Context tracks message processing progress in a pipe
 type Context struct {
-	Pipe     *Pipe      // pipe processing the message
-	Dir      *Direction // pipe direction
-	Callback *Callback  // the current callback
+	Dir       *Direction  // pipe direction processing the message
+	Callback  *Callback   // currently run callback
+	Callbacks []*Callback // callbacks to run (nil = from pipe Options)
 
-	Action Action // actions requested so far
+	Action Action // requested message actions
 
-	kv map[string]interface{} // generic Key-Value store
+	kv      map[string]interface{} // generic Key-Value store
+	cbIndex int                    // minimum callback index
 }
 
 // PipeContext returns pipe Context inside message m,
@@ -40,12 +41,21 @@ func (pc *Context) Reset() {
 	*pc = Context{}
 }
 
-// Clear is like Reset but preserves ACTION_BORROW if set.
+// Clear resets pc, but preserves ACTION_BORROW if set.
 func (pc *Context) Clear() {
-	pc.Action.Clear()
-	action := pc.Action
+	a := pc.Action
 	pc.Reset()
-	pc.Action = action
+	pc.Action = a & ACTION_BORROW
+}
+
+// SkipBefore requests to skip callbacks added to pipe.Options before cb.
+func (pc *Context) SkipBefore(cb *Callback) {
+	pc.cbIndex = cb.Index
+}
+
+// SkipAfter requests to skip callbacks added to pipe.Options before cb, plus cb itself.
+func (pc *Context) SkipAfter(cb *Callback) {
+	pc.cbIndex = cb.Index + 1
 }
 
 // HasKV returns true iff the context already has a Key-Value store.

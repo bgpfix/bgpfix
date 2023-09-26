@@ -133,7 +133,7 @@ func (p *Pipe) apply(opts *Options) {
 	}
 
 	// register very first EVENT_ALIVE_* handlers
-	opts.OnEventFirst(p.alive, EVENT_ALIVE_R, EVENT_ALIVE_L)
+	opts.OnEventFirst(p.onAlive, EVENT_ALIVE_R, EVENT_ALIVE_L)
 
 	// rewrite handlers
 	sort.SliceStable(opts.Handlers, func(i, j int) bool {
@@ -203,9 +203,9 @@ func (p *Pipe) Start() {
 	go p.Event(EVENT_START, nil)
 }
 
-// alive is called whenever either direction gets a new KEEPALIVE message.
-// alive emits EVENT_ESTABLISHED + fills p.Caps if enabled.
-func (p *Pipe) alive(ev *Event) bool {
+// onAlive is called whenever either direction gets a new KEEPALIVE message,
+// until it emits EVENT_ESTABLISHED and unregisters. Fills p.Caps if enabled.
+func (p *Pipe) onAlive(ev *Event) bool {
 	// already seen KEEPALIVE in both directions?
 	rstamp, lstamp := p.R.Alive.Load(), p.L.Alive.Load()
 	if rstamp == 0 || lstamp == 0 {
@@ -303,10 +303,6 @@ func (p *Pipe) Get(typ ...msg.Type) (m *msg.Msg) {
 	} else {
 		m = v.(*msg.Msg)
 	}
-
-	// add pipe context
-	pc := PipeContext(m)
-	pc.Pipe = p
 
 	// prepare the upper layer?
 	if len(typ) > 0 {

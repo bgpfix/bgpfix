@@ -20,19 +20,19 @@ var (
 	// could not parse the message before its callback
 	EVENT_PARSE_ERROR = "bgpfix/pipe.PARSE_ERROR"
 
-	// OPEN made it to R, stored in pipe.R.Open
+	// first OPEN made it to R
 	EVENT_OPEN_R = "bgpfix/pipe.OPEN_R"
 
-	// OPEN made it to L, stored in pipe.L.Open
+	// first OPEN made it to L
 	EVENT_OPEN_L = "bgpfix/pipe.OPEN_L"
 
-	// session established = OPEN+KEEPALIVE made it to both sides
+	// session established (OPEN+KEEPALIVE made it to both sides)
 	EVENT_ESTABLISHED = "bgpfix/pipe.ESTABLISHED"
 
-	// new KEEPALIVE timestamp in pipe.R
+	// KEEPALIVE timestamp increased on pipe.R
 	EVENT_ALIVE_R = "bgpfix/pipe.ALIVE_R"
 
-	// new KEEPALIVE timestamp in pipe.L
+	// KEEPALIVE timestamp increased on pipe.L
 	EVENT_ALIVE_L = "bgpfix/pipe.ALIVE_L"
 )
 

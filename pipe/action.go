@@ -18,9 +18,9 @@ const (
 
 	// Drop the message immediately from the pipe.
 	//
-	// If you want to re-inject the message later, set ACTION_BORROW
-	// and keep in mind the message will try to re-start where
-	// you dropped it, unless you set Context.Callback to nil.
+	// If you want to re-inject the message later, set ACTION_BORROW too,
+	// and keep in mind the message will try to re-start after where
+	// you dropped it, unless you call Context.Clear on it.
 	ACTION_DROP
 
 	// Accept the message immediately and write to pipe output.
