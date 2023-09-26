@@ -3,6 +3,7 @@ package pipe
 import (
 	"bytes"
 	"io"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -413,7 +414,8 @@ func (d *Direction) addCallback(cb *Callback) {
 		return
 	}
 
-	for _, t := range cb.Types {
+	slices.Sort(cb.Types)
+	for _, t := range slices.Compact(cb.Types) {
 		switch t {
 		case msg.OPEN:
 			d.open = append(d.open, cb)

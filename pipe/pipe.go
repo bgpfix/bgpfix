@@ -3,6 +3,7 @@ package pipe
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -145,7 +146,8 @@ func (p *Pipe) apply(opts *Options) {
 		if h == nil || h.Func == nil {
 			return
 		}
-		for _, typ := range h.Types {
+		sort.Strings(h.Types)
+		for _, typ := range slices.Compact(h.Types) {
 			p.events[typ] = append(p.events[typ], h)
 		}
 	}
