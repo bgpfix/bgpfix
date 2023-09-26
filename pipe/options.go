@@ -40,6 +40,8 @@ type Options struct {
 
 // Callback represents a function to call for matching BGP messages
 type Callback struct {
+	Index int // index in Options.Callbacks
+
 	Name    string       // optional name
 	Order   int          // the lower the order, the sooner callback is run
 	Raw     bool         // if true, run on non-parsed message, before non-raw callbacks
@@ -52,6 +54,8 @@ type Callback struct {
 
 // Handler represents a function to call for matching pipe events
 type Handler struct {
+	Index int // index in Options.Handlers
+
 	Name    string       // optional name
 	Order   int          // the lower the order, the sooner handler is run
 	Enabled *atomic.Bool // if non-nil, disables the handler unless true
@@ -90,6 +94,7 @@ func (o *Options) AddCallback(cbf CallbackFunc, tpl ...*Callback) *Callback {
 		cb.Name = runtime.FuncForPC(reflect.ValueOf(cbf).Pointer()).Name()
 	}
 
+	cb.Index = len(o.Callbacks)
 	o.Callbacks = append(o.Callbacks, &cb)
 	return &cb
 }
@@ -148,6 +153,7 @@ func (o *Options) AddHandler(hf HandlerFunc, tpl ...*Handler) *Handler {
 		h.Name = runtime.FuncForPC(reflect.ValueOf(hf).Pointer()).Name()
 	}
 
+	h.Index = len(o.Handlers)
 	o.Handlers = append(o.Handlers, &h)
 	return &h
 }
