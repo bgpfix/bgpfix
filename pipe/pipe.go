@@ -298,7 +298,7 @@ func (p *Pipe) Stopped() bool {
 }
 
 // Get returns empty msg from pool, or a new msg object
-func (p *Pipe) Get(typ ...msg.Type) (m *msg.Msg) {
+func (p *Pipe) Get(typ msg.Type) (m *msg.Msg) {
 	v := p.pool.Get()
 	if v == nil {
 		m = msg.NewMsg()
@@ -306,12 +306,7 @@ func (p *Pipe) Get(typ ...msg.Type) (m *msg.Msg) {
 		m = v.(*msg.Msg)
 	}
 
-	// prepare the upper layer?
-	if len(typ) > 0 {
-		m.SetUp(typ[0])
-	}
-
-	return m
+	return m.SetUp(typ)
 }
 
 // Put resets msg and returns it to pool, which might free it

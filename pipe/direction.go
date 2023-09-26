@@ -117,7 +117,7 @@ func (d *Direction) Write(src []byte) (n int, err error) {
 	// process until raw is empty
 	for len(raw) > 0 {
 		// grab memory, parse raw, take mem reference
-		m := p.Get()
+		m := p.Get(0)
 		off, perr := m.Parse(raw)
 
 		// success?

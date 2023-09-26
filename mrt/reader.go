@@ -117,8 +117,8 @@ func (br *Reader) Write(src []byte) (n int, err error) {
 		}
 
 		// parse as a raw BGP message
-		m := br.Pipe.Get()
-		off, perr = m.Reset().Parse(bm.Data)
+		m := br.Pipe.Get(0)
+		off, perr = m.Parse(bm.Data)
 		switch {
 		case perr != nil:
 			return n, fmt.Errorf("BGP: %w", perr)
