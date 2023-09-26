@@ -12,7 +12,7 @@ import (
 // Default BGP speaker options
 var DefaultOptions = Options{
 	Logger:        log.Logger,
-	OnStart:       true,
+	Start:         true,
 	Passive:       true,
 	LocalASN:      -1,
 	LocalHoldTime: msg.OPEN_HOLDTIME,
@@ -23,7 +23,7 @@ var DefaultOptions = Options{
 type Options struct {
 	Logger zerolog.Logger // use zerolog.Nop to disable logging
 
-	OnStart   bool // if true, call OnStart automatically on pipe startup
+	Start     bool // if true, call OnStart automatically on pipe startup
 	Passive   bool // if true, expect the peer to go first with OPEN
 	ErrorDrop bool // drop erronous messages?
 

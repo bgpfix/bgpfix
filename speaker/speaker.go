@@ -56,15 +56,16 @@ func (s *Speaker) Attach(upstream *pipe.Direction) error {
 	po.OnMsg(s.onMsgUp, s.up.Dst).Raw = true
 	po.OnMsg(s.onMsgDown, s.down.Dst).Raw = true
 	po.OnEstablished(s.onEstablished)
-	if opts.OnStart {
-		po.OnStart(s.OnStart)
+	if opts.Start {
+		po.OnStart(s.Start)
 	}
 
 	return nil
 }
 
-// OnStart is, by default, called when the pipe starts
-func (s *Speaker) OnStart(_ *pipe.Event) bool {
+// Start sends our OPEN message, if the speaker is not passive.
+// By default it is called when the pipe starts.
+func (s *Speaker) Start(_ *pipe.Event) bool {
 	if !s.Options.Passive {
 		s.sendOpen(nil)
 	}
