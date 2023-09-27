@@ -7,14 +7,15 @@ import (
 
 // Context tracks message processing progress in a pipe
 type Context struct {
-	Dir       *Direction  // pipe direction processing the message
-	Callback  *Callback   // currently run callback
-	Callbacks []*Callback // callbacks to run (nil = from pipe Options)
+	Pipe     *Pipe      // pipe processing the message
+	Dir      *Direction // direction processing the message
+	Callback *Callback  // currently run callback
 
 	Action Action // requested message actions
 
-	kv      map[string]interface{} // generic Key-Value store
-	cbIndex int                    // minimum callback index
+	kv      map[string]any // generic Key-Value store
+	cbs     []*Callback    // callbacks to run
+	cbIndex int            // minimum callback index
 }
 
 // PipeContext returns pipe Context inside message m,

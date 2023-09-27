@@ -15,9 +15,9 @@ import (
 var DefaultOptions = Options{
 	Logger: &log.Logger,
 	Caps:   true,
-	Rlen:   10,
+	Rbuf:   10,
 	Rproc:  1,
-	Llen:   10,
+	Lbuf:   10,
 	Lproc:  1,
 }
 
@@ -28,11 +28,11 @@ type Options struct {
 
 	Caps bool // overwrite pipe.Caps using OPEN messages?
 
-	Rlen  int // R channel length
-	Rproc int // number of R input handlers
+	Rbuf  int // R channels buffer length
+	Rproc int // number of R input processors
 
-	Llen  int // L channel length
-	Lproc int // number of L input handlers
+	Lbuf  int // L channels buffer length
+	Lproc int // number of L input processors
 
 	Callbacks []*Callback // message callbacks
 	Handlers  []*Handler  // event handlers

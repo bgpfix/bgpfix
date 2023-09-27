@@ -18,25 +18,30 @@ import (
 // Use NewMsg to get a new valid object.
 type Msg struct {
 	// internal
+
 	ref bool   // true iff Data is a reference we don't own
 	buf []byte // internal buffer
 
 	// optional metadata
+
 	Dst  Dst       // message destination
 	Seq  int64     // sequence number
 	Time time.Time // message timestamp
 
 	// raw contents
+
 	Type Type   // message type
 	Data []byte // message data (referenced or owned), can be nil
 
 	// upper layer
+
 	Upper  Type   // which of the upper layer is valid?
 	Dirty  bool   // if true, probably needs a marshal (Data does not reflect Upper)
 	Open   Open   // parsed BGP OPEN message
 	Update Update // parsed BGP UPDATE message
 
 	// for optional use beyond this pkg
+
 	Value Value // NB: not affected by Reset()
 }
 

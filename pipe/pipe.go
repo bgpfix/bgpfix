@@ -98,17 +98,17 @@ func (p *Pipe) apply(opts *Options) {
 	}
 
 	if p.L.In == nil {
-		p.L.In = make(chan *msg.Msg, opts.Llen)
+		p.L.In = make(chan *msg.Msg, opts.Lbuf)
 	}
 	if p.L.Out == nil {
-		p.L.Out = make(chan *msg.Msg, opts.Llen)
+		p.L.Out = make(chan *msg.Msg, opts.Lbuf)
 	}
 
 	if p.R.In == nil {
-		p.R.In = make(chan *msg.Msg, opts.Rlen)
+		p.R.In = make(chan *msg.Msg, opts.Rbuf)
 	}
 	if p.R.Out == nil {
-		p.R.Out = make(chan *msg.Msg, opts.Rlen)
+		p.R.Out = make(chan *msg.Msg, opts.Rbuf)
 	}
 
 	// rewrite callbacks to sides, respecting their options

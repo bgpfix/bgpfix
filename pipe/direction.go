@@ -22,16 +22,17 @@ type Direction struct {
 	// destination of messages flowing in this Direction
 	Dst msg.Dst
 
-	// In is the pipe input, where you write messages to be processed.
+	// In is the pipe input, which usually you don't need to use directly.
+	// Instead, use Direction.WriteMsg(), which is a wrapper around
+	// the channel send operation.
 	//
-	// You can get empty messages using Pipe.Get(). If your message
-	// has a Pipe.Context with a Callback set, processing will start
-	// just after that Callback (if found in the pipe).
+	// If you still want to use In directly, call Direction.Prepare(m) first.
+	// Get new messages using Pipe.Get().
 	In chan *msg.Msg
 
 	// Out is the pipe output, where you read processed messages.
 	//
-	// You should dispose used messages using Pipe.Put().
+	// Dispose used messages using Pipe.Put().
 	Out chan *msg.Msg
 
 	// the last OPEN message that made it to Out
@@ -153,6 +154,8 @@ func (d *Direction) Write(src []byte) (n int, err error) {
 }
 
 // WriteMsg safely sends m to d.In, calling d.Prepare(m) just before.
+// Get new messages using Pipe.Get().
+//
 // It returns an error iff d.In was closed while/before writing (instead of a panic).
 func (d *Direction) WriteMsg(m *msg.Msg) (err error) {
 	defer func() {
@@ -165,9 +168,10 @@ func (d *Direction) WriteMsg(m *msg.Msg) (err error) {
 	return
 }
 
-// Prepare writes m's metadata and sets up its pipe context.
-// You only need to call it explicitly before writing m to d.In if you want more control over the message processing.
-func (d *Direction) Prepare(m *msg.Msg) *Context {
+// Prepare prepares metadata and context of m for processing in this Direction.
+// The message type must already be set.
+// You only need to call this if you use d.In directly.
+func (d *Direction) Prepare(m *msg.Msg) {
 	// message metadata
 	m.Dst = d.Dst
 	if m.Seq == 0 {
@@ -179,27 +183,24 @@ func (d *Direction) Prepare(m *msg.Msg) *Context {
 
 	// pipe context
 	pc := PipeContext(m)
-	if pc.Dir == nil {
-		pc.Dir = d
-	}
-	if pc.Callbacks == nil {
+	pc.Pipe = d.Pipe
+	pc.Dir = d
+	if pc.cbs == nil {
 		switch m.Type {
 		case msg.UPDATE:
-			pc.Callbacks = d.update
+			pc.cbs = d.update
 		case msg.KEEPALIVE:
-			pc.Callbacks = d.keepalive
+			pc.cbs = d.keepalive
 		case msg.NOTIFY:
-			pc.Callbacks = d.notification
+			pc.cbs = d.notification
 		case msg.REFRESH:
-			pc.Callbacks = d.refresh
+			pc.cbs = d.refresh
 		case msg.OPEN:
-			pc.Callbacks = d.open
+			pc.cbs = d.open
 		default:
-			pc.Callbacks = d.invalid
+			pc.cbs = d.invalid
 		}
 	}
-
-	return pc
 }
 
 // Handling callbacks ------------------------------
@@ -245,15 +246,20 @@ func (d *Direction) process(output chan *msg.Msg) (output_closed bool) {
 
 input:
 	for m = range input {
-		// prepare m, clear actions except for BORROW
-		pc := d.Prepare(m)
+		// not ours? just skip as-is
+		if m.Dst != d.Dst {
+			continue
+		}
+
+		// get context, clear actions except for BORROW
+		pc := PipeContext(m)
 		pc.Action.Clear()
 
 		// run the callbacks
-		for len(pc.Callbacks) > 0 {
+		for len(pc.cbs) > 0 {
 			// eat first callback
-			cb := pc.Callbacks[0]
-			pc.Callbacks = pc.Callbacks[1:]
+			cb := pc.cbs[0]
+			pc.cbs = pc.cbs[1:]
 
 			// skip?
 			if pc.cbIndex > cb.Index {
