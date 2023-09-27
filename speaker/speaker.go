@@ -15,7 +15,8 @@ import (
 
 // Speaker represents a basic BGP speaker for single-threaded use
 type Speaker struct {
-	zerolog.Logger
+	*zerolog.Logger
+	newmsg func() *msg.Msg
 
 	ctx    context.Context
 	cancel context.CancelCauseFunc
@@ -29,8 +30,6 @@ type Speaker struct {
 
 	alive_down atomic.Int64 // last received UPDATE or KA
 	alive_up   atomic.Int64 // last sent UPDATE or KA
-
-	send func(m *msg.Msg) error
 }
 
 // NewSpeaker returns a new Speaker. Call Speaker.Attach() next.
@@ -45,19 +44,25 @@ func NewSpeaker(ctx context.Context) *Speaker {
 // Must not be called more than once.
 func (s *Speaker) Attach(upstream *pipe.Direction) error {
 	opts := &s.Options
-	s.Logger = opts.Logger
 	s.pipe = upstream.Pipe
 	s.up = upstream
 	s.down = upstream.Opposite
 
-	if opts.ErrorDrop {
-		s.erraction = pipe.ACTION_DROP
+	if opts.Logger != nil {
+		s.Logger = opts.Logger
+	} else {
+		l := zerolog.Nop()
+		s.Logger = &l
 	}
 
-	if opts.Writer != nil {
-		s.send = opts.Writer
+	if opts.NewMsg != nil {
+		s.newmsg = opts.NewMsg
 	} else {
-		s.send = upstream.WriteMsg
+		s.newmsg = s.pipe.Get
+	}
+
+	if opts.ErrorDrop {
+		s.erraction = pipe.ACTION_DROP
 	}
 
 	po := &s.pipe.Options
@@ -183,8 +188,8 @@ func (s *Speaker) onMsgUp(m *msg.Msg) pipe.Action {
 
 // sendOpen generates a new OPEN and writes it to s.up
 func (s *Speaker) sendOpen(ro *msg.Open) {
-	o := &s.pipe.Get(msg.OPEN).Open // our OPEN
-	if ro == nil {                  // remote OPEN
+	o := &s.newmsg().Up(msg.OPEN).Open // our OPEN
+	if ro == nil {                     // remote OPEN
 		ro = s.down.Open.Load() // in case its already available
 	}
 
@@ -227,11 +232,11 @@ func (s *Speaker) sendOpen(ro *msg.Open) {
 	o.Caps.SetFrom(opts.LocalCaps)
 
 	// queue for sending
-	s.send(o.Msg)
+	s.up.WriteMsg(o.Msg)
 }
 
 func (s *Speaker) sendKeepalive() {
-	s.send(s.pipe.Get(msg.KEEPALIVE))
+	s.up.WriteMsg(s.newmsg().Up(msg.KEEPALIVE))
 }
 
 // keepaliver sends a KEEPALIVE message, and keeps sending them to respect the hold time.
@@ -241,6 +246,8 @@ func (s *Speaker) keepaliver(negotiated uint16) {
 	if negotiated < 3 {
 		negotiated = 3
 	}
+
+	s.Debug().Msgf("starting keepaliver(%d)", negotiated)
 
 	// keep checking every second
 	// send KEEPALIVE 1s before each ~1/3 of the negotiated hold timer

@@ -9,20 +9,24 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
 	"github.com/rs/zerolog"
 )
 
 // Reader reads MRT-BGP4MP messages into a pipe.Direction.
 type Reader struct {
-	zerolog.Logger
+	*zerolog.Logger
+	newmsg func() *msg.Msg
 
 	ctx    context.Context
 	cancel context.CancelCauseFunc
 
-	Pipe  *pipe.Pipe      // target pipe
-	Dir   *pipe.Direction // target direction
-	Stats ReaderStats     // our stats
+	pipe *pipe.Pipe      // target pipe
+	up   *pipe.Direction // target direction
+
+	Stats   ReaderStats   // our stats
+	Options ReaderOptions // options; do not modify after Attach()
 
 	ibuf []byte // input buffer
 	mrt  Mrt    // raw MRT message
@@ -39,17 +43,34 @@ type ReaderStats struct {
 }
 
 // NewReader returns a new Reader for given pipe.Direction.
-func NewReader(ctx context.Context, log *zerolog.Logger, dst *pipe.Direction) *Reader {
+func NewReader(ctx context.Context) *Reader {
 	br := &Reader{}
 	br.ctx, br.cancel = context.WithCancelCause(ctx)
-	if log != nil {
-		br.Logger = *log
-	} else {
-		br.Logger = zerolog.Nop()
-	}
-	br.Dir = dst
-	br.Pipe = dst.Pipe
+	br.Options = DefaultReaderOptions
 	return br
+}
+
+// Attach attaches the speaker in given upstream pipe direction.
+// Must not be called more than once.
+func (br *Reader) Attach(upstream *pipe.Direction) error {
+	opts := &br.Options
+	br.pipe = upstream.Pipe
+	br.up = upstream
+
+	if opts.Logger != nil {
+		br.Logger = opts.Logger
+	} else {
+		l := zerolog.Nop()
+		br.Logger = &l
+	}
+
+	if opts.NewMsg != nil {
+		br.newmsg = opts.NewMsg
+	} else {
+		br.newmsg = br.pipe.Get
+	}
+
+	return nil
 }
 
 // Write implements io.Writer and reads all MRT-BGP4MP messages from src
@@ -117,7 +138,7 @@ func (br *Reader) Write(src []byte) (n int, err error) {
 		}
 
 		// parse as a raw BGP message
-		m := br.Pipe.Get(0)
+		m := br.newmsg()
 		off, perr = m.Parse(bm.Data)
 		switch {
 		case perr != nil:
@@ -128,7 +149,7 @@ func (br *Reader) Write(src []byte) (n int, err error) {
 
 		// sail!
 		m.Time = mrt.Time // use MRT time
-		if err := br.Dir.WriteMsg(m); err != nil {
+		if err := br.up.WriteMsg(m); err != nil {
 			return n, fmt.Errorf("pipe: %w", err)
 		}
 	}

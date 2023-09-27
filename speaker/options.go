@@ -11,7 +11,7 @@ import (
 
 // Default BGP speaker options
 var DefaultOptions = Options{
-	Logger:        log.Logger,
+	Logger:        &log.Logger,
 	Passive:       true,
 	LocalASN:      -1,
 	LocalHoldTime: msg.OPEN_HOLDTIME,
@@ -20,8 +20,8 @@ var DefaultOptions = Options{
 
 // Options are BGP speaker options, see also DefaultOptions
 type Options struct {
-	Logger zerolog.Logger         // use zerolog.Nop to disable logging
-	Writer func(m *msg.Msg) error // function to use for writing new msgs to pipe
+	Logger *zerolog.Logger // if nil logging is disabled
+	NewMsg func() *msg.Msg // optional source of new messages
 
 	Passive   bool // if true, expect the peer to go first with OPEN
 	ErrorDrop bool // drop erronous messages?
