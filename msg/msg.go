@@ -144,9 +144,9 @@ func (msg *Msg) Length() int {
 	return len(msg.Data) + HEADLEN
 }
 
-// SetUp prepares to make use of and modify the upper layer of given type.
+// Up prepares to make use of and modify the upper layer of given type.
 // Does not reset the upper layer struct, though.
-func (msg *Msg) SetUp(typ Type) *Msg {
+func (msg *Msg) Up(typ Type) *Msg {
 	msg.Type = typ
 	msg.Upper = typ
 	msg.Dirty = true
@@ -449,7 +449,7 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 				msg.Type = Type(v)
 			}
 			if msg.Type != INVALID {
-				msg.SetUp(msg.Type)
+				msg.Up(msg.Type)
 			}
 
 		case 5: // upper layer

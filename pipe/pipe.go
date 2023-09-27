@@ -298,15 +298,12 @@ func (p *Pipe) Stopped() bool {
 }
 
 // Get returns empty msg from pool, or a new msg object
-func (p *Pipe) Get(typ msg.Type) (m *msg.Msg) {
-	v := p.pool.Get()
-	if v == nil {
-		m = msg.NewMsg()
+func (p *Pipe) Get() (m *msg.Msg) {
+	if m, ok := p.pool.Get().(*msg.Msg); ok {
+		return m
 	} else {
-		m = v.(*msg.Msg)
+		return msg.NewMsg()
 	}
-
-	return m.SetUp(typ)
 }
 
 // Put resets msg and returns it to pool, which might free it
@@ -317,7 +314,7 @@ func (p *Pipe) Put(m *msg.Msg) {
 	}
 
 	// do not re-use?
-	pc := PipeContext(m)
+	pc := Context(m)
 	if pc.Action.Is(ACTION_BORROW) {
 		return
 	}

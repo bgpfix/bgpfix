@@ -274,10 +274,10 @@ func (o *Open) ToJSON(dst []byte) []byte {
 	dst = append(dst, `,"asn":`...)
 	dst = json.Int(dst, o.GetASN())
 
-	dst = append(dst, `,"id":"`...)
+	dst = append(dst, `,"id":`...)
 	dst = json.Addr(dst, o.Identifier)
 
-	dst = append(dst, `","hold":`...)
+	dst = append(dst, `,"hold":`...)
 	dst = json.Uint16(dst, o.HoldTime)
 
 	if o.Caps.Valid() {

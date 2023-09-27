@@ -118,7 +118,7 @@ func (d *Direction) Write(src []byte) (n int, err error) {
 	// process until raw is empty
 	for len(raw) > 0 {
 		// grab memory, parse raw, take mem reference
-		m := p.Get(0)
+		m := p.Get()
 		off, perr := m.Parse(raw)
 
 		// success?
@@ -182,23 +182,23 @@ func (d *Direction) Prepare(m *msg.Msg) {
 	}
 
 	// pipe context
-	pc := PipeContext(m)
+	pc := Context(m)
 	pc.Pipe = d.Pipe
 	pc.Dir = d
-	if pc.cbs == nil {
+	if pc.Callbacks == nil {
 		switch m.Type {
 		case msg.UPDATE:
-			pc.cbs = d.update
+			pc.Callbacks = d.update
 		case msg.KEEPALIVE:
-			pc.cbs = d.keepalive
+			pc.Callbacks = d.keepalive
 		case msg.NOTIFY:
-			pc.cbs = d.notification
+			pc.Callbacks = d.notification
 		case msg.REFRESH:
-			pc.cbs = d.refresh
+			pc.Callbacks = d.refresh
 		case msg.OPEN:
-			pc.cbs = d.open
+			pc.Callbacks = d.open
 		default:
-			pc.cbs = d.invalid
+			pc.Callbacks = d.invalid
 		}
 	}
 }
@@ -252,19 +252,36 @@ input:
 		}
 
 		// get context, clear actions except for BORROW
-		pc := PipeContext(m)
+		pc := Context(m)
 		pc.Action.Clear()
 
 		// run the callbacks
-		for len(pc.cbs) > 0 {
-			// eat first callback
-			cb := pc.cbs[0]
-			pc.cbs = pc.cbs[1:]
+		var cb *Callback
+		for {
+			if l := len(pc.Callbacks); l == 0 {
+				break // callbacks done
+			} else if pc.Reverse {
+				// eat last callback
+				cb = pc.Callbacks[l-1]
+				pc.Callbacks = pc.Callbacks[:l-1]
 
-			// skip?
-			if pc.cbIndex > cb.Index {
-				continue
-			} else if cb.Enabled != nil && !cb.Enabled.Load() {
+				// skip?
+				if cb.Index >= 0 && cb.Index > pc.Index {
+					continue
+				}
+			} else {
+				// eat first callback
+				cb = pc.Callbacks[0]
+				pc.Callbacks = pc.Callbacks[1:]
+
+				// skip?
+				if cb.Index >= 0 && cb.Index < pc.Index {
+					continue
+				}
+			}
+
+			// disabled?
+			if cb.Enabled != nil && !cb.Enabled.Load() {
 				continue
 			}
 

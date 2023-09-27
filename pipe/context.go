@@ -5,28 +5,30 @@ import (
 	"github.com/bgpfix/bgpfix/msg"
 )
 
-// Context tracks message processing progress in a pipe
-type Context struct {
-	Pipe     *Pipe      // pipe processing the message
-	Dir      *Direction // direction processing the message
-	Callback *Callback  // currently run callback
+// PipeContext tracks message processing progress in a pipe
+type PipeContext struct {
+	Pipe *Pipe      // pipe processing the message
+	Dir  *Direction // direction processing the message
 
-	Action Action // requested message actions
+	Callbacks []*Callback // callbacks to run
+	Reverse   bool        // iterate over callbacks in reverse?
+	Index     int         // minimum Callback.Index (maximum if Reverse is true)
 
-	kv      map[string]any // generic Key-Value store
-	cbs     []*Callback    // callbacks to run
-	cbIndex int            // minimum callback index
+	Callback *Callback // currently run callback
+	Action   Action    // requested message actions
+
+	kv map[string]any // generic Key-Value store
 }
 
-// PipeContext returns pipe Context inside message m,
+// Context returns pipe Context inside message m,
 // updating m.Value if needed.
-func PipeContext(m *msg.Msg) *Context {
+func Context(m *msg.Msg) *PipeContext {
 	if m == nil {
 		return nil
-	} else if pc, ok := m.Value.(*Context); ok {
+	} else if pc, ok := m.Value.(*PipeContext); ok {
 		return pc
 	} else {
-		pc = new(Context)
+		pc = new(PipeContext)
 		m.Value = pc
 		return pc
 	}
@@ -34,38 +36,28 @@ func PipeContext(m *msg.Msg) *Context {
 
 // PipeAction returns pipe Action reference for given message m.
 func PipeAction(m *msg.Msg) *Action {
-	return &PipeContext(m).Action
+	return &Context(m).Action
 }
 
 // Reset resets pc to empty state
-func (pc *Context) Reset() {
-	*pc = Context{}
+func (pc *PipeContext) Reset() {
+	*pc = PipeContext{}
 }
 
 // Clear resets pc, but preserves ACTION_BORROW if set.
-func (pc *Context) Clear() {
+func (pc *PipeContext) Clear() {
 	a := pc.Action
 	pc.Reset()
 	pc.Action = a & ACTION_BORROW
 }
 
-// SkipBefore requests to skip callbacks added to pipe.Options before cb.
-func (pc *Context) SkipBefore(cb *Callback) {
-	pc.cbIndex = cb.Index
-}
-
-// SkipAfter requests to skip callbacks added to pipe.Options before cb, plus cb itself.
-func (pc *Context) SkipAfter(cb *Callback) {
-	pc.cbIndex = cb.Index + 1
-}
-
 // HasKV returns true iff the context already has a Key-Value store.
-func (pc *Context) HasKV() bool {
+func (pc *PipeContext) HasKV() bool {
 	return pc.kv != nil
 }
 
 // KV returns a generic Key-Value store, creating it first if needed.
-func (pc *Context) KV() map[string]any {
+func (pc *PipeContext) KV() map[string]any {
 	if pc.kv == nil {
 		pc.kv = make(map[string]interface{})
 	}
@@ -73,12 +65,12 @@ func (pc *Context) KV() map[string]any {
 }
 
 // TODO
-func (pc *Context) ToJSON(dst []byte) []byte {
+func (pc *PipeContext) ToJSON(dst []byte) []byte {
 	return json.Byte(dst, byte(pc.Action))
 }
 
 // TODO
-func (pc *Context) FromJSON(src []byte) error {
+func (pc *PipeContext) FromJSON(src []byte) error {
 	val, err := json.UnByte(src)
 	if err != nil {
 		return err

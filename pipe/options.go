@@ -40,7 +40,7 @@ type Options struct {
 
 // Callback represents a function to call for matching BGP messages
 type Callback struct {
-	Index int // index in Options.Callbacks
+	Index int // index number, by default location in Options.Callbacks
 
 	Name    string       // optional name
 	Order   int          // the lower the order, the sooner callback is run
@@ -54,7 +54,7 @@ type Callback struct {
 
 // Handler represents a function to call for matching pipe events
 type Handler struct {
-	Index int // index in Options.Handlers
+	Index int // index number, by default location in Options.Handlers
 
 	Name    string       // optional name
 	Order   int          // the lower the order, the sooner handler is run
