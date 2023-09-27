@@ -210,7 +210,7 @@ func ArrayEach(src []byte, cb func(key int, val []byte, typ Type) error) (reterr
 
 	// iterate
 	key = -1
-	jsp.ArrayEach(src, func(val []byte, typ Type, _ int, _ error) {
+	_, reterr = jsp.ArrayEach(src, func(val []byte, typ Type, _ int, _ error) {
 		// skip nulls
 		key++
 		if typ == NULL {
@@ -224,7 +224,7 @@ func ArrayEach(src []byte, cb func(key int, val []byte, typ Type) error) (reterr
 		}
 	})
 
-	return nil
+	return
 }
 
 // ObjectEach calls cb for each non-null value in the src object.
