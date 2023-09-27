@@ -194,6 +194,11 @@ func (s *Speaker) sendOpen(ro *msg.Open) {
 	}
 
 	opts := &s.Options
+
+	// set caps from pipe and local options
+	o.Caps.SetFrom(s.pipe.Caps)
+	o.Caps.SetFrom(opts.LocalCaps)
+
 	o.Identifier = opts.LocalId
 	if !o.Identifier.IsValid() && ro != nil {
 		o.Identifier = ro.Identifier.Prev()
@@ -226,10 +231,6 @@ func (s *Speaker) sendOpen(ro *msg.Open) {
 		mp.Add(af.AFI_IPV6, af.SAFI_UNICAST)
 		mp.Add(af.AFI_IPV6, af.SAFI_FLOWSPEC)
 	}
-
-	// possibly overwrite with pipe and local capabilities
-	o.Caps.SetFrom(s.pipe.Caps)
-	o.Caps.SetFrom(opts.LocalCaps)
 
 	// queue for sending
 	s.up.WriteMsg(o.Msg)
