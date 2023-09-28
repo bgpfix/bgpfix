@@ -22,16 +22,11 @@ type Direction struct {
 	// destination of messages flowing in this Direction
 	Dst msg.Dst
 
-	// In is the pipe input, which usually you don't need to use directly.
-	// Instead, use Direction.WriteMsg(), which is a wrapper around
-	// the channel send operation.
-	//
-	// If you still want to use In directly, call Direction.Prepare(m) first.
+	// In is the pipe input, where you write incoming messages.
 	// Get new messages using Pipe.Get().
 	In chan *msg.Msg
 
 	// Out is the pipe output, where you read processed messages.
-	//
 	// Dispose used messages using Pipe.Put().
 	Out chan *msg.Msg
 
@@ -52,6 +47,7 @@ type Direction struct {
 	stats Stats
 
 	// callbacks
+	reverse      bool // run callbacks in reverse order?
 	open         []*Callback
 	update       []*Callback
 	keepalive    []*Callback
@@ -153,25 +149,22 @@ func (d *Direction) Write(src []byte) (n int, err error) {
 	return n, nil
 }
 
-// WriteMsg safely sends m to d.In, calling d.Prepare(m) just before.
-// Get new messages using Pipe.Get().
-//
-// It returns an error iff d.In was closed while/before writing (instead of a panic).
+// WriteMsg safely sends m to d.In, returning an error instead of a panic
+// if d.In is closed.
 func (d *Direction) WriteMsg(m *msg.Msg) (err error) {
 	defer func() {
 		if recover() != nil {
 			err = ErrInClosed
 		}
 	}()
-	d.Prepare(m)
+	d.prepare(m)
 	d.In <- m
 	return
 }
 
-// Prepare prepares metadata and context of m for processing in this Direction.
+// prepare prepares metadata and context of m for processing in this Direction.
 // The message type must already be set.
-// You only need to call this if you use d.In directly.
-func (d *Direction) Prepare(m *msg.Msg) {
+func (d *Direction) prepare(m *msg.Msg) {
 	// message metadata
 	m.Dst = d.Dst
 	if m.Seq == 0 {
@@ -185,20 +178,20 @@ func (d *Direction) Prepare(m *msg.Msg) {
 	pc := Context(m)
 	pc.Pipe = d.Pipe
 	pc.Dir = d
-	if pc.Callbacks == nil {
+	if pc.cbs == nil {
 		switch m.Type {
 		case msg.UPDATE:
-			pc.Callbacks = d.update
+			pc.cbs = d.update
 		case msg.KEEPALIVE:
-			pc.Callbacks = d.keepalive
+			pc.cbs = d.keepalive
 		case msg.NOTIFY:
-			pc.Callbacks = d.notification
+			pc.cbs = d.notification
 		case msg.REFRESH:
-			pc.Callbacks = d.refresh
+			pc.cbs = d.refresh
 		case msg.OPEN:
-			pc.Callbacks = d.open
+			pc.cbs = d.open
 		default:
-			pc.Callbacks = d.invalid
+			pc.cbs = d.invalid
 		}
 	}
 }
@@ -246,9 +239,9 @@ func (d *Direction) process(output chan *msg.Msg) (output_closed bool) {
 
 input:
 	for m = range input {
-		// not ours? just skip as-is
+		// not prepared?
 		if m.Dst != d.Dst {
-			continue
+			d.prepare(m)
 		}
 
 		// get context, clear actions except for BORROW
@@ -256,27 +249,21 @@ input:
 		pc.Action.Clear()
 
 		// run the callbacks
-		var cb *Callback
-		for {
-			if l := len(pc.Callbacks); l == 0 {
-				break // callbacks done
-			} else if pc.Reverse {
-				// eat last callback
-				cb = pc.Callbacks[l-1]
-				pc.Callbacks = pc.Callbacks[:l-1]
+		for len(pc.cbs) > 0 {
+			// eat first callback
+			cb := pc.cbs[0]
+			pc.cbs = pc.cbs[1:]
 
-				// skip?
-				if cb.Index >= 0 && cb.Index > pc.Index {
-					continue
-				}
-			} else {
-				// eat first callback
-				cb = pc.Callbacks[0]
-				pc.Callbacks = pc.Callbacks[1:]
-
-				// skip?
-				if cb.Index >= 0 && cb.Index < pc.Index {
-					continue
+			// skip?
+			if cb.Id != 0 && pc.StartAt != 0 {
+				if d.reverse {
+					if pc.StartAt < cb.Id {
+						continue // wait for lower cb.Id
+					}
+				} else {
+					if pc.StartAt > cb.Id {
+						continue // wait for higher cb.Id
+					}
 				}
 			}
 
@@ -417,16 +404,55 @@ func (d *Direction) WriteTo(w io.Writer) (int64, error) {
 
 // --------------------------
 
-// Stats returns dir statistics FIXME
+// Stats returns dir statistics FIXME: concurrent access
 func (d *Direction) Stats() *Stats {
 	return &d.stats
 }
 
-func (d *Direction) addCallback(cb *Callback) {
-	if cb == nil || cb.Func == nil {
-		return
+func (d *Direction) addCallbacks(src []*Callback) {
+	// collect my valid callbacks
+	var cbs []*Callback
+	for _, cb := range src {
+		if cb == nil || cb.Func == nil {
+			continue
+		}
+		if cb.Dst == 0 || cb.Dst == d.Dst {
+			cbs = append(cbs, cb)
+		}
 	}
 
+	// sort
+	slices.SortStableFunc(cbs, func(a, b *Callback) int {
+		if a.Pre != b.Pre {
+			if a.Pre {
+				return -1
+			} else {
+				return 1
+			}
+		}
+		if a.Post != b.Post {
+			if a.Post {
+				return 1
+			} else {
+				return -1
+			}
+		}
+		if d.reverse {
+			return b.Order - a.Order
+		} else {
+			return a.Order - b.Order
+		}
+	})
+
+	// add to this direction
+	for _, cb := range cbs {
+		d.Pipe.Trace().Msgf("%s adding callback [%d] %s (pre/post=%v/%v order %d)",
+			d.Dst, cb.Id, cb.Name, cb.Pre, cb.Post, cb.Order)
+		d.addCallback(cb)
+	}
+}
+
+func (d *Direction) addCallback(cb *Callback) {
 	if len(cb.Types) == 0 {
 		d.open = append(d.open, cb)
 		d.keepalive = append(d.keepalive, cb)

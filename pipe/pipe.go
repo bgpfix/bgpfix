@@ -3,6 +3,7 @@ package pipe
 
 import (
 	"context"
+	"math"
 	"slices"
 	"sort"
 	"sync"
@@ -111,36 +112,38 @@ func (p *Pipe) apply(opts *Options) {
 		p.R.Out = make(chan *msg.Msg, opts.Rbuf)
 	}
 
-	// rewrite callbacks to sides, respecting their options
-	sort.SliceStable(opts.Callbacks, func(i, j int) bool {
-		cbi := opts.Callbacks[i]
-		cbj := opts.Callbacks[j]
-		if cbi.Raw != cbj.Raw {
-			return cbi.Raw
-		} else {
-			return cbi.Order < cbj.Order
-		}
-	})
-	for _, cb := range opts.Callbacks {
-		switch cb.Dst {
-		case msg.DST_LR:
-			p.L.addCallback(cb)
-			p.R.addCallback(cb)
-		case msg.DST_L:
-			p.L.addCallback(cb)
-		case msg.DST_R:
-			p.R.addCallback(cb)
-		}
-	}
+	// callback reverse?
+	p.L.reverse = opts.Lreverse
+	p.R.reverse = opts.Rreverse
 
-	// register very first EVENT_ALIVE_* handlers
-	opts.OnEventFirst(p.onAlive, EVENT_ALIVE_R, EVENT_ALIVE_L)
+	// rewrite callbacks to pipe directions
+	p.L.addCallbacks(opts.Callbacks)
+	p.R.addCallbacks(opts.Callbacks)
+
+	// register the very first EVENT_ALIVE_* handler
+	opts.AddHandler(p.onAlive, &Handler{
+		Pre:   true,
+		Order: math.MinInt,
+		Types: []string{EVENT_ALIVE_R, EVENT_ALIVE_L},
+	})
 
 	// rewrite handlers
-	sort.SliceStable(opts.Handlers, func(i, j int) bool {
-		cbi := opts.Handlers[i]
-		cbj := opts.Handlers[j]
-		return cbi.Order < cbj.Order
+	slices.SortStableFunc(opts.Handlers, func(a, b *Handler) int {
+		if a.Pre != b.Pre {
+			if a.Pre {
+				return -1
+			} else {
+				return 1
+			}
+		}
+		if a.Post != b.Post {
+			if a.Post {
+				return 1
+			} else {
+				return -1
+			}
+		}
+		return a.Order - b.Order
 	})
 	for _, h := range opts.Handlers {
 		if h == nil || h.Func == nil {

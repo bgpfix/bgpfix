@@ -28,11 +28,13 @@ type Options struct {
 
 	Caps bool // overwrite pipe.Caps using OPEN messages?
 
-	Rbuf  int // R channels buffer length
-	Rproc int // number of R input processors
+	Rbuf     int  // R channels buffer length
+	Rproc    int  // number of R input processors
+	Rreverse bool // reverse the order in R?
 
-	Lbuf  int // L channels buffer length
-	Lproc int // number of L input processors
+	Lbuf     int  // L channels buffer length
+	Lproc    int  // number of L input processors
+	Lreverse bool // reverse the order in L?
 
 	Callbacks []*Callback // message callbacks
 	Handlers  []*Handler  // event handlers
@@ -40,12 +42,14 @@ type Options struct {
 
 // Callback represents a function to call for matching BGP messages
 type Callback struct {
-	Index int // index number, by default location in Options.Callbacks (-1 to ignore)
-
+	Id      int          // optional callback id number (zero means none)
 	Name    string       // optional name
 	Order   int          // the lower the order, the sooner callback is run
-	Raw     bool         // if true, run on non-parsed message, before non-raw callbacks
 	Enabled *atomic.Bool // if non-nil, disables the callback unless true
+
+	Pre  bool // run before non-pre callbacks?
+	Raw  bool // if true, do not parse the message (which may already be parsed, but for other reasons)
+	Post bool // run after non-post callbacks?
 
 	Dst   msg.Dst      // if non-zero, limits the direction
 	Types []msg.Type   // if non-empty, limits message types
@@ -54,11 +58,13 @@ type Callback struct {
 
 // Handler represents a function to call for matching pipe events
 type Handler struct {
-	Index int // index number, by default location in Options.Handlers (-1 to ignore)
-
+	Id      int          // optional handler id number (zero means none)
 	Name    string       // optional name
 	Order   int          // the lower the order, the sooner handler is run
 	Enabled *atomic.Bool // if non-nil, disables the handler unless true
+
+	Pre  bool // run before non-pre handlers?
+	Post bool // run after non-post handlers?
 
 	Types []string    // if non-empty, limits event types
 	Func  HandlerFunc // the function to call
@@ -72,70 +78,69 @@ type CallbackFunc func(m *msg.Msg) (add_action Action)
 // If returns false, unregisters the parent Handler.
 type HandlerFunc func(ev *Event) (keep_event bool)
 
-// AddCallbacks adds a callback function using tpl[0] as its template (if non-nil).
+// AddCallbacks adds a callback function using tpl as its template (if non-nil).
 // It returns the added Callback, which can be further configured.
-func (o *Options) AddCallback(cbf CallbackFunc, tpl ...*Callback) *Callback {
+func (o *Options) AddCallback(cbf CallbackFunc, tpl *Callback) *Callback {
 	var cb Callback
 
 	// deep copy the tpl?
-	if len(tpl) > 0 && tpl[0] != nil {
-		cb = *tpl[0]
+	if tpl != nil {
+		cb = *tpl
 		cb.Types = nil
-		cb.Types = append(cb.Types, tpl[0].Types...)
+		cb.Types = append(cb.Types, tpl.Types...)
 	}
 
-	// override the function?
-	if cbf != nil {
-		cb.Func = cbf
-	}
+	// override the function
+	cb.Func = cbf
 
 	// override the name?
 	if len(cb.Name) == 0 {
 		cb.Name = runtime.FuncForPC(reflect.ValueOf(cbf).Pointer()).Name()
 	}
 
-	cb.Index = len(o.Callbacks)
 	o.Callbacks = append(o.Callbacks, &cb)
 	return &cb
 }
 
 // OnMsg adds a callback for all messages of given types (or all types if not specified).
-func (o *Options) OnMsg(cb CallbackFunc, dst msg.Dst, types ...msg.Type) *Callback {
-	return o.AddCallback(cb, &Callback{
-		Order: 0,
-		Dst:   dst,
-		Types: types,
-	})
-}
-
-// OnMsgFirst adds a callback as the first for all messages of given types (or all types if not specified).
-func (o *Options) OnMsgFirst(cb CallbackFunc, dst msg.Dst, types ...msg.Type) *Callback {
-	return o.AddCallback(cb, &Callback{
-		Order: -len(o.Callbacks) - 1,
-		Dst:   dst,
-		Types: types,
-	})
-}
-
-// OnMsgLast adds a callback as the last for all messages of given types (or all types if not specified).
-func (o *Options) OnMsgLast(cb CallbackFunc, dst msg.Dst, types ...msg.Type) *Callback {
-	return o.AddCallback(cb, &Callback{
+func (o *Options) OnMsg(cbf CallbackFunc, dst msg.Dst, types ...msg.Type) *Callback {
+	return o.AddCallback(cbf, &Callback{
 		Order: len(o.Callbacks) + 1,
 		Dst:   dst,
 		Types: types,
 	})
 }
 
-// AddHandler adds a handler function using tpl[0] as its template (if non-nil).
+// OnMsgPre is like OnMsg but requests to run cb before other callbacks
+func (o *Options) OnMsgPre(cbf CallbackFunc, dst msg.Dst, types ...msg.Type) *Callback {
+	return o.AddCallback(cbf, &Callback{
+		Pre:   true,
+		Order: -len(o.Callbacks) - 1,
+		Dst:   dst,
+		Types: types,
+	})
+}
+
+// OnMsgPost is like OnMsg but requests to run cb after other callbacks
+func (o *Options) OnMsgPost(cbf CallbackFunc, dst msg.Dst, types ...msg.Type) *Callback {
+	return o.AddCallback(cbf, &Callback{
+		Post:  true,
+		Order: len(o.Callbacks) + 1,
+		Dst:   dst,
+		Types: types,
+	})
+}
+
+// AddHandler adds a handler function using tpl as its template (if non-nil).
 // It returns the added Handler, which can be further configured.
-func (o *Options) AddHandler(hf HandlerFunc, tpl ...*Handler) *Handler {
+func (o *Options) AddHandler(hdf HandlerFunc, tpl *Handler) *Handler {
 	var h Handler
 
 	// deep copy the tpl?
-	if len(tpl) > 0 && tpl[0] != nil {
-		h = *tpl[0]
+	if tpl != nil {
+		h = *tpl
 		h.Types = nil
-		h.Types = append(h.Types, tpl[0].Types...)
+		h.Types = append(h.Types, tpl.Types...)
 	}
 
 	// all types?
@@ -143,62 +148,61 @@ func (o *Options) AddHandler(hf HandlerFunc, tpl ...*Handler) *Handler {
 		h.Types = append(h.Types, "")
 	}
 
-	// override the function?
-	if hf != nil {
-		h.Func = hf
-	}
+	// override the function
+	h.Func = hdf
 
 	// override the name?
 	if len(h.Name) == 0 {
-		h.Name = runtime.FuncForPC(reflect.ValueOf(hf).Pointer()).Name()
+		h.Name = runtime.FuncForPC(reflect.ValueOf(hdf).Pointer()).Name()
 	}
 
-	h.Index = len(o.Handlers)
 	o.Handlers = append(o.Handlers, &h)
 	return &h
 }
 
-// OnEvent request cb to be called for given event types.
-// If no types provided, it requests to call cb on *every* event.
-func (o *Options) OnEvent(cb HandlerFunc, types ...string) *Handler {
-	return o.AddHandler(cb, &Handler{
-		Order: 0,
+// OnEvent request hdf to be called for given event types.
+// If no types provided, it requests to call hdf on *every* event.
+func (o *Options) OnEvent(hdf HandlerFunc, types ...string) *Handler {
+	return o.AddHandler(hdf, &Handler{
+		Order: len(o.Handlers) + 1,
 		Types: types,
 	})
 }
 
-// OnEventFirst is same as OnEvent but adds cb as the first to run for given types
-func (o *Options) OnEventFirst(cb HandlerFunc, types ...string) *Handler {
-	return o.AddHandler(cb, &Handler{
+// OnEventPre is like OnEvent but requests to run hdf before other handlers
+func (o *Options) OnEventPre(hdf HandlerFunc, types ...string) *Handler {
+	return o.AddHandler(hdf, &Handler{
+		Pre:   true,
 		Order: -len(o.Handlers) - 1,
 		Types: types,
 	})
 }
 
-// OnEventLast is same as OnEvent but adds cb as the first to run for given types
-func (o *Options) OnEventLast(cb HandlerFunc, types ...string) *Handler {
-	return o.AddHandler(cb, &Handler{
-		Order: len(o.Callbacks) + 1,
+// OnEventPost is like OnEvent but requests to run hdf after other handlers
+func (o *Options) OnEventPost(hdf HandlerFunc, types ...string) *Handler {
+	return o.AddHandler(hdf, &Handler{
+		Post:  true,
+		Order: len(o.Handlers) + 1,
 		Types: types,
 	})
 }
 
-// OnStart request cb to be called after the pipe starts.
-func (o *Options) OnStart(cb HandlerFunc) {
-	o.OnEvent(cb, EVENT_START)
+// OnStart request hdf to be called after the pipe starts.
+func (o *Options) OnStart(hdf HandlerFunc) *Handler {
+	return o.OnEvent(hdf, EVENT_START)
 }
 
-// OnStop request cb to be called when the pipe stops.
-func (o *Options) OnStop(cb HandlerFunc) {
-	o.OnEvent(cb, EVENT_STOP)
+// OnStop request hdf to be called when the pipe stops.
+func (o *Options) OnStop(hdf HandlerFunc) *Handler {
+	return o.OnEvent(hdf, EVENT_STOP)
 }
 
-// OnEstablished request cb to be called when the BGP session is established.
-func (o *Options) OnEstablished(cb HandlerFunc) {
-	o.OnEvent(cb, EVENT_ESTABLISHED)
+// OnEstablished request hdf to be called when the BGP session is established.
+func (o *Options) OnEstablished(hdf HandlerFunc) *Handler {
+	return o.OnEvent(hdf, EVENT_ESTABLISHED)
 }
 
-// OnParseError request cb to be called on BGP message parse error.
-func (o *Options) OnParseError(cb HandlerFunc) {
-	o.OnEvent(cb, EVENT_PARSE_ERROR)
+// OnParseError request hdf to be called on BGP message parse error.
+func (o *Options) OnParseError(hdf HandlerFunc) *Handler {
+	return o.OnEvent(hdf, EVENT_PARSE_ERROR)
 }

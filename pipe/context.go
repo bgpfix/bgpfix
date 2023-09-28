@@ -10,14 +10,17 @@ type PipeContext struct {
 	Pipe *Pipe      // pipe processing the message
 	Dir  *Direction // direction processing the message
 
-	Callbacks []*Callback // callbacks to run
-	Reverse   bool        // iterate over callbacks in reverse?
-	Index     int         // minimum Callback.Index (maximum if Reverse is true)
+	// The Callback.Id to start processing scheduled callbacks at.
+	// Allows for injecting messages at arbitrary pipe location.
+	// If >0, this is the minimum Id value (or the maximum in reverse mode)
+	// to run a callback. If 0, the filter is disabled.
+	StartAt int
 
 	Callback *Callback // currently run callback
 	Action   Action    // requested message actions
 
-	kv map[string]any // generic Key-Value store
+	cbs []*Callback    // scheduled callbacks to run
+	kv  map[string]any // generic Key-Value store
 }
 
 // Context returns pipe Context inside message m,
@@ -34,11 +37,6 @@ func Context(m *msg.Msg) *PipeContext {
 	}
 }
 
-// PipeAction returns pipe Action reference for given message m.
-func PipeAction(m *msg.Msg) *Action {
-	return &Context(m).Action
-}
-
 // Reset resets pc to empty state
 func (pc *PipeContext) Reset() {
 	*pc = PipeContext{}
@@ -50,6 +48,13 @@ func (pc *PipeContext) Clear() {
 	pc.Reset()
 	pc.Action = a & ACTION_BORROW
 }
+
+// NoCallbacks requests the message to skip running any callbacks
+func (pc *PipeContext) NoCallbacks() {
+	pc.cbs = noCallbacks
+}
+
+var noCallbacks = []*Callback{}
 
 // HasKV returns true iff the context already has a Key-Value store.
 func (pc *PipeContext) HasKV() bool {

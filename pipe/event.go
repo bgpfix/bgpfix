@@ -88,7 +88,8 @@ func (p *Pipe) Event(et string, msg *msg.Msg, args ...any) (sent bool) {
 
 	// attach a message?
 	if msg != nil {
-		PipeAction(msg).Add(ACTION_BORROW) // don't re-use (will be queued soon)
+		pc := Context(msg)
+		pc.Action.Add(ACTION_BORROW) // don't re-use (will be queued soon)
 		ev.Msg = msg
 	}
 
