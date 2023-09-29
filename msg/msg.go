@@ -369,19 +369,19 @@ func (msg *Msg) String() string {
 func (msg *Msg) ToJSON(dst []byte) []byte {
 	dst = append(dst, `["`...)
 
-	// [0] time
+	// [0] direction
+	dst = append(dst, msg.Dst.String()...) // TODO: or number
+	dst = append(dst, `","`...)
+
+	// [1] time
 	dst = append(dst, msg.Time.Format(JSON_TIME)...)
 	dst = append(dst, `",`...)
 
 	// [1] sequence number (for dir)
 	dst = strconv.AppendInt(dst, msg.Seq, 10)
 
-	// [2] direction
-	dst = append(dst, `,"`...)
-	dst = append(dst, msg.Dst.String()...) // TODO: or number
-
 	// [3] type
-	dst = append(dst, `","`...)
+	dst = append(dst, `,"`...)
 	dst = append(dst, msg.Type.String()...) // TODO: or number
 	dst = append(dst, `",`...)
 
@@ -425,13 +425,7 @@ func (msg *Msg) ToJSON(dst []byte) []byte {
 func (msg *Msg) FromJSON(src []byte) (reterr error) {
 	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) (err error) {
 		switch key {
-		case 0: // time
-			msg.Time, err = time.Parse(JSON_TIME, json.S(val))
-
-		case 1: // seq number
-			msg.Seq, err = strconv.ParseInt(json.S(val), 10, 64)
-
-		case 2: // dst TODO: better
+		case 0: // dst TODO: better
 			if typ == json.STRING {
 				msg.Dst, err = DstString(json.S(val))
 			} else if typ == json.NUMBER {
@@ -439,6 +433,12 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 				v, err = json.UnByte(val)
 				msg.Dst = Dst(v)
 			}
+
+		case 1: // time
+			msg.Time, err = time.Parse(JSON_TIME, json.S(val))
+
+		case 2: // seq number
+			msg.Seq, err = strconv.ParseInt(json.S(val), 10, 64)
 
 		case 3: // type TODO: better
 			if typ == json.STRING {
