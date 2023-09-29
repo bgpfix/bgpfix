@@ -275,7 +275,7 @@ input:
 			// need to parse first?
 			if !cb.Raw && m.Upper == msg.INVALID {
 				if err := m.ParseUpper(p.Caps); err != nil {
-					p.Event(EVENT_PARSE_ERROR, m, err)
+					p.Event(EVENT_PARSE, m, err)
 					continue input // next message
 				}
 			}

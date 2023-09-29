@@ -18,7 +18,7 @@ var (
 	EVENT_STOP = "bgpfix/pipe.STOP"
 
 	// could not parse the message before its callback
-	EVENT_PARSE_ERROR = "bgpfix/pipe.PARSE_ERROR"
+	EVENT_PARSE = "bgpfix/pipe.PARSE"
 
 	// first OPEN made it to R
 	EVENT_OPEN_R = "bgpfix/pipe.OPEN_R"
@@ -122,7 +122,7 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 
 	var (
 		seq uint64
-		whs = p.events[""] // wildcard handlers - for any event type
+		whs = p.events["*"] // wildcard handlers - for any event type
 	)
 
 	for ev := range p.evch {
@@ -137,28 +137,28 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 
 		// call handlers for ev.Type
 		hs := p.events[ev.Type]
-		for i, h := range hs {
-			if h == nil {
+		for _, h := range hs {
+			if h == nil || h.Func == nil {
 				continue // dropped [2]
 			}
 			if h.Enabled != nil && !h.Enabled.Load() {
 				continue // disabled
 			}
 			if !h.Func(ev) {
-				hs[i] = nil // drop [2]
+				h.Func = nil // drop [2]
 			}
 		}
 
 		// call wildcard handlers
-		for i, h := range whs {
-			if h == nil {
+		for _, h := range whs {
+			if h == nil || h.Func == nil {
 				continue // dropped [3]
 			}
 			if h.Enabled != nil && !h.Enabled.Load() {
 				continue // disabled
 			}
 			if !h.Func(ev) {
-				whs[i] = nil // drop [3]
+				h.Func = nil // drop [3]
 			}
 		}
 	}

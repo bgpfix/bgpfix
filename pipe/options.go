@@ -75,7 +75,7 @@ type Handler struct {
 type CallbackFunc func(m *msg.Msg) (add_action Action)
 
 // HandlerFunc handles event ev.
-// If returns false, unregisters the parent Handler.
+// If returns false, unregisters the parent Handler for all Types.
 type HandlerFunc func(ev *Event) (keep_event bool)
 
 // AddCallbacks adds a callback function using tpl as its template (if non-nil).
@@ -90,8 +90,10 @@ func (o *Options) AddCallback(cbf CallbackFunc, tpl *Callback) *Callback {
 		cb.Types = append(cb.Types, tpl.Types...)
 	}
 
-	// override the function
-	cb.Func = cbf
+	// override the function?
+	if cbf != nil {
+		cb.Func = cbf
+	}
 
 	// override the name?
 	if len(cb.Name) == 0 {
@@ -145,11 +147,13 @@ func (o *Options) AddHandler(hdf HandlerFunc, tpl *Handler) *Handler {
 
 	// all types?
 	if len(h.Types) == 0 {
-		h.Types = append(h.Types, "")
+		h.Types = []string{"*"}
 	}
 
-	// override the function
-	h.Func = hdf
+	// override the function?
+	if hdf != nil {
+		h.Func = hdf
+	}
 
 	// override the name?
 	if len(h.Name) == 0 {
@@ -204,5 +208,5 @@ func (o *Options) OnEstablished(hdf HandlerFunc) *Handler {
 
 // OnParseError request hdf to be called on BGP message parse error.
 func (o *Options) OnParseError(hdf HandlerFunc) *Handler {
-	return o.OnEvent(hdf, EVENT_PARSE_ERROR)
+	return o.OnEvent(hdf, EVENT_PARSE)
 }
