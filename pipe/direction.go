@@ -446,8 +446,6 @@ func (d *Direction) addCallbacks(src []*Callback) {
 
 	// add to this direction
 	for _, cb := range cbs {
-		d.Pipe.Trace().Msgf("%s adding callback [%d] %s (pre/post=%v/%v order %d)",
-			d.Dst, cb.Id, cb.Name, cb.Pre, cb.Post, cb.Order)
 		d.addCallback(cb)
 	}
 }

@@ -435,7 +435,9 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 			}
 
 		case 1: // time
-			msg.Time, err = time.Parse(JSON_TIME, json.S(val))
+			if typ == json.STRING && len(val) > 0 {
+				msg.Time, err = time.Parse(JSON_TIME, json.S(val))
+			}
 
 		case 2: // seq number
 			msg.Seq, err = strconv.ParseInt(json.S(val), 10, 64)
