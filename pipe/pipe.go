@@ -33,8 +33,9 @@ type Pipe struct {
 	ctx    context.Context
 	cancel context.CancelCauseFunc
 
-	started atomic.Bool // true iff Start() called
-	stopped atomic.Bool // true iff Stop() called
+	started atomic.Bool    // true iff Start() called
+	wgstart sync.WaitGroup // 1 before start, 0 after start
+	stopped atomic.Bool    // true iff Stop() called
 
 	pool *sync.Pool     // message pool
 	lwg  sync.WaitGroup // L Input handlers
@@ -79,6 +80,8 @@ func NewPipe(ctx context.Context) *Pipe {
 
 	p.evch = make(chan *Event, 10)
 	p.events = make(map[string][]*Handler)
+
+	p.wgstart.Add(1)
 
 	return p
 }
@@ -206,6 +209,7 @@ func (p *Pipe) Start() {
 
 	// publish the start event!
 	go p.Event(EVENT_START, nil)
+	p.wgstart.Done()
 }
 
 // onAlive is called whenever either direction gets a new KEEPALIVE message,
@@ -283,8 +287,9 @@ func (p *Pipe) Stop() {
 	p.evwg.Wait()
 }
 
-// Wait blocks until all handlers finish.
+// Wait blocks until the pipe starts and stops completely.
 func (p *Pipe) Wait() {
+	p.wgstart.Wait()
 	p.rwg.Wait()
 	p.lwg.Wait()
 	p.evwg.Wait()
