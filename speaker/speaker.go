@@ -30,6 +30,7 @@ type Speaker struct {
 
 	alive_down atomic.Int64 // last received UPDATE or KA
 	alive_up   atomic.Int64 // last sent UPDATE or KA
+	open_up    atomic.Bool  // true iff OPEN already sent
 }
 
 // NewSpeaker returns a new Speaker. Call Speaker.Attach() next.
@@ -121,10 +122,8 @@ func (s *Speaker) onMsgDown(m *msg.Msg) pipe.Action {
 		// TODO: drop if in state established and seen an update?
 		// TODO: validate received OPEN - drop if wrong caps / other params?
 
-		// send our OPEN iff we didn't do that already
-		if opts.Passive {
-			s.sendOpen(&m.Open)
-		}
+		// send our OPEN (nop if we did that already)
+		s.sendOpen(&m.Open)
 
 		// confirm the received OPEN is OK
 		s.sendKeepalive()
@@ -188,6 +187,10 @@ func (s *Speaker) onMsgUp(m *msg.Msg) pipe.Action {
 
 // sendOpen generates a new OPEN and writes it to s.up
 func (s *Speaker) sendOpen(ro *msg.Open) {
+	if s.open_up.Swap(true) {
+		return // already done
+	}
+
 	o := &s.newmsg().Up(msg.OPEN).Open // our OPEN
 	if ro == nil {                     // remote OPEN
 		ro = s.down.Open.Load() // in case its already available
