@@ -49,6 +49,15 @@ type Event struct {
 	Value any      `json:"value"` // optional value, type-specific
 }
 
+// String returns the event Type, or "(nil)" if ev is nil
+func (ev *Event) String() string {
+	if ev == nil {
+		return "(nil)"
+	} else {
+		return ev.Type
+	}
+}
+
 // event sends ev with given ctx; if noblock is true, it never blocks on full channel
 func (p *Pipe) event(ev *Event, ctx context.Context, noblock bool) (sent bool) {
 	defer func() { recover() }() // in case of closed p.events
