@@ -371,29 +371,29 @@ func (msg *Msg) ToJSON(dst []byte) []byte {
 
 	// [0] direction
 	dst = append(dst, msg.Dst.String()...) // TODO: or number
-	dst = append(dst, `","`...)
-
-	// [1] time
-	dst = append(dst, msg.Time.Format(JSON_TIME)...)
 	dst = append(dst, `",`...)
 
 	// [1] sequence number (for dir)
 	dst = strconv.AppendInt(dst, msg.Seq, 10)
-
-	// [3] type
 	dst = append(dst, `,"`...)
-	dst = append(dst, msg.Type.String()...) // TODO: or number
+
+	// [2] time
+	dst = append(dst, msg.Time.Format(JSON_TIME)...)
 	dst = append(dst, `",`...)
 
-	// [4] length (w/out the header)
+	// [3] length (w/out the header)
 	if msg.Dirty && msg.Type != KEEPALIVE {
 		dst = append(dst, `-1`...)
 	} else {
 		dst = strconv.AppendUint(dst, uint64(len(msg.Data)), 10)
 	}
 
+	// [4] type
+	dst = append(dst, `,"`...)
+	dst = append(dst, msg.Type.String()...) // TODO: or number
+	dst = append(dst, `",`...)
+
 	// [5] data (or upper layer)
-	dst = append(dst, ',')
 	switch msg.Upper {
 	case OPEN:
 		dst = msg.Open.ToJSON(dst)
@@ -434,15 +434,17 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 				msg.Dst = Dst(v)
 			}
 
-		case 1: // time
+		case 1: // seq number
+			msg.Seq, err = strconv.ParseInt(json.S(val), 10, 64)
+
+		case 2: // time
 			if typ == json.STRING && len(val) > 0 {
 				msg.Time, err = time.Parse(JSON_TIME, json.S(val))
 			}
 
-		case 2: // seq number
-			msg.Seq, err = strconv.ParseInt(json.S(val), 10, 64)
+		// NB: ignore [3] = wire length
 
-		case 3: // type TODO: better
+		case 4: // type TODO: better
 			if typ == json.STRING {
 				msg.Type, err = TypeString(json.S(val))
 			} else if typ == json.NUMBER {
