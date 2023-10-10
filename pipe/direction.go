@@ -152,12 +152,12 @@ func (d *Direction) Write(src []byte) (n int, err error) {
 // WriteMsg safely sends m to d.In, returning an error instead of a panic
 // if d.In is closed.
 func (d *Direction) WriteMsg(m *msg.Msg) (err error) {
+	d.prepare(m)
 	defer func() {
 		if recover() != nil {
 			err = ErrInClosed
 		}
 	}()
-	d.prepare(m)
 	d.In <- m
 	return
 }
