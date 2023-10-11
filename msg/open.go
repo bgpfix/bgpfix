@@ -272,7 +272,7 @@ func (o *Open) ToJSON(dst []byte) []byte {
 	dst = json.Byte(dst, o.Version)
 
 	dst = append(dst, `,"asn":`...)
-	dst = json.Int(dst, o.GetASN())
+	dst = json.Int(dst, int(o.ASN))
 
 	dst = append(dst, `,"id":`...)
 	dst = json.Addr(dst, o.Identifier)
