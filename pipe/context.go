@@ -10,11 +10,16 @@ type PipeContext struct {
 	Pipe *Pipe      // pipe processing the message
 	Dir  *Direction // direction processing the message
 
-	// The Callback.Id to start processing scheduled callbacks at.
+	// Optional id of message source, by default 0 (disabled).
+	// Allows for skipping own messages.
+	SourceId int
+
+	// Optional callback Id filter, by default 0 (disabled).
 	// Allows for injecting messages at arbitrary pipe location.
-	// If >0, this is the minimum Id value (or the maximum in reverse mode)
-	// to run a callback. If 0, the filter is disabled.
-	StartAt int
+	// Applies only to callbacks with a non-zero Id.
+	// If >0, skip callback if its Id < SkipId (or Id > SkipId in reverse mode).
+	// If <0, skip callback if its Id <= -SkipId (or Id >= -SkipId in reverse mode).
+	SkipId int
 
 	Callback *Callback // currently run callback
 	Action   Action    // requested message actions

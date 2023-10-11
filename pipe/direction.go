@@ -237,6 +237,26 @@ func (d *Direction) process(output chan *msg.Msg) (output_closed bool) {
 		}
 	}()
 
+	// callback filter, depending on reverse mode
+	var skip func(pcid, cbid int) bool
+	if d.reverse {
+		skip = func(pcid, cbid int) bool {
+			if pcid < 0 {
+				return cbid >= -pcid
+			} else {
+				return cbid > pcid
+			}
+		}
+	} else {
+		skip = func(pcid, cbid int) bool {
+			if pcid < 0 {
+				return cbid <= -pcid
+			} else {
+				return cbid < pcid
+			}
+		}
+	}
+
 input:
 	for m = range input {
 		// not prepared?
@@ -255,16 +275,8 @@ input:
 			pc.cbs = pc.cbs[1:]
 
 			// skip?
-			if cb.Id != 0 && pc.StartAt != 0 {
-				if d.reverse {
-					if pc.StartAt < cb.Id {
-						continue // wait for lower cb.Id
-					}
-				} else {
-					if pc.StartAt > cb.Id {
-						continue // wait for higher cb.Id
-					}
-				}
+			if pc.SkipId != 0 && cb.Id != 0 && skip(pc.SkipId, cb.Id) {
+				continue
 			}
 
 			// disabled?
@@ -307,7 +319,7 @@ input:
 			newt := m.Time.Unix()
 			oldt := d.Alive.Load()
 			if newt > oldt && d.Alive.CompareAndSwap(oldt, newt) {
-				p.Event(event_alive, m)
+				p.Event(event_alive, m, newt)
 			}
 		}
 
