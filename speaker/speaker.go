@@ -28,9 +28,9 @@ type Speaker struct {
 	Options   Options     // options; do not modify after Attach()
 	erraction pipe.Action // action to return on error
 
-	alive_down atomic.Int64 // last received UPDATE or KA
-	alive_up   atomic.Int64 // last sent UPDATE or KA
-	open_up    atomic.Bool  // true iff OPEN already sent
+	last_down atomic.Int64 // last received UPDATE or KA
+	last_up   atomic.Int64 // last sent KA
+	open_up   atomic.Bool  // true iff OPEN already sent
 }
 
 // NewSpeaker returns a new Speaker. Call Speaker.Attach() next.
@@ -67,7 +67,6 @@ func (s *Speaker) Attach(upstream *pipe.Direction) error {
 	}
 
 	po := &s.pipe.Options
-	po.OnMsg(s.onMsgUp, s.up.Dst).Raw = true
 	po.OnMsg(s.onMsgDown, s.down.Dst).Raw = true
 	po.OnEstablished(s.onEstablished)
 	po.OnStart(s.onStart)
@@ -129,7 +128,7 @@ func (s *Speaker) onMsgDown(m *msg.Msg) pipe.Action {
 		s.sendKeepalive()
 
 	case msg.UPDATE, msg.KEEPALIVE:
-		s.alive_down.Store(nanotime())
+		s.last_down.Store(nanotime())
 
 	case msg.NOTIFY:
 		// TODO
@@ -139,45 +138,6 @@ func (s *Speaker) onMsgDown(m *msg.Msg) pipe.Action {
 	default:
 		if opts.ErrorDrop {
 			s.Error().Msgf("R: dropping invalid type %s", m.Type)
-			return s.erraction
-		}
-	}
-
-	return 0
-}
-
-func (s *Speaker) onMsgUp(m *msg.Msg) pipe.Action {
-	opts := &s.Options
-	p := s.pipe
-
-	// check if m too long vs. extmsg
-	if m.Length() > msg.MAXLEN && !p.Caps.Has(caps.CAP_EXTENDED_MESSAGE) {
-		p.Event(EVENT_TOO_LONG, m)
-		return s.erraction
-	}
-
-	// try to parse
-	if err := m.ParseUpper(p.Caps); err != nil {
-		p.Event(EVENT_PARSE_ERROR, m, err)
-		// TODO: notify + teardown?
-		return s.erraction
-	}
-
-	switch m.Type {
-	case msg.OPEN:
-		break // OK
-
-	case msg.UPDATE, msg.KEEPALIVE:
-		s.alive_up.Store(nanotime())
-
-	case msg.NOTIFY:
-		// TODO
-	case msg.REFRESH:
-		// TODO
-
-	default:
-		if opts.ErrorDrop {
-			s.Error().Msgf("L: dropping invalid type %s", m.Type)
 			return s.erraction
 		}
 	}
@@ -241,6 +201,7 @@ func (s *Speaker) sendOpen(ro *msg.Open) {
 
 func (s *Speaker) sendKeepalive() {
 	s.up.WriteMsg(s.newmsg().Up(msg.KEEPALIVE))
+	s.last_up.Store(nanotime())
 }
 
 // keepaliver sends a KEEPALIVE message, and keeps sending them to respect the hold time.
@@ -270,17 +231,17 @@ func (s *Speaker) keepaliver(negotiated uint16) {
 
 		// get data
 		now := nanotime()
-		alive_down := s.alive_down.Load()
-		alive_up := s.alive_up.Load()
+		last_down := s.last_down.Load() // UPDATE or KEEPALIVE
+		last_up := s.last_up.Load()     // KEEPALIVE only
 
 		// timeout?
-		if now-alive_down > hold {
+		if delay := now - last_down; delay > hold {
 			s.Warn().Msg("remote hold timer expired")
-			p.Event(EVENT_PEER_TIMEOUT, nil, now-alive_down)
+			p.Event(EVENT_PEER_TIMEOUT, nil, delay/second)
 		}
 
 		// need to send our next KA?
-		if now-alive_up >= each {
+		if now-last_up >= each {
 			s.sendKeepalive()
 		}
 	}
