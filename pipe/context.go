@@ -11,7 +11,7 @@ type PipeContext struct {
 	Dir  *Direction // direction processing the message
 
 	// Optional id of message source, by default 0 (disabled).
-	// Allows for skipping own messages.
+	// Allows for detecting own messages.
 	SourceId int
 
 	// Optional callback Id filter, by default 0 (disabled).

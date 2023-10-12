@@ -30,11 +30,17 @@ type Direction struct {
 	// Dispose used messages using Pipe.Put().
 	Out chan *msg.Msg
 
-	// the last OPEN message that made it to Out
-	Open atomic.Pointer[msg.Open]
+	// UNIX timestamp (seconds) of the last valid OPEN message
+	LastOpen atomic.Int64
 
-	// UNIX timestamp of the last KEEPALIVE message
-	Alive atomic.Int64
+	// UNIX timestamp (seconds) of the last KEEPALIVE message
+	LastAlive atomic.Int64
+
+	// UNIX timestamp (seconds) of the last UPDATE message
+	LastUpdate atomic.Int64
+
+	// the last valid OPEN message that updated TimeOpen
+	Open atomic.Pointer[msg.Open]
 
 	// input/output buffers
 	ibuf []byte
@@ -47,13 +53,15 @@ type Direction struct {
 	stats Stats
 
 	// callbacks
-	reverse      bool // run callbacks in reverse order?
 	open         []*Callback
 	update       []*Callback
 	keepalive    []*Callback
 	notification []*Callback
 	refresh      []*Callback
 	invalid      []*Callback
+
+	// run callbacks in reverse order?
+	reverse bool
 }
 
 // BGP dir statistics
@@ -198,142 +206,132 @@ func (d *Direction) prepare(m *msg.Msg) {
 
 // Handling callbacks ------------------------------
 
-// Process reads Input, runs all callbacks on incoming messages,
-// and forwards the result to Output.
+// Process reads input, runs all callbacks on incoming messages,
+// and forwards the result to d.Out.
 //
-// The Output *can* be closed anytime, which will cause the resultant
-// messages to be dropped on the floor (and re-used).
+// The d.Out channel *can* be closed anytime, which will cause the resultant
+// messages to be dropped on the floor (and possibly re-used).
 //
-// Exits when dir.Input closes and is emptied. wg may be nil.
-func (d *Direction) Process(wg *sync.WaitGroup) {
-	output_closed := d.process(d.Out)
-	if output_closed {
-		d.process(nil)
-	}
+// Exits when input closes and is emptied. wg may be nil.
+func (d *Direction) Process(input chan *msg.Msg, wg *sync.WaitGroup) {
 	if wg != nil {
-		wg.Done()
+		defer wg.Done()
+	}
+
+	out := d.Out
+	for m := range input {
+		output_closed := d.process(m, out)
+		if output_closed {
+			out = nil
+		}
 	}
 }
 
-func (d *Direction) process(output chan *msg.Msg) (output_closed bool) {
+// ProcessMsg runs all callbacks on message m and forwards the result to d.Out.
+func (d *Direction) ProcessMsg(m *msg.Msg) {
+	d.prepare(m)
+	d.process(m, d.Out)
+}
+
+func (d *Direction) process(m *msg.Msg, output chan *msg.Msg) (output_closed bool) {
 	var (
-		p     = d.Pipe
-		input = d.In
-		m     *msg.Msg
+		p = d.Pipe
 	)
 
-	// which events to generate in case of OPEN / KEEPALIVE?
-	event_open, event_alive := EVENT_OPEN_R, EVENT_ALIVE_R
-	if d.Dst == msg.DST_L {
-		event_open, event_alive = EVENT_OPEN_L, EVENT_ALIVE_L
+	// not prepared?
+	if m.Dst != d.Dst {
+		d.prepare(m)
 	}
 
-	// catch panic due to write to closed channel
-	catch := false
-	defer func() {
-		if catch && recover() != nil {
-			p.Put(m)
-			output_closed = true
-		}
-	}()
+	// get context, clear actions except for BORROW
+	pc := Context(m)
+	pc.Action.Clear()
 
-	// callback filter, depending on reverse mode
-	var skip func(pcid, cbid int) bool
-	if d.reverse {
-		skip = func(pcid, cbid int) bool {
-			if pcid < 0 {
-				return cbid >= -pcid
-			} else {
-				return cbid > pcid
-			}
-		}
-	} else {
-		skip = func(pcid, cbid int) bool {
-			if pcid < 0 {
-				return cbid <= -pcid
-			} else {
-				return cbid < pcid
-			}
-		}
-	}
+	// run the callbacks
+	for len(pc.cbs) > 0 {
+		// eat first callback
+		cb := pc.cbs[0]
+		pc.cbs = pc.cbs[1:]
 
-input:
-	for m = range input {
-		// not prepared?
-		if m.Dst != d.Dst {
-			d.prepare(m)
-		}
-
-		// get context, clear actions except for BORROW
-		pc := Context(m)
-		pc.Action.Clear()
-
-		// run the callbacks
-		for len(pc.cbs) > 0 {
-			// eat first callback
-			cb := pc.cbs[0]
-			pc.cbs = pc.cbs[1:]
-
-			// skip?
-			if pc.SkipId != 0 && cb.Id != 0 && skip(pc.SkipId, cb.Id) {
+		// skip the callback?
+		if d.reverse {
+			if d.skip_backward(pc.SkipId, cb.Id) {
 				continue
 			}
-
-			// disabled?
-			if cb.Enabled != nil && !cb.Enabled.Load() {
-				continue
-			}
-
-			// need to parse first?
-			if !cb.Raw && m.Upper == msg.INVALID {
-				if err := m.ParseUpper(p.Caps); err != nil {
-					p.Event(EVENT_PARSE, m, err)
-					continue input // next message
-				}
-			}
-
-			// run and wait
-			pc.Callback = cb
-			pc.Action |= cb.Func(m)
-			pc.Callback = nil
-
-			// what's next?
-			if pc.Action.Is(ACTION_DROP) {
-				p.Put(m)
-				continue input // next message
-			} else if pc.Action.Is(ACTION_ACCEPT) {
-				break // take it as-is
-			}
-		}
-
-		// special-purpose messages?
-		switch m.Type {
-		case msg.OPEN: // take it if valid
-			if m.ParseUpper(p.Caps) == nil {
-				pc.Action |= ACTION_BORROW // don't re-use in pool
-				if d.Open.Swap(&m.Open) == nil {
-					p.Event(event_open, m)
-				}
-			}
-		case msg.KEEPALIVE: // take it if bigger timestamp
-			newt := m.Time.Unix()
-			oldt := d.Alive.Load()
-			if newt > oldt && d.Alive.CompareAndSwap(oldt, newt) {
-				p.Event(event_alive, m, newt)
-			}
-		}
-
-		// forward to output if possible
-		if output != nil {
-			catch = true
-			output <- m
-			catch = false
 		} else {
+			if d.skip_forward(pc.SkipId, cb.Id) {
+				continue
+			}
+		}
+
+		// disabled?
+		if cb.Enabled != nil && !cb.Enabled.Load() {
+			continue
+		}
+
+		// need to parse first?
+		if !cb.Raw && m.Upper == msg.INVALID {
+			if err := m.ParseUpper(p.Caps); err != nil {
+				p.Event(EVENT_PARSE, d.Dst, m, err)
+				return
+			}
+		}
+
+		// run and wait
+		pc.Callback = cb
+		pc.Action |= cb.Func(m)
+		pc.Callback = nil
+
+		// what's next?
+		if pc.Action.Is(ACTION_DROP) {
 			p.Put(m)
+			return
+		} else if pc.Action.Is(ACTION_ACCEPT) {
+			break // take it as-is
 		}
 	}
 
-	return false // all ok
+	// new timestamp?
+	switch m.Type {
+	case msg.OPEN:
+		newt := m.Time.Unix()
+		oldt := d.LastOpen.Load()
+		if newt > oldt && d.LastOpen.CompareAndSwap(oldt, newt) {
+			if m.ParseUpper(p.Caps) == nil {
+				Context(m).Action.Add(ACTION_BORROW)
+				d.Open.Store(&m.Open)
+				p.Event(EVENT_OPEN, d.Dst, newt, oldt)
+			}
+		}
+	case msg.KEEPALIVE:
+		newt := m.Time.Unix()
+		oldt := d.LastAlive.Load()
+		if newt > oldt && d.LastAlive.CompareAndSwap(oldt, newt) {
+			p.Event(EVENT_ALIVE, d.Dst, newt, oldt)
+		}
+	case msg.UPDATE:
+		newt := m.Time.Unix()
+		oldt := d.LastUpdate.Load()
+		if newt > oldt && d.LastUpdate.CompareAndSwap(oldt, newt) {
+			p.Event(EVENT_UPDATE, d.Dst, newt, oldt)
+		}
+	}
+
+	// forward to output if possible
+	if output != nil {
+		// in case of closed output
+		defer func() {
+			if recover() != nil {
+				output_closed = true
+				p.Put(m)
+			}
+		}()
+		output <- m
+	} else {
+		p.Put(m)
+	}
+
+	return
 }
 
 // Output readers ------------------------------
@@ -489,5 +487,27 @@ func (d *Direction) addCallback(cb *Callback) {
 		default:
 			d.invalid = append(d.invalid, cb)
 		}
+	}
+}
+
+func (d *Direction) skip_forward(pcid, cbid int) bool {
+	switch {
+	case pcid == 0 || cbid == 0:
+		return false
+	case pcid < 0:
+		return cbid <= -pcid
+	default:
+		return cbid < pcid
+	}
+}
+
+func (d *Direction) skip_backward(pcid, cbid int) bool {
+	switch {
+	case pcid == 0 || cbid == 0:
+		return false
+	case pcid < 0:
+		return cbid >= -pcid
+	default:
+		return cbid > pcid
 	}
 }

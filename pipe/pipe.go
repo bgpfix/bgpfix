@@ -123,14 +123,10 @@ func (p *Pipe) apply(opts *Options) {
 	p.L.addCallbacks(opts.Callbacks)
 	p.R.addCallbacks(opts.Callbacks)
 
-	// register the very first EVENT_ALIVE_* handler
-	opts.AddHandler(p.onAlive, &Handler{
-		Pre:   true,
-		Order: math.MinInt,
-		Types: []string{EVENT_ALIVE_R, EVENT_ALIVE_L},
-	})
+	// register the very first EVENT_ALIVE handler
+	opts.OnEventPre(p.onAlive, EVENT_ALIVE).Order = math.MinInt
 
-	// rewrite handlers
+	// rewrite event handlers
 	slices.SortStableFunc(opts.Handlers, func(a, b *Handler) int {
 		if a.Pre != b.Pre {
 			if a.Pre {
@@ -173,7 +169,7 @@ func (p *Pipe) Start() {
 	// start R handlers
 	for i := 0; i < opts.Rproc; i++ {
 		p.rwg.Add(1)
-		go p.R.Process(&p.rwg)
+		go p.R.Process(p.R.In, &p.rwg)
 	}
 	go func() {
 		p.rwg.Wait() // [1] after s.R.Input is closed (or no handlers)
@@ -183,7 +179,7 @@ func (p *Pipe) Start() {
 	// start L handlers
 	for i := 0; i < opts.Lproc; i++ {
 		p.lwg.Add(1)
-		go p.L.Process(&p.lwg)
+		go p.L.Process(p.L.In, &p.lwg)
 	}
 	go func() {
 		p.lwg.Wait() // [1] after s.L.Input is closed (or no handlers)
@@ -216,7 +212,7 @@ func (p *Pipe) Start() {
 // until it emits EVENT_ESTABLISHED and unregisters. Fills p.Caps if enabled.
 func (p *Pipe) onAlive(ev *Event) bool {
 	// already seen KEEPALIVE in both directions?
-	rstamp, lstamp := p.R.Alive.Load(), p.L.Alive.Load()
+	rstamp, lstamp := p.R.LastAlive.Load(), p.L.LastAlive.Load()
 	if rstamp == 0 || lstamp == 0 {
 		return true // not yet, keep trying
 	}
