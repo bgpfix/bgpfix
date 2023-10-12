@@ -66,6 +66,7 @@ type Handler struct {
 	Pre  bool // run before non-pre handlers?
 	Post bool // run after non-post handlers?
 
+	Dst   msg.Dst     // if non-zero, limits the direction
 	Types []string    // if non-empty, limits event types
 	Func  HandlerFunc // the function to call
 }

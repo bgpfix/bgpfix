@@ -20,20 +20,17 @@ var (
 	// could not parse the message before its callback
 	EVENT_PARSE = "bgpfix/pipe.PARSE"
 
-	// first OPEN made it to R
-	EVENT_OPEN_R = "bgpfix/pipe.OPEN_R"
+	// valid OPEN with a bigger message timestamp (seconds) made it to output
+	EVENT_OPEN = "bgpfix/pipe.OPEN"
 
-	// first OPEN made it to L
-	EVENT_OPEN_L = "bgpfix/pipe.OPEN_L"
+	// KEEPALIVE with a bigger message timestamp (seconds) made it to output
+	EVENT_ALIVE = "bgpfix/pipe.ALIVE"
+
+	// UPDATE with a bigger message timestamp (seconds) made it to output
+	EVENT_UPDATE = "bgpfix/pipe.UPDATE"
 
 	// session established (OPEN+KEEPALIVE made it to both sides)
 	EVENT_ESTABLISHED = "bgpfix/pipe.ESTABLISHED"
-
-	// KEEPALIVE timestamp increased on pipe.R
-	EVENT_ALIVE_R = "bgpfix/pipe.ALIVE_R"
-
-	// KEEPALIVE timestamp increased on pipe.L
-	EVENT_ALIVE_L = "bgpfix/pipe.ALIVE_L"
 )
 
 // Event represents an arbitrary event for a BGP pipe.
@@ -44,6 +41,7 @@ type Event struct {
 	Time time.Time `json:"time,omitempty"` // event timestamp
 
 	Type  string   `json:"type"`  // type, usually "lib/pkg.NAME"
+	Dst   msg.Dst  `json:"dst"`   // optional destination
 	Msg   *msg.Msg `json:"-"`     // optional message that caused the event
 	Error error    `json:"err"`   // optional error value
 	Value any      `json:"value"` // optional value, type-specific
@@ -89,28 +87,35 @@ func (p *Pipe) event(ev *Event, ctx context.Context, noblock bool) (sent bool) {
 	}
 }
 
-// Event announces a new event type et to the pipe, with optional message and arguments.
-// Error arguments are joined together into ev.Err, the first non-error argument
-// is used as ev.Val. Returns true iff the event was queued for processing.
-func (p *Pipe) Event(et string, msg *msg.Msg, args ...any) (sent bool) {
+// Event announces a new event type et to the pipe, with optional arguments.
+// The first msg.Dst argument is used as ev.Dst.
+// The first *msg.Msg is used as ev.Msg and borrowed (add ACTION_BORROW).
+// All error arguments are joined together into single ev.Error.
+// The remaining arguments are used as ev.Val.
+// Returns true iff the event was queued for processing.
+func (p *Pipe) Event(et string, args ...any) (sent bool) {
 	ev := &Event{Type: et}
 
-	// attach a message?
-	if msg != nil {
-		pc := Context(msg)
-		pc.Action.Add(ACTION_BORROW) // don't re-use (will be queued soon)
-		ev.Msg = msg
-	}
-
-	// collect errors and the value
+	// process args
 	var errs []error
+	var vals []any
+	var dst_set, msg_set bool
 	for _, arg := range args {
-		if err, ok := arg.(error); ok {
+		if m, ok := arg.(*msg.Msg); ok && !msg_set {
+			Context(m).Action.Add(ACTION_BORROW) // make m safe to reference for later use
+			ev.Msg = m
+			msg_set = true
+		} else if d, ok := arg.(msg.Dst); ok && !dst_set {
+			ev.Dst = d
+			dst_set = true
+		} else if err, ok := arg.(error); ok {
 			errs = append(errs, err)
-		} else if ev.Value == nil {
-			ev.Value = arg
+		} else {
+			vals = append(vals, arg)
 		}
 	}
+
+	// set error
 	switch len(errs) {
 	case 0:
 		ev.Error = nil
@@ -118,6 +123,16 @@ func (p *Pipe) Event(et string, msg *msg.Msg, args ...any) (sent bool) {
 		ev.Error = errs[0]
 	default:
 		ev.Error = errors.Join(errs...)
+	}
+
+	// set value
+	switch len(vals) {
+	case 0:
+		ev.Value = nil
+	case 1:
+		ev.Value = vals[0]
+	case 2:
+		ev.Value = vals
 	}
 
 	return p.event(ev, p.ctx, false)
@@ -153,6 +168,9 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 			if h.Enabled != nil && !h.Enabled.Load() {
 				continue // disabled
 			}
+			if h.Dst != 0 && h.Dst != ev.Dst {
+				continue // different direction
+			}
 			if !h.Func(ev) {
 				h.Func = nil // drop [2]
 			}
@@ -165,6 +183,9 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 			}
 			if h.Enabled != nil && !h.Enabled.Load() {
 				continue // disabled
+			}
+			if h.Dst != 0 && h.Dst != ev.Dst {
+				continue // different direction
 			}
 			if !h.Func(ev) {
 				h.Func = nil // drop [3]
