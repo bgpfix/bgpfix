@@ -24,8 +24,9 @@ type PipeContext struct {
 	Callback *Callback // currently run callback
 	Action   Action    // requested message actions
 
-	cbs []*Callback    // scheduled callbacks to run
-	kv  map[string]any // generic Key-Value store
+	prepared bool           // prepare() called
+	cbs      []*Callback    // scheduled callbacks to run
+	kv       map[string]any // generic Key-Value store
 }
 
 // Context returns pipe Context inside message m,

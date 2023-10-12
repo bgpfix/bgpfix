@@ -172,7 +172,14 @@ func (d *Direction) WriteMsg(m *msg.Msg) (err error) {
 
 // prepare prepares metadata and context of m for processing in this Direction.
 // The message type must already be set.
-func (d *Direction) prepare(m *msg.Msg) {
+func (d *Direction) prepare(m *msg.Msg) (pc *PipeContext) {
+	pc = Context(m)
+	if pc.prepared {
+		return
+	} else {
+		pc.prepared = true
+	}
+
 	// message metadata
 	m.Dst = d.Dst
 	if m.Seq == 0 {
@@ -183,7 +190,6 @@ func (d *Direction) prepare(m *msg.Msg) {
 	}
 
 	// pipe context
-	pc := Context(m)
 	pc.Pipe = d.Pipe
 	pc.Dir = d
 	if pc.cbs == nil {
@@ -202,6 +208,8 @@ func (d *Direction) prepare(m *msg.Msg) {
 			pc.cbs = d.invalid
 		}
 	}
+
+	return
 }
 
 // Handling callbacks ------------------------------
@@ -238,13 +246,8 @@ func (d *Direction) process(m *msg.Msg, output chan *msg.Msg) (output_closed boo
 		p = d.Pipe
 	)
 
-	// not prepared?
-	if m.Dst != d.Dst {
-		d.prepare(m)
-	}
-
 	// get context, clear actions except for BORROW
-	pc := Context(m)
+	pc := d.prepare(m)
 	pc.Action.Clear()
 
 	// run the callbacks
