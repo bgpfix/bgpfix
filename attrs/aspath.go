@@ -161,19 +161,19 @@ func (a *Aspath) FromJSON(src []byte) error {
 		seg = AspathSegment{} // clear
 	}
 
-	err := json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
-		// is an AS_SET?
-		if typ == json.ARRAY {
+	err := json.ArrayEach(src, func(_ int, val []byte, typ json.Type) error {
+		switch typ {
+		case json.ARRAY: // is an AS_SET
 			seg_push()
-			err := json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
-				return seg_add(val)
+			set_err := json.ArrayEach(val, func(_ int, set_val []byte, _ json.Type) error {
+				return seg_add(set_val)
 			})
 			seg.IsSet = true
 			seg_push()
-			return err
+			return set_err
+		default:
+			return seg_add(val)
 		}
-
-		return seg_add(val)
 	})
 	seg_push()
 	return err
