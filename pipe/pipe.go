@@ -17,13 +17,8 @@ import (
 
 // Pipe processes BGP messages exchanged between two BGP peers,
 // L (for "left" or "local") and R (for "right" or "remote"),
-// allowing for building callback-based pipelines in both directions,
-// plus an internal event system. It can also track OPEN messages
-// to find out the negotiated BGP capabilities on a session.
-//
-// Write messages destined for R to Pipe.R.In, and read the results
-// from Pipe.R.Out. Similarly, write messages destined for L to
-// Pipe.L.In, and read the results from Pipe.L.Out.
+// allowing for building callback-based pipelines, with an internal
+// event system.
 //
 // Use NewPipe() to get a new object and modify its Pipe.Options.
 // Then call Pipe.Start() to start the message flow.
@@ -37,18 +32,28 @@ type Pipe struct {
 	wgstart sync.WaitGroup // 1 before start, 0 after start
 	stopped atomic.Bool    // true iff Stop() called
 
-	pool *sync.Pool     // message pool
-	lwg  sync.WaitGroup // L Input handlers
-	rwg  sync.WaitGroup // R Input handlers
+	pool *sync.Pool // message pool
 
 	evch   chan *Event           // pipe event input
 	evwg   sync.WaitGroup        // event handler routine
 	events map[string][]*Handler // maps events to their handlers
 
-	Options Options    // pipe options; modify before Start()
-	Caps    caps.Caps  // BGP capability context; always thread-safe
-	L       *Direction // messages for L, call Start() before use
-	R       *Direction // messages for R; call Start() before use
+	Options Options       // pipe options; modify before Start()
+	Caps    caps.Caps     // BGP capability context; always thread-safe
+	Lout    chan *msg.Msg // output for L
+	Rout    chan *msg.Msg // output for R
+
+	cbs []*Callback // sorted callbacks
+	hds []*Handler  // sorted handlers
+
+	inputs []*Input       // pipe inputs
+	lwg    sync.WaitGroup // running L inputs
+	rwg    sync.WaitGroup // running R inputs
+
+	lseq atomic.Int64 // last seq number assigned for L destination
+	rseq atomic.Int64 // last seq number assigned for R destination
+
+	// TODO: Last* / Stats* using default very-last callbacks for each input
 
 	// generic Key-Value store, always thread-safe
 	KV *xsync.MapOf[string, any]
@@ -62,24 +67,14 @@ func NewPipe(ctx context.Context) *Pipe {
 
 	p.Options = DefaultOptions
 
-	p.L = &Direction{
-		Pipe: p,
-		Dst:  msg.DST_L,
-	}
-
-	p.R = &Direction{
-		Pipe: p,
-		Dst:  msg.DST_R,
-	}
-
-	p.L.Opposite = p.R
-	p.R.Opposite = p.L
-
 	p.Caps.Init() // NB: make it thread-safe
 	p.KV = xsync.NewMapOf[any]()
 
 	p.evch = make(chan *Event, 10)
 	p.events = make(map[string][]*Handler)
+
+	p.Lout = make(chan *msg.Msg, 10)
+	p.Rout = make(chan *msg.Msg, 10)
 
 	p.wgstart.Add(1)
 
@@ -101,33 +96,13 @@ func (p *Pipe) apply(opts *Options) {
 		p.pool = new(sync.Pool)
 	}
 
-	if p.L.In == nil {
-		p.L.In = make(chan *msg.Msg, opts.Lbuf)
+	// sort valid callbacks
+	for _, cb := range opts.Callbacks {
+		if cb != nil && cb.Func != nil {
+			p.cbs = append(p.cbs, cb)
+		}
 	}
-	if p.L.Out == nil {
-		p.L.Out = make(chan *msg.Msg, opts.Lbuf)
-	}
-
-	if p.R.In == nil {
-		p.R.In = make(chan *msg.Msg, opts.Rbuf)
-	}
-	if p.R.Out == nil {
-		p.R.Out = make(chan *msg.Msg, opts.Rbuf)
-	}
-
-	// callback reverse?
-	p.L.reverse = opts.Lreverse
-	p.R.reverse = opts.Rreverse
-
-	// rewrite callbacks to pipe directions
-	p.L.addCallbacks(opts.Callbacks)
-	p.R.addCallbacks(opts.Callbacks)
-
-	// register the very first EVENT_ALIVE handler
-	opts.OnEventPre(p.onAlive, EVENT_ALIVE).Order = math.MinInt
-
-	// rewrite event handlers
-	slices.SortStableFunc(opts.Handlers, func(a, b *Handler) int {
+	slices.SortStableFunc(p.cbs, func(a, b *Callback) int {
 		if a.Pre != b.Pre {
 			if a.Pre {
 				return -1
@@ -144,7 +119,44 @@ func (p *Pipe) apply(opts *Options) {
 		}
 		return a.Order - b.Order
 	})
-	for _, h := range opts.Handlers {
+
+	// sort valid handlers
+	for _, hd := range opts.Handlers {
+		if hd != nil && hd.Func != nil {
+			p.hds = append(p.hds, hd)
+		}
+	}
+	slices.SortStableFunc(p.hds, func(a, b *Handler) int {
+		if a.Pre != b.Pre {
+			if a.Pre {
+				return -1
+			} else {
+				return 1
+			}
+		}
+		if a.Post != b.Post {
+			if a.Post {
+				return 1
+			} else {
+				return -1
+			}
+		}
+		return a.Order - b.Order
+	})
+
+	// apply to pipe lines
+	for _, l := range opts.Inputs {
+		if l != nil && l.Dst != 0 {
+			p.inputs = append(p.inputs, l)
+			l.apply(p)
+		}
+	}
+
+	// register the very first EVENT_ALIVE handler
+	opts.OnEventPre(p.onAlive, EVENT_ALIVE).Order = math.MinInt
+
+	// rewrite event handlers
+	for _, h := range p.hds {
 		if h == nil || h.Func == nil {
 			return
 		}
@@ -153,59 +165,6 @@ func (p *Pipe) apply(opts *Options) {
 			p.events[typ] = append(p.events[typ], h)
 		}
 	}
-}
-
-// Start starts given number of r/t message handlers in background,
-// by default r/t = 1/1 (single-threaded, strictly ordered processing).
-func (p *Pipe) Start() {
-	if p.started.Swap(true) || p.stopped.Load() {
-		return // already started or stopped
-	}
-
-	// apply opts
-	opts := &p.Options
-	p.apply(opts)
-
-	// start R handlers
-	for i := 0; i < opts.Rproc; i++ {
-		p.rwg.Add(1)
-		go p.R.Process(p.R.In, &p.rwg)
-	}
-	go func() {
-		p.rwg.Wait() // [1] after s.R.Input is closed (or no handlers)
-		p.R.CloseOutput()
-	}()
-
-	// start L handlers
-	for i := 0; i < opts.Lproc; i++ {
-		p.lwg.Add(1)
-		go p.L.Process(p.L.In, &p.lwg)
-	}
-	go func() {
-		p.lwg.Wait() // [1] after s.L.Input is closed (or no handlers)
-		p.L.CloseOutput()
-	}()
-
-	// start the event handler
-	p.evwg.Add(1)
-	go p.eventHandler(&p.evwg)
-
-	// stop everything if both directions finish
-	go func() {
-		p.lwg.Wait()
-		p.rwg.Wait()
-		p.Stop()
-	}()
-
-	// stop everything on context cancel
-	go func() {
-		<-p.ctx.Done()
-		p.Stop()
-	}()
-
-	// publish the start event!
-	go p.Event(EVENT_START, nil)
-	p.wgstart.Done()
 }
 
 // onAlive is called whenever either direction gets a new KEEPALIVE message,
@@ -254,6 +213,58 @@ func (p *Pipe) onAlive(ev *Event) bool {
 	return false
 }
 
+// Start starts given number of r/t message handlers in background,
+// by default r/t = 1/1 (single-threaded, strictly ordered processing).
+func (p *Pipe) Start() {
+	if p.started.Swap(true) || p.stopped.Load() {
+		return // already started or stopped
+	}
+
+	// apply opts
+	opts := &p.Options
+	p.apply(opts)
+
+	// start pipe lines
+	for _, l := range p.inputs {
+		if l.Dst == msg.DST_L {
+			p.lwg.Add(1)
+			go l.run(&p.lwg)
+		} else {
+			p.rwg.Add(1)
+			go l.run(&p.rwg)
+		}
+	}
+
+	// wait for L, R, or both to finish
+	go func() {
+		p.lwg.Wait()
+		p.CloseLOutput()
+	}()
+	go func() {
+		p.rwg.Wait()
+		p.CloseROutput()
+	}()
+	go func() {
+		p.lwg.Wait()
+		p.rwg.Wait()
+		p.Stop()
+	}()
+
+	// start the event handler
+	p.evwg.Add(1)
+	go p.eventHandler(&p.evwg)
+
+	// stop everything on context cancel
+	go func() {
+		<-p.ctx.Done()
+		p.Stop()
+	}()
+
+	// publish the start event!
+	go p.Event(EVENT_START, nil)
+	p.wgstart.Done()
+}
+
 // Stop stops all handlers and blocks till handlers finish.
 // Pipe must not be used again past this point.
 // Closes all input channels, which should eventually close all output channels,
@@ -267,8 +278,9 @@ func (p *Pipe) Stop() {
 	go p.event(&Event{Type: EVENT_STOP}, nil, false)
 
 	// close all inputs
-	p.L.CloseInput()
-	p.R.CloseInput()
+	for _, l := range p.inputs {
+		l.CloseInput()
+	}
 
 	// yank the cable out of blocked calls (hopefully)
 	p.cancel(ErrStopped)

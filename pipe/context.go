@@ -7,15 +7,10 @@ import (
 
 // PipeContext tracks message processing progress in a pipe
 type PipeContext struct {
-	Pipe *Pipe      // pipe processing the message
-	Dir  *Direction // direction processing the message
-
-	// Optional id of message source, by default 0 (disabled).
-	// Allows for detecting own messages.
-	SourceId int
+	Pipe  *Pipe  // pipe processing the message
+	Input *Input // pipe input processing the message (message source)
 
 	// Optional callback Id filter, by default 0 (disabled).
-	// Allows for injecting messages at arbitrary pipe location.
 	// Applies only to callbacks with a non-zero Id.
 	// If >0, skip callback if its Id < SkipId (or Id > SkipId in reverse mode).
 	// If <0, skip callback if its Id <= -SkipId (or Id >= -SkipId in reverse mode).
@@ -24,9 +19,8 @@ type PipeContext struct {
 	Callback *Callback // currently run callback
 	Action   Action    // requested message actions
 
-	prepared bool           // prepare() called
-	cbs      []*Callback    // scheduled callbacks to run
-	kv       map[string]any // generic Key-Value store
+	cbs []*Callback    // callbacks scheduled to run
+	kv  map[string]any // generic Key-Value store
 }
 
 // Context returns pipe Context inside message m,

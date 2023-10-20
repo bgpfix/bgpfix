@@ -11,24 +11,12 @@ import (
 	"github.com/bgpfix/bgpfix/msg"
 )
 
-// Direction represents a particular direction of messages in a Pipe
-type Direction struct {
-	// parent Pipe
-	Pipe *Pipe
+// Output represents an output of a Pipe for particular direction
+type Output struct {
+	Dst msg.Dst // destination of messages
 
-	// opposite pipe direction from the parent pipe
-	Opposite *Direction
-
-	// destination of messages flowing in this Direction
-	Dst msg.Dst
-
-	// In is the pipe input, where you write incoming messages.
-	// Get new messages using Pipe.Get().
-	In chan *msg.Msg
-
-	// Out is the pipe output, where you read processed messages.
-	// Dispose used messages using Pipe.Put().
-	Out chan *msg.Msg
+	p   *Pipe         // parent pipe
+	Out chan *msg.Msg // output channel
 
 	// UNIX timestamp (seconds) of the last valid OPEN message
 	LastOpen atomic.Int64
@@ -45,42 +33,18 @@ type Direction struct {
 	// input/output buffers
 	ibuf []byte
 	obuf bytes.Buffer
-
-	// number of messages read from In
-	seq atomic.Int64
-
-	// dir statistics
-	stats Stats
-
-	// callbacks
-	open         []*Callback
-	update       []*Callback
-	keepalive    []*Callback
-	notification []*Callback
-	refresh      []*Callback
-	invalid      []*Callback
-
-	// run callbacks in reverse order?
-	reverse bool
-}
-
-// BGP dir statistics
-type Stats struct {
-	Parsed  uint64
-	Short   uint64
-	Garbled uint64
 }
 
 // CloseInput safely closes the Input channel.
 // The Output channel will eventually be closed too, after all queued messages have been processed.
-func (d *Direction) CloseInput() {
+func (d *Output) CloseInput() {
 	defer func() { recover() }()
 	close(d.In)
 }
 
 // CloseOutput safely closes the Output channel.
 // Input handlers will keep running until Input is closed.
-func (d *Direction) CloseOutput() {
+func (d *Output) CloseOutput() {
 	defer func() { recover() }()
 	close(d.Out)
 }
@@ -95,7 +59,7 @@ func (d *Direction) CloseOutput() {
 // untill it returns a nil err.
 //
 // Must not be used concurrently.
-func (d *Direction) Write(src []byte) (n int, err error) {
+func (d *Output) Write(src []byte) (n int, err error) {
 	var (
 		p   = d.Pipe
 		ss  = &d.stats
@@ -159,7 +123,7 @@ func (d *Direction) Write(src []byte) (n int, err error) {
 
 // WriteMsg safely sends m to d.In, returning an error instead of a panic
 // if d.In is closed.
-func (d *Direction) WriteMsg(m *msg.Msg) (err error) {
+func (d *Output) WriteMsg(m *msg.Msg) (err error) {
 	d.prepare(m)
 	defer func() {
 		if recover() != nil {
@@ -172,7 +136,7 @@ func (d *Direction) WriteMsg(m *msg.Msg) (err error) {
 
 // prepare prepares metadata and context of m for processing in this Direction.
 // The message type must already be set.
-func (d *Direction) prepare(m *msg.Msg) (pc *PipeContext) {
+func (d *Output) prepare(m *msg.Msg) (pc *PipeContext) {
 	pc = Context(m)
 	if pc.prepared {
 		return
@@ -221,7 +185,7 @@ func (d *Direction) prepare(m *msg.Msg) (pc *PipeContext) {
 // messages to be dropped on the floor (and possibly re-used).
 //
 // Exits when input closes and is emptied. wg may be nil.
-func (d *Direction) Process(input chan *msg.Msg, wg *sync.WaitGroup) {
+func (d *Output) Process(input chan *msg.Msg, wg *sync.WaitGroup) {
 	if wg != nil {
 		defer wg.Done()
 	}
@@ -236,12 +200,12 @@ func (d *Direction) Process(input chan *msg.Msg, wg *sync.WaitGroup) {
 }
 
 // ProcessMsg runs all callbacks on message m and forwards the result to d.Out.
-func (d *Direction) ProcessMsg(m *msg.Msg) {
+func (d *Output) ProcessMsg(m *msg.Msg) {
 	d.prepare(m)
 	d.process(m, d.Out)
 }
 
-func (d *Direction) process(m *msg.Msg, output chan *msg.Msg) (output_closed bool) {
+func (d *Output) process(m *msg.Msg, output chan *msg.Msg) (output_closed bool) {
 	var (
 		p = d.Pipe
 	)
@@ -342,7 +306,7 @@ func (d *Direction) process(m *msg.Msg, output chan *msg.Msg) (output_closed boo
 // Read reads d.Out and writes raw BGP data to dst
 // Must not be used concurrently.
 // TODO: stats
-func (d *Direction) Read(dst []byte) (int, error) {
+func (d *Output) Read(dst []byte) (int, error) {
 	var (
 		p      = d.Pipe
 		buf    = &d.obuf
@@ -386,7 +350,7 @@ func (d *Direction) Read(dst []byte) (int, error) {
 }
 
 // WriteTo implements io.WriterTo interface, writing raw BGP data to w
-func (d *Direction) WriteTo(w io.Writer) (int64, error) {
+func (d *Output) WriteTo(w io.Writer) (int64, error) {
 	var (
 		n, k int64
 		err  = io.EOF // default error
@@ -418,11 +382,11 @@ func (d *Direction) WriteTo(w io.Writer) (int64, error) {
 // --------------------------
 
 // Stats returns dir statistics FIXME: concurrent access
-func (d *Direction) Stats() *Stats {
+func (d *Output) Stats() *Stats {
 	return &d.stats
 }
 
-func (d *Direction) addCallbacks(src []*Callback) {
+func (d *Output) addCallbacks(src []*Callback) {
 	// collect my valid callbacks
 	var cbs []*Callback
 	for _, cb := range src {
@@ -463,7 +427,7 @@ func (d *Direction) addCallbacks(src []*Callback) {
 	}
 }
 
-func (d *Direction) addCallback(cb *Callback) {
+func (d *Output) addCallback(cb *Callback) {
 	if len(cb.Types) == 0 {
 		d.open = append(d.open, cb)
 		d.keepalive = append(d.keepalive, cb)
@@ -493,7 +457,7 @@ func (d *Direction) addCallback(cb *Callback) {
 	}
 }
 
-func (d *Direction) skip_forward(pcid, cbid int) bool {
+func (d *Output) skip_forward(pcid, cbid int) bool {
 	switch {
 	case pcid == 0 || cbid == 0:
 		return false
@@ -504,7 +468,7 @@ func (d *Direction) skip_forward(pcid, cbid int) bool {
 	}
 }
 
-func (d *Direction) skip_backward(pcid, cbid int) bool {
+func (d *Output) skip_backward(pcid, cbid int) bool {
 	switch {
 	case pcid == 0 || cbid == 0:
 		return false

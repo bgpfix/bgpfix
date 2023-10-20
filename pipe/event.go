@@ -56,37 +56,6 @@ func (ev *Event) String() string {
 	}
 }
 
-// event sends ev with given ctx; if noblock is true, it never blocks on full channel
-func (p *Pipe) event(ev *Event, ctx context.Context, noblock bool) (sent bool) {
-	defer func() { recover() }() // in case of closed p.events
-
-	ev.Pipe = p
-	ev.Time = time.Now().UTC()
-
-	var ctxchan <-chan struct{}
-	if ctx != nil {
-		ctxchan = ctx.Done()
-	}
-
-	if noblock {
-		select {
-		case <-ctxchan:
-			return false
-		case p.evch <- ev:
-			return true
-		default:
-			return false
-		}
-	} else {
-		select {
-		case <-ctxchan:
-			return false
-		case p.evch <- ev:
-			return true
-		}
-	}
-}
-
 // Event announces a new event type et to the pipe, with optional arguments.
 // The first msg.Dst argument is used as ev.Dst.
 // The first *msg.Msg is used as ev.Msg and borrowed (add ACTION_BORROW).
@@ -136,6 +105,37 @@ func (p *Pipe) Event(et string, args ...any) (sent bool) {
 	}
 
 	return p.event(ev, p.ctx, false)
+}
+
+// event sends ev with given ctx; if noblock is true, it never blocks on full channel
+func (p *Pipe) event(ev *Event, ctx context.Context, noblock bool) (sent bool) {
+	defer func() { recover() }() // in case of closed p.events
+
+	ev.Pipe = p
+	ev.Time = time.Now().UTC()
+
+	var ctxchan <-chan struct{}
+	if ctx != nil {
+		ctxchan = ctx.Done()
+	}
+
+	if noblock {
+		select {
+		case <-ctxchan:
+			return false
+		case p.evch <- ev:
+			return true
+		default:
+			return false
+		}
+	} else {
+		select {
+		case <-ctxchan:
+			return false
+		case p.evch <- ev:
+			return true
+		}
+	}
 }
 
 // eventHandler reads p.evch and broadcasts events to handlers

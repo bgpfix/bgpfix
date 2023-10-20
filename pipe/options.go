@@ -15,10 +15,6 @@ import (
 var DefaultOptions = Options{
 	Logger: &log.Logger,
 	Caps:   true,
-	Rbuf:   10,
-	Rproc:  1,
-	Lbuf:   10,
-	Lproc:  1,
 }
 
 // BGP pipe options
@@ -28,16 +24,12 @@ type Options struct {
 
 	Caps bool // overwrite pipe.Caps using OPEN messages?
 
-	Rbuf     int  // R channels buffer length
-	Rproc    int  // number of R input processors
-	Rreverse bool // reverse the order in R?
-
-	Lbuf     int  // L channels buffer length
-	Lproc    int  // number of L input processors
-	Lreverse bool // reverse the order in L?
+	ReverseR bool // reverse the processing order for R lines?
+	ReverseL bool // reverse the processing order for L lines?
 
 	Callbacks []*Callback // message callbacks
 	Handlers  []*Handler  // event handlers
+	Inputs    []*Input    // pipe inputs (message processors)
 }
 
 // Callback represents a function to call for matching BGP messages
@@ -210,4 +202,24 @@ func (o *Options) OnEstablished(hdf HandlerFunc) *Handler {
 // OnParseError request hdf to be called on BGP message parse error.
 func (o *Options) OnParseError(hdf HandlerFunc) *Handler {
 	return o.OnEvent(hdf, EVENT_PARSE)
+}
+
+// AddInput adds pipe Input
+func (o *Options) AddInput(dst msg.Dst, tpl *Input) *Input {
+	var pi Input
+
+	// deep copy the tpl?
+	if tpl != nil {
+		pi = *tpl
+	}
+
+	// override the name?
+	if len(pi.Name) == 0 {
+		if pc, _, _, ok := runtime.Caller(1); ok {
+			pi.Name = runtime.FuncForPC(pc).Name()
+		}
+	}
+
+	o.Inputs = append(o.Inputs, &pi)
+	return &pi
 }
