@@ -28,8 +28,8 @@ type Speaker struct {
 	Options   Options     // options; do not modify after Attach()
 	erraction pipe.Action // action to return on error
 
-	last_down atomic.Int64 // last received UPDATE or KA
-	last_up   atomic.Int64 // last sent KA
+	last_down atomic.Int64 // last received UPDATE or KA TODO: use dir.Last*
+	last_up   atomic.Int64 // last sent KA TODO: use dir.Last*
 	open_up   atomic.Bool  // true iff OPEN already sent
 }
 
