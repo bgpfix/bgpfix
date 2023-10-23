@@ -64,6 +64,18 @@ const (
 	DST_R  Dst = 2 // destined for R ("right" or "remote")
 )
 
+// Flip returns the opposite direction
+func (d Dst) Flip() Dst {
+	switch d {
+	case DST_L:
+		return DST_R
+	case DST_R:
+		return DST_L
+	default:
+		return 0
+	}
+}
+
 // BGP message type
 type Type byte
 

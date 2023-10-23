@@ -21,10 +21,8 @@ var DefaultOptions = Options{
 // Options are BGP speaker options, see also DefaultOptions
 type Options struct {
 	Logger *zerolog.Logger // if nil logging is disabled
-	NewMsg func() *msg.Msg // optional source of new messages
 
-	Passive   bool // if true, expect the peer to go first with OPEN
-	ErrorDrop bool // drop erronous messages?
+	Passive bool // if true, expect the peer to go first with OPEN
 
 	LocalASN      int        // local ASN; -1 means use remote (if Passive)
 	LocalHoldTime int        // local hold time (s); -1 means use a default

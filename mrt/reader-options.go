@@ -1,7 +1,6 @@
 package mrt
 
 import (
-	"github.com/bgpfix/bgpfix/msg"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 )
@@ -14,5 +13,4 @@ var DefaultReaderOptions = ReaderOptions{
 // MRT-BGP Reader options
 type ReaderOptions struct {
 	Logger *zerolog.Logger // if nil logging is disabled
-	NewMsg func() *msg.Msg // optional source of new messages
 }

@@ -5,6 +5,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
 )
 
@@ -19,20 +20,29 @@ func CopyThrough(p *pipe.Pipe, lhs, rhs io.ReadWriteCloser) (lhsb, rhsb []int, e
 		rhs_tx, rhs_rx       int64
 		rhs_txerr, rhs_rxerr error
 		wg                   sync.WaitGroup
+		rin                  *pipe.Input
+		lin                  *pipe.Input
 	)
+
+	// add inputs
+	po := &p.Options
+	rin = po.AddInput(msg.DST_R)
+	if rhs != nil {
+		lin = po.AddInput(msg.DST_L)
+	}
 
 	p.Start()
 
 	// LHS: lhs -> R.Input
 	wg.Add(1)
 	go func() {
-		lhs_rx, lhs_rxerr = io.Copy(p.R, lhs)
+		lhs_rx, lhs_rxerr = io.Copy(rin, lhs)
 		p.Debug().Err(lhs_rxerr).Msg("CopyThrough: LHS reader done")
 
 		if rhs == nil {
 			p.Stop()
 		} else {
-			p.R.CloseInput()
+			rin.Close()
 		}
 
 		wg.Done()
@@ -50,16 +60,16 @@ func CopyThrough(p *pipe.Pipe, lhs, rhs io.ReadWriteCloser) (lhsb, rhsb []int, e
 
 	// rhs?
 	if rhs == nil {
-		p.R.CloseOutput()
+		p.R.Close()
 		// NB: don't close L.Input -> used by LHS callbcks
 	} else {
 		// RHS: rhs -> L.Input
 		wg.Add(1)
 		go func() {
-			rhs_rx, rhs_rxerr = io.Copy(p.L, rhs)
+			rhs_rx, rhs_rxerr = io.Copy(lin, rhs)
 			p.Debug().Err(rhs_rxerr).Msg("CopyThrough: RHS reader done")
 
-			p.L.CloseInput()
+			lin.Close()
 			wg.Done()
 		}()
 

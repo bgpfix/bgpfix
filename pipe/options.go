@@ -71,16 +71,16 @@ type CallbackFunc func(m *msg.Msg) (add_action Action)
 // If returns false, unregisters the parent Handler for all Types.
 type HandlerFunc func(ev *Event) (keep_event bool)
 
-// AddCallbacks adds a callback function using tpl as its template (if non-nil).
+// AddCallbacks adds a callback function using tpl as its template (if present).
 // It returns the added Callback, which can be further configured.
-func (o *Options) AddCallback(cbf CallbackFunc, tpl *Callback) *Callback {
+func (o *Options) AddCallback(cbf CallbackFunc, tpl ...*Callback) *Callback {
 	var cb Callback
 
 	// deep copy the tpl?
-	if tpl != nil {
-		cb = *tpl
+	if len(tpl) > 0 {
+		cb = *tpl[0]
 		cb.Types = nil
-		cb.Types = append(cb.Types, tpl.Types...)
+		cb.Types = append(cb.Types, tpl[0].Types...)
 	}
 
 	// override the function?
@@ -126,16 +126,16 @@ func (o *Options) OnMsgPost(cbf CallbackFunc, dst msg.Dst, types ...msg.Type) *C
 	})
 }
 
-// AddHandler adds a handler function using tpl as its template (if non-nil).
+// AddHandler adds a handler function using tpl as its template (if present).
 // It returns the added Handler, which can be further configured.
-func (o *Options) AddHandler(hdf HandlerFunc, tpl *Handler) *Handler {
+func (o *Options) AddHandler(hdf HandlerFunc, tpl ...*Handler) *Handler {
 	var h Handler
 
 	// deep copy the tpl?
-	if tpl != nil {
-		h = *tpl
+	if len(tpl) > 0 {
+		h = *tpl[0]
 		h.Types = nil
-		h.Types = append(h.Types, tpl.Types...)
+		h.Types = append(h.Types, tpl[0].Types...)
 	}
 
 	// all types?
@@ -204,13 +204,13 @@ func (o *Options) OnParseError(hdf HandlerFunc) *Handler {
 	return o.OnEvent(hdf, EVENT_PARSE)
 }
 
-// AddInput adds pipe Input
-func (o *Options) AddInput(dst msg.Dst, tpl *Input) *Input {
+// AddInput adds pipe Input for given destination, with optional details in tpl.
+func (o *Options) AddInput(dst msg.Dst, tpl ...*Input) *Input {
 	var pi Input
 
 	// deep copy the tpl?
-	if tpl != nil {
-		pi = *tpl
+	if len(tpl) > 0 {
+		pi = *tpl[0]
 	}
 
 	// override the name?
@@ -219,6 +219,14 @@ func (o *Options) AddInput(dst msg.Dst, tpl *Input) *Input {
 			pi.Name = runtime.FuncForPC(pc).Name()
 		}
 	}
+
+	// input
+	if pi.In == nil {
+		pi.In = make(chan *msg.Msg, 10)
+	}
+
+	// dst
+	pi.Dst = dst
 
 	o.Inputs = append(o.Inputs, &pi)
 	return &pi

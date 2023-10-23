@@ -16,21 +16,16 @@ import (
 // Speaker represents a basic BGP speaker for single-threaded use
 type Speaker struct {
 	*zerolog.Logger
-	newmsg func() *msg.Msg
 
 	ctx    context.Context
 	cancel context.CancelCauseFunc
 
-	pipe *pipe.Pipe      // attached BGP pipe
-	up   *pipe.Direction // upstream direction
-	down *pipe.Direction // downstream direction
+	pipe *pipe.Pipe  // attached BGP pipe
+	dst  msg.Dst     // direction for our messages
+	in   *pipe.Input // input for our messages
 
-	Options   Options     // options; do not modify after Attach()
-	erraction pipe.Action // action to return on error
-
-	last_down atomic.Int64 // last received UPDATE or KA TODO: use dir.Last*
-	last_up   atomic.Int64 // last sent KA TODO: use dir.Last*
-	open_up   atomic.Bool  // true iff OPEN already sent
+	Options Options     // options; do not modify after Attach()
+	opened  atomic.Bool // true iff OPEN already sent
 }
 
 // NewSpeaker returns a new Speaker. Call Speaker.Attach() next.
@@ -41,14 +36,14 @@ func NewSpeaker(ctx context.Context) *Speaker {
 	return s
 }
 
-// Attach attaches the speaker in given pipe direction.
+// Attach attaches the speaker to p, specifying the destination for new messages.
 // Must not be called more than once.
-func (s *Speaker) Attach(upstream *pipe.Direction) error {
-	opts := &s.Options
-	s.pipe = upstream.Pipe
-	s.up = upstream
-	s.down = upstream.Opposite
+func (s *Speaker) Attach(p *pipe.Pipe, dst msg.Dst) error {
+	s.pipe = p
+	s.dst = dst
 
+	// process options
+	opts := &s.Options
 	if opts.Logger != nil {
 		s.Logger = opts.Logger
 	} else {
@@ -56,20 +51,12 @@ func (s *Speaker) Attach(upstream *pipe.Direction) error {
 		s.Logger = &l
 	}
 
-	if opts.NewMsg != nil {
-		s.newmsg = opts.NewMsg
-	} else {
-		s.newmsg = s.pipe.Get
-	}
-
-	if opts.ErrorDrop {
-		s.erraction = pipe.ACTION_DROP
-	}
-
+	// attach
 	po := &s.pipe.Options
-	po.OnMsg(s.onMsgDown, s.down.Dst).Raw = true
-	po.OnEstablished(s.onEstablished)
-	po.OnStart(s.onStart)
+	po.OnStart(s.onStart)                    // when the pipe starts
+	po.OnEstablished(s.onEstablished)        // when session is established
+	po.OnMsg(s.onOpen, dst.Flip(), msg.OPEN) // on OPEN for us
+	s.in = po.AddInput(dst)                  // input for our messages
 
 	return nil
 }
@@ -84,7 +71,7 @@ func (s *Speaker) onStart(_ *pipe.Event) bool {
 
 func (s *Speaker) onEstablished(ev *pipe.Event) bool {
 	// load last OPENs
-	up, down := s.up.Open.Load(), s.down.Open.Load()
+	up, down := s.pipe.OpenFor(s.dst), s.pipe.OpenFrom(s.dst)
 	if up == nil || down == nil {
 		return true // huh?
 	}
@@ -92,73 +79,37 @@ func (s *Speaker) onEstablished(ev *pipe.Event) bool {
 	// start keepaliver with common hold time
 	ht := min(up.HoldTime, down.HoldTime)
 	if ht > 0 {
-		go s.keepaliver(ht)
+		go s.keepaliver(int64(ht))
 	}
 
 	return false // unregister
 }
 
-func (s *Speaker) onMsgDown(m *msg.Msg) pipe.Action {
-	opts := &s.Options
-	p := s.pipe
+func (s *Speaker) onOpen(m *msg.Msg) pipe.Action {
+	// TODO: validate received OPEN - drop if wrong caps / other params
 
-	// check if m too long vs. extmsg?
-	if m.Length() > msg.MAXLEN && !p.Caps.Has(caps.CAP_EXTENDED_MESSAGE) {
-		p.Event(EVENT_TOO_LONG, m)
-		// TODO: notify + teardown
-		return s.erraction
-	}
+	// send our OPEN (nop if we did that already)
+	s.sendOpen(&m.Open)
 
-	// try to parse
-	if err := m.ParseUpper(p.Caps); err != nil {
-		p.Event(EVENT_PARSE_ERROR, m, err.Error())
-		// TODO: notify + teardown?
-		return s.erraction
-	}
-
-	switch m.Type {
-	case msg.OPEN:
-		// TODO: drop if in state established and seen an update?
-		// TODO: validate received OPEN - drop if wrong caps / other params?
-
-		// send our OPEN (nop if we did that already)
-		s.sendOpen(&m.Open)
-
-		// confirm the received OPEN is OK
-		s.sendKeepalive()
-
-	case msg.UPDATE, msg.KEEPALIVE:
-		s.last_down.Store(nanotime())
-
-	case msg.NOTIFY:
-		// TODO
-	case msg.REFRESH:
-		// TODO
-
-	default:
-		if opts.ErrorDrop {
-			s.Error().Msgf("R: dropping invalid type %s", m.Type)
-			return s.erraction
-		}
-	}
+	// confirm the received OPEN is OK
+	s.sendKeepalive()
 
 	return 0
 }
 
-// sendOpen generates a new OPEN and writes it to s.up
 func (s *Speaker) sendOpen(ro *msg.Open) {
-	if s.open_up.Swap(true) {
+	if s.opened.Swap(true) {
 		return // already done
 	}
 
-	o := &s.newmsg().Up(msg.OPEN).Open // our OPEN
-	if ro == nil {                     // remote OPEN
-		ro = s.down.Open.Load() // in case its already available
+	// local and remote OPENs
+	o := &s.pipe.Get().Up(msg.OPEN).Open // our OPEN
+	if ro == nil {
+		ro = s.pipe.OpenFrom(s.dst)
 	}
 
-	opts := &s.Options
-
 	// set caps from pipe and local options
+	opts := &s.Options
 	o.Caps.SetFrom(s.pipe.Caps)
 	o.Caps.SetFrom(opts.LocalCaps)
 
@@ -196,52 +147,53 @@ func (s *Speaker) sendOpen(ro *msg.Open) {
 	}
 
 	// queue for sending
-	s.up.WriteMsg(o.Msg)
+	s.in.WriteMsg(o.Msg)
 }
 
 func (s *Speaker) sendKeepalive() {
-	s.up.WriteMsg(s.newmsg().Up(msg.KEEPALIVE))
-	s.last_up.Store(nanotime())
+	m := s.pipe.Get().Up(msg.KEEPALIVE)
+	s.in.WriteMsg(m)
 }
 
 // keepaliver sends a KEEPALIVE message, and keeps sending them to respect the hold time.
-func (s *Speaker) keepaliver(negotiated uint16) {
-	p := s.pipe
-
+func (s *Speaker) keepaliver(negotiated int64) {
 	if negotiated < 3 {
 		negotiated = 3
 	}
-
 	s.Debug().Msgf("starting keepaliver(%d)", negotiated)
 
-	// keep checking every second
-	// send KEEPALIVE 1s before each ~1/3 of the negotiated hold timer
-	ticker := time.NewTicker(time.Second)
-	second := int64(time.Second)
-	hold := second * int64(negotiated)
-	each := hold/3 - second
+	var (
+		p         = s.pipe
+		up        = p.OutputFor(s.dst)
+		down      = p.OutputFrom(s.dst)
+		ticker    = time.NewTicker(time.Second)
+		now_ts    int64 // UNIX timestamp now
+		last_up   int64 // UNIX timestamp when we last sent something to peer
+		last_down int64 // UNIX timestamp when we last received something from peer
+	)
+
 	for {
-		// wait for next tick
+		// wait 1s
 		select {
 		case <-s.ctx.Done():
+			ticker.Stop()
 			return
-		case <-ticker.C:
-			// ok
+		case now := <-ticker.C:
+			now_ts = now.Unix()
 		}
 
-		// get data
-		now := nanotime()
-		last_down := s.last_down.Load() // UPDATE or KEEPALIVE
-		last_up := s.last_up.Load()     // KEEPALIVE only
-
-		// timeout?
-		if delay := now - last_down; delay > hold {
+		// remote timeout?
+		last_down = max(down.LastAlive.Load(), down.LastUpdate.Load(), last_down)
+		if delay := now_ts - last_down; delay > negotiated {
+			last_down = now_ts
 			s.Warn().Msg("remote hold timer expired")
-			p.Event(EVENT_PEER_TIMEOUT, nil, delay/second)
+			p.Event(EVENT_PEER_TIMEOUT, delay)
 		}
 
-		// need to send our next KA?
-		if now-last_up >= each {
+		// local timeout?
+		last_up = max(up.LastAlive.Load(), up.LastUpdate.Load(), last_up)
+		if delay := now_ts - last_up; delay >= negotiated/3 {
+			last_up = now_ts
 			s.sendKeepalive()
 		}
 	}

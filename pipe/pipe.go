@@ -3,7 +3,6 @@ package pipe
 
 import (
 	"context"
-	"math"
 	"slices"
 	"sort"
 	"sync"
@@ -38,10 +37,10 @@ type Pipe struct {
 	evwg   sync.WaitGroup        // event handler routine
 	events map[string][]*Handler // maps events to their handlers
 
-	Options Options       // pipe options; modify before Start()
-	Caps    caps.Caps     // BGP capability context; always thread-safe
-	Lout    chan *msg.Msg // output for L
-	Rout    chan *msg.Msg // output for R
+	Options Options   // pipe options; modify before Start()
+	Caps    caps.Caps // BGP capability context; always thread-safe
+	L       *Output   // output for L
+	R       *Output   // output for R
 
 	cbs []*Callback // sorted callbacks
 	hds []*Handler  // sorted handlers
@@ -52,8 +51,6 @@ type Pipe struct {
 
 	lseq atomic.Int64 // last seq number assigned for L destination
 	rseq atomic.Int64 // last seq number assigned for R destination
-
-	// TODO: Last* / Stats* using default very-last callbacks for each input
 
 	// generic Key-Value store, always thread-safe
 	KV *xsync.MapOf[string, any]
@@ -73,8 +70,10 @@ func NewPipe(ctx context.Context) *Pipe {
 	p.evch = make(chan *Event, 10)
 	p.events = make(map[string][]*Handler)
 
-	p.Lout = make(chan *msg.Msg, 10)
-	p.Rout = make(chan *msg.Msg, 10)
+	p.L = NewOutput(p, 10)
+	p.L.Name = "L"
+	p.R = NewOutput(p, 10)
+	p.R.Name = "R"
 
 	p.wgstart.Add(1)
 
@@ -96,7 +95,7 @@ func (p *Pipe) apply(opts *Options) {
 		p.pool = new(sync.Pool)
 	}
 
-	// sort valid callbacks
+	// sort valid callbacks to p.cbs
 	for _, cb := range opts.Callbacks {
 		if cb != nil && cb.Func != nil {
 			p.cbs = append(p.cbs, cb)
@@ -120,7 +119,15 @@ func (p *Pipe) apply(opts *Options) {
 		return a.Order - b.Order
 	})
 
-	// sort valid handlers
+	// apply to pipe inputs
+	for _, pi := range opts.Inputs {
+		if pi != nil && pi.Dst != 0 {
+			p.inputs = append(p.inputs, pi)
+			pi.apply(p)
+		}
+	}
+
+	// sort valid handlers to p.hds
 	for _, hd := range opts.Handlers {
 		if hd != nil && hd.Func != nil {
 			p.hds = append(p.hds, hd)
@@ -144,18 +151,12 @@ func (p *Pipe) apply(opts *Options) {
 		return a.Order - b.Order
 	})
 
-	// apply to pipe lines
-	for _, l := range opts.Inputs {
-		if l != nil && l.Dst != 0 {
-			p.inputs = append(p.inputs, l)
-			l.apply(p)
-		}
-	}
-
 	// register the very first EVENT_ALIVE handler
-	opts.OnEventPre(p.onAlive, EVENT_ALIVE).Order = math.MinInt
+	p.events[EVENT_ALIVE] = append(p.events[EVENT_ALIVE], &Handler{
+		Func: p.onAlive,
+	})
 
-	// rewrite event handlers
+	// rewrite event handlers to p.events
 	for _, h := range p.hds {
 		if h == nil || h.Func == nil {
 			return
@@ -224,25 +225,25 @@ func (p *Pipe) Start() {
 	opts := &p.Options
 	p.apply(opts)
 
-	// start pipe lines
-	for _, l := range p.inputs {
-		if l.Dst == msg.DST_L {
+	// start pipe inputs
+	for _, pi := range p.inputs {
+		if pi.Dst == msg.DST_L {
 			p.lwg.Add(1)
-			go l.run(&p.lwg)
+			go pi.process(&p.lwg)
 		} else {
 			p.rwg.Add(1)
-			go l.run(&p.rwg)
+			go pi.process(&p.rwg)
 		}
 	}
 
 	// wait for L, R, or both to finish
 	go func() {
 		p.lwg.Wait()
-		p.CloseLOutput()
+		p.L.Close()
 	}()
 	go func() {
 		p.rwg.Wait()
-		p.CloseROutput()
+		p.R.Close()
 	}()
 	go func() {
 		p.lwg.Wait()
@@ -278,8 +279,8 @@ func (p *Pipe) Stop() {
 	go p.event(&Event{Type: EVENT_STOP}, nil, false)
 
 	// close all inputs
-	for _, l := range p.inputs {
-		l.CloseInput()
+	for _, pi := range p.inputs {
+		pi.Close()
 	}
 
 	// yank the cable out of blocked calls (hopefully)
@@ -339,4 +340,52 @@ func (p *Pipe) Put(m *msg.Msg) {
 	pc.Reset()
 	m.Reset()
 	p.pool.Put(m)
+}
+
+// OutputFor returns the output for messages flowing to dst
+func (p *Pipe) OutputFor(dst msg.Dst) *Output {
+	switch dst {
+	case msg.DST_L:
+		return p.L
+	case msg.DST_R:
+		return p.R
+	default:
+		return nil
+	}
+}
+
+// OutputFrom returns the output for messages flowing from dst
+func (p *Pipe) OutputFrom(dst msg.Dst) *Output {
+	switch dst {
+	case msg.DST_L:
+		return p.R
+	case msg.DST_R:
+		return p.L
+	default:
+		return nil
+	}
+}
+
+// OpenFor returns the last valid OPEN sent to dst
+func (p *Pipe) OpenFor(dst msg.Dst) *msg.Open {
+	switch dst {
+	case msg.DST_L:
+		return p.L.Open.Load()
+	case msg.DST_R:
+		return p.R.Open.Load()
+	default:
+		return nil
+	}
+}
+
+// OpenFrom returns the last valid OPEN received from dst
+func (p *Pipe) OpenFrom(dst msg.Dst) *msg.Open {
+	switch dst {
+	case msg.DST_L:
+		return p.R.Open.Load()
+	case msg.DST_R:
+		return p.L.Open.Load()
+	default:
+		return nil
+	}
 }

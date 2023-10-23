@@ -9,21 +9,19 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
 	"github.com/rs/zerolog"
 )
 
-// Reader reads MRT-BGP4MP messages into a pipe.Direction.
+// Reader reads MRT-BGP4MP messages into a pipe.Input.
 type Reader struct {
 	*zerolog.Logger
-	newmsg func() *msg.Msg
 
 	ctx    context.Context
 	cancel context.CancelCauseFunc
 
-	pipe *pipe.Pipe      // target pipe
-	up   *pipe.Direction // target direction
+	pipe *pipe.Pipe  // target pipe
+	in   *pipe.Input // target input
 
 	Stats   ReaderStats   // our stats
 	Options ReaderOptions // options; do not modify after Attach()
@@ -42,7 +40,7 @@ type ReaderStats struct {
 	Garbled    uint64 // parse error
 }
 
-// NewReader returns a new Reader for given pipe.Direction.
+// NewReader returns a new Reader.
 func NewReader(ctx context.Context) *Reader {
 	br := &Reader{}
 	br.ctx, br.cancel = context.WithCancelCause(ctx)
@@ -50,12 +48,12 @@ func NewReader(ctx context.Context) *Reader {
 	return br
 }
 
-// Attach attaches the speaker in given upstream pipe direction.
+// Attach attaches the speaker to given upstream pipe direction.
 // Must not be called more than once.
-func (br *Reader) Attach(upstream *pipe.Direction) error {
+func (br *Reader) Attach(in *pipe.Input) error {
 	opts := &br.Options
-	br.pipe = upstream.Pipe
-	br.up = upstream
+	br.pipe = in.Pipe
+	br.in = in
 
 	if opts.Logger != nil {
 		br.Logger = opts.Logger
@@ -64,22 +62,18 @@ func (br *Reader) Attach(upstream *pipe.Direction) error {
 		br.Logger = &l
 	}
 
-	if opts.NewMsg != nil {
-		br.newmsg = opts.NewMsg
-	} else {
-		br.newmsg = br.pipe.Get
-	}
-
 	return nil
 }
 
 // Write implements io.Writer and reads all MRT-BGP4MP messages from src
-// into br.Direction. Must not be used concurrently.
+// into br.in. Must not be used concurrently.
 func (br *Reader) Write(src []byte) (n int, err error) {
 	var (
-		bs  = &br.Stats
-		mrt = &br.mrt
-		bm  = &br.bm
+		p     = br.pipe
+		in    = br.in
+		mrt   = &br.mrt
+		bm    = &br.bm
+		stats = &br.Stats
 	)
 
 	// context check
@@ -110,13 +104,13 @@ func (br *Reader) Write(src []byte) (n int, err error) {
 		off, perr := mrt.Reset().Parse(raw)
 		switch perr {
 		case nil:
-			bs.Parsed++
+			stats.Parsed++
 			raw = raw[off:]
 		case io.ErrUnexpectedEOF: // need more data
-			bs.Short++
+			stats.Short++
 			return n, nil // defer will buffer raw
 		default: // parse error, try to skip the garbled data
-			bs.Garbled++
+			stats.Garbled++
 			if off > 0 {
 				raw = raw[off:] // buffer the remainder for re-try
 			} else {
@@ -129,27 +123,29 @@ func (br *Reader) Write(src []byte) (n int, err error) {
 		perr = bm.Reset().Parse(mrt)
 		switch perr {
 		case nil:
-			bs.ParsedBgp++ // success
+			stats.ParsedBgp++ // success
 		case ErrType, ErrSub:
-			bs.ParsedSkip++
+			stats.ParsedSkip++
 			continue
 		default:
 			return n, fmt.Errorf("BGP4MP: %w", perr)
 		}
 
 		// parse as a raw BGP message
-		m := br.newmsg()
+		m := p.Get()
 		off, perr = m.Parse(bm.Data)
 		switch {
 		case perr != nil:
+			p.Put(m)
 			return n, fmt.Errorf("BGP: %w", perr)
 		case off != len(bm.Data):
+			p.Put(m)
 			return n, fmt.Errorf("BGP: %w", ErrLength)
 		}
 
 		// sail!
 		m.Time = mrt.Time // use MRT time
-		if err := br.up.WriteMsg(m); err != nil {
+		if err := in.WriteMsg(m); err != nil {
 			return n, fmt.Errorf("pipe: %w", err)
 		}
 	}

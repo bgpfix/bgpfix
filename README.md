@@ -2,7 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/bgpfix/bgpfix.svg)](https://pkg.go.dev/github.com/bgpfix/bgpfix)
 
-**WORK IN PROGRESS PREVIEW 09/2023**
+**WORK IN PROGRESS PREVIEW 11/2023**
 
 A generic-purpose, high-performance Golang library for [bridging the gaps in BGP](https://twitter.com/ACM_IMC2021/status/1445725066403196928).
 
@@ -27,9 +27,9 @@ The overall idea is presented below. You don't need to use the whole library, eg
 
 ![bgpfix idea](bgpfix.png)
 
-The above explains the concept of a [Pipe](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Pipe): it has two *directions* used to exchange BGP messages between 2 speakers on the left (L) and right (R) hand side of the picture.
+The above explains the concept of a [Pipe](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Pipe): it has two directions used to exchange BGP messages between 2 speakers on the left (L) and right (R) hand side of the picture.
 
-Each [Msg](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/msg#Msg) sent to the [In](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Direction) channel of a particular direction will go through a set of *callbacks* (think "plugins") configured in the [pipe Options](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Options). Each callback can read, write, modify, synthesize, or drop messages before they reach the Out channel. In addition to BGP messages, callbacks may emit [Events](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Event) - such as [the standard events of the Pipe](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#pkg-variables) - which [event handlers may subscribe to](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Options.OnEvent) in the pipe Options.
+Each [Msg](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/msg#Msg) sent to the In channel of a particular direction will go through a set of *callbacks* (think "plugins") configured in the [pipe Options](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Options). Each callback can read, write, modify, synthesize, or drop messages before they reach the Out channel. In addition to BGP messages, callbacks may emit [Events](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Event) - such as [the standard events of the Pipe](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#pkg-variables) - which [event handlers may subscribe to](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Options.OnEvent) in the pipe Options.
 
 # Example
 
@@ -40,9 +40,11 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"net"
 	"net/netip"
+	"os"
 
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
@@ -50,30 +52,41 @@ import (
 	"github.com/bgpfix/bgpfix/util"
 )
 
+var (
+	opt_active = flag.Bool("active", false, "send OPEN first")
+	opt_asn    = flag.Int("asn", 65055, "local ASN number")
+	opt_hold   = flag.Int("hold", 60, "local hold timer")
+	opt_id     = flag.String("id", "1.1.1.1", "local Id (must be IPv4 address)")
+)
+
 func main() {
-	// create a BGP pipe, enable timestamps
+	// parse flags
+	flag.Parse()
+	if flag.NArg() == 0 {
+		fmt.Printf("usage: bgpfix [OPTIONS] <target:port>\n")
+		os.Exit(1)
+	}
+
+	// create a Pipe, add our callback and event handlers
 	p := pipe.NewPipe(context.Background())
-	p.Options.Tstamp = true
+	p.Options.OnMsg(print, msg.DST_LR) // call print() on every message in both directions
+	p.Options.OnEvent(event)           // call event() on any pipe event
 
-	// add our callback and event handlers
-	p.Options.OnMsg(print, 0) // call print() on every BGP message in L or R direction
-	p.Options.OnEvent(event)  // call event() on any pipe event
-
-	// attach a BGP speaker
-	spk := speaker.NewSpeaker(context.Background())
-	spk.Options.Passive = false
-	spk.Options.LocalASN = 65055
-	spk.Options.LocalId = netip.MustParseAddr("1.1.1.1")
-	spk.Attach(p)             // attach spk to p using callbacks
-
-	// dial the target
-	conn, err := net.Dial("tcp", os.Args[1]) // assumes a ":179" suffix
+	// L side: a TCP target
+	conn, err := net.Dial("tcp", flag.Arg(0)) // assumes a ":179" suffix
 	if err != nil {
 		panic(err)
 	}
 
-	// 1. read from conn -> write to p.R.In
-	// 2. read from p.L.Out -> write to conn
+	// R side: a local speaker
+	spk := speaker.NewSpeaker(context.Background())
+	spk.Options.Passive = !*opt_active
+	spk.Options.LocalASN = *opt_asn
+	spk.Options.LocalHoldTime = *opt_hold
+	spk.Options.LocalId = netip.MustParseAddr(*opt_id)
+	spk.Attach(p, msg.DST_L)
+
+	// run a copy util between p and conn
 	util.CopyThrough(p, conn, nil)
 }
 
@@ -84,8 +97,8 @@ func print(m *msg.Msg) pipe.Action {
 
 func event(ev *pipe.Event) bool {
 	switch ev.Type {
-	case pipe.EVENT_OPEN:
-		fmt.Printf("OPEN sent and received, caps=%s", p.Caps.ToJSON(nil))
+	case pipe.EVENT_ESTABLISHED:
+		fmt.Printf("session established, capabilities: %s", ev.Pipe.Caps.ToJSON(nil))
 	}
 	return true
 }

@@ -12,13 +12,20 @@ import (
 
 // Input processes incoming BGP messages through Pipe Callbacks.
 type Input struct {
-	Id   int     // optional input id number (zero means none)
-	Name string  // optional name
-	Dst  msg.Dst // destination of messages flowing in this input
+	Pipe *Pipe  // parent pipe
+	Id   int    // optional input id number
+	Name string // optional name
+
+	// direction to impose on incoming messages
+	Dst msg.Dst
 
 	// In is the input, where to read incoming messages from.
-	// Starting with nil means create a new channel.
+	// nil means create a new channel.
 	In chan *msg.Msg
+
+	// Out is the output, where to write processed messages to.
+	// nil means use the default Pipe output for Dst.
+	Out *Output
 
 	// statistics
 	Stats struct {
@@ -27,7 +34,6 @@ type Input struct {
 		Garbled uint64
 	}
 
-	p       *Pipe           // parent pipe
 	ibuf    []byte          // input buffer
 	seq     *atomic.Int64   // sequence numbers source
 	cbs     [16][]*Callback // callbacks
@@ -35,30 +41,22 @@ type Input struct {
 }
 
 func (pi *Input) apply(p *Pipe) {
-	pi.p = p
-	opts := &p.Options
+	var (
+		opts = &p.Options
+	)
+
+	pi.Pipe = p
 
 	// destination?
-	if pi.Dst == 0 {
-		pi.Dst = msg.DST_R
-	}
-
-	// seq numbers
-	if pi.Dst == msg.DST_L {
+	switch pi.Dst {
+	case msg.DST_L:
+		pi.Out = p.L
 		pi.seq = &p.lseq
-	} else {
-		pi.seq = &p.rseq
-	}
-
-	// input
-	if pi.In == nil {
-		pi.In = make(chan *msg.Msg, 10)
-	}
-
-	// reverse?
-	if pi.Dst == msg.DST_L {
 		pi.reverse = opts.ReverseL
-	} else {
+	default:
+		pi.Dst = msg.DST_R // override
+		pi.Out = p.R
+		pi.seq = &p.rseq
 		pi.reverse = opts.ReverseR
 	}
 
@@ -69,7 +67,7 @@ func (pi *Input) apply(p *Pipe) {
 		slices.Reverse(cbs)
 	}
 
-	// reference only the relevant callbacks in l.cbs
+	// reference only the relevant callbacks in pi.cbs
 	for _, cb := range cbs {
 		// check dst
 		if cb.Dst != 0 && cb.Dst != pi.Dst {
@@ -99,28 +97,6 @@ func (pi *Input) apply(p *Pipe) {
 	}
 }
 
-// run runs the Input. wg may be nil.
-func (pi *Input) run(wg *sync.WaitGroup) error {
-	// target
-	out := pi.p.Rout
-	if pi.Dst == msg.DST_L {
-		out = pi.p.Lout
-	}
-
-	// process as long there's input to do
-	err := pi.process(out)
-	if err == ErrOutClosed {
-		err = pi.process(nil) // retry without writing to output
-	}
-
-	// done!
-	if wg != nil {
-		wg.Done()
-	}
-
-	return err
-}
-
 // prepare prepares metadata and context of m for processing in this Line.
 // The message type must already be set.
 func (pi *Input) prepare(m *msg.Msg) (pc *PipeContext) {
@@ -130,7 +106,7 @@ func (pi *Input) prepare(m *msg.Msg) (pc *PipeContext) {
 		return
 	}
 	pc.Input = pi
-	pc.Pipe = pi.p
+	pc.Pipe = pi.Pipe
 
 	// message metadata
 	m.Dst = pi.Dst
@@ -150,30 +126,30 @@ func (pi *Input) prepare(m *msg.Msg) (pc *PipeContext) {
 		}
 	}
 
+	// TODO: assign SkipId
+
 	return
 }
 
-func (pi *Input) process(output chan *msg.Msg) (err error) {
+func (pi *Input) process(wg *sync.WaitGroup) {
 	var (
-		p     = pi.p
-		input = pi.In
-		m     *msg.Msg
+		p       = pi.Pipe
+		input   = pi.In
+		output  = pi.Out
+		reverse = pi.reverse
+		m       *msg.Msg
 	)
 
-	// catch panic due to write to closed channel
-	catch := false
-	defer func() {
-		if catch && recover() != nil {
-			p.Put(m)
-			err = ErrOutClosed
-		}
-	}()
+	if wg != nil {
+		defer wg.Done()
+	}
 
 input:
 	for m = range input {
 		// get context, clear actions except for BORROW
 		pc := pi.prepare(m)
 		pc.Action.Clear()
+		pcid := pc.SkipId
 
 		// run the callbacks
 		for len(pc.cbs) > 0 {
@@ -182,14 +158,19 @@ input:
 			pc.cbs = pc.cbs[1:]
 
 			// skip the callback?
-			if pi.reverse {
-				// TODO: embed skip_*
-				if pi.skip_backward(pc.SkipId, cb.Id) {
-					continue
-				}
-			} else {
-				if pi.skip_forward(pc.SkipId, cb.Id) {
-					continue
+			if cbid := cb.Id; pcid != 0 && cbid != 0 {
+				if reverse {
+					if pcid < 0 && cbid >= -pcid {
+						continue
+					} else if cbid > pcid {
+						continue
+					}
+				} else {
+					if pcid < 0 && cbid <= -pcid {
+						continue
+					} else if cbid < pcid {
+						continue
+					}
 				}
 			}
 
@@ -220,38 +201,8 @@ input:
 			}
 		}
 
-		// forward to output if possible
-		if output != nil {
-			catch = true
-			output <- m
-			catch = false
-		} else {
-			p.Put(m)
-		}
-	}
-
-	return nil // all ok, work done
-}
-
-func (pi *Input) skip_forward(pcid, cbid int) bool {
-	switch {
-	case pcid == 0 || cbid == 0:
-		return false
-	case pcid < 0:
-		return cbid <= -pcid
-	default:
-		return cbid < pcid
-	}
-}
-
-func (pi *Input) skip_backward(pcid, cbid int) bool {
-	switch {
-	case pcid == 0 || cbid == 0:
-		return false
-	case pcid < 0:
-		return cbid >= -pcid
-	default:
-		return cbid > pcid
+		// forward to output
+		output.WriteMsg(m)
 	}
 }
 
@@ -261,22 +212,22 @@ func (pi *Input) Close() {
 	close(pi.In)
 }
 
-// WriteMsg safely sends m to l.In, returning an error instead of a panic if l.In is closed.
+// WriteMsg safely sends m to pi.In, avoiding a panic if pi.In is closed.
 // It assigns a sequence number and timestamp before writing to the channel.
-func (pi *Input) WriteMsg(m *msg.Msg) (err error) {
+func (pi *Input) WriteMsg(m *msg.Msg) (write_error error) {
 	pi.prepare(m)
 	defer func() {
 		if recover() != nil {
-			err = ErrInClosed
+			write_error = ErrInClosed
 		}
 	}()
 	pi.In <- m
-	return
+	return nil
 }
 
-// Write implements io.Writer and reads all BGP messages from src into l.In.
+// Write implements io.Writer and reads all BGP messages from src into pi.In.
 // Copies bytes from src. Consumes what it can, buffers the remainder if needed.
-// Returns n equal to len(src). May block if l.In is full.
+// Returns n equal to len(src). May block if pi.In is full.
 //
 // In case of a non-nil err, call Write(nil) to re-try using the buffered remainder,
 // until it returns a nil err.
@@ -284,7 +235,7 @@ func (pi *Input) WriteMsg(m *msg.Msg) (err error) {
 // Must not be used concurrently.
 func (pi *Input) Write(src []byte) (n int, err error) {
 	var (
-		p   = pi.p
+		p   = pi.Pipe
 		ss  = &pi.Stats
 		now = time.Now().UTC()
 	)
@@ -336,7 +287,7 @@ func (pi *Input) Write(src []byte) (n int, err error) {
 
 		// send
 		if err := pi.WriteMsg(m); err != nil {
-			return n, perr
+			return n, err
 		}
 	}
 
