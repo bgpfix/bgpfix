@@ -60,7 +60,7 @@ func CopyThrough(p *pipe.Pipe, lhs, rhs io.ReadWriteCloser) (lhsb, rhsb []int, e
 
 	// rhs?
 	if rhs == nil {
-		p.R.Close()
+		p.R.CloseOutput()
 		// NB: don't close L.Input -> used by LHS callbcks
 	} else {
 		// RHS: rhs -> L.Input

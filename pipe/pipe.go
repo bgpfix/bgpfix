@@ -24,36 +24,29 @@ import (
 type Pipe struct {
 	*zerolog.Logger
 
-	ctx    context.Context
-	cancel context.CancelCauseFunc
+	Options Options   // pipe options; modify before Start()
+	Caps    caps.Caps // BGP capability context; always thread-safe
+	L       *Line     // L pipeline
+	R       *Line     // R pipeline
+
+	// generic Key-Value store, always thread-safe
+	KV *xsync.MapOf[string, any]
+
+	ctx    context.Context         // parent context for all children
+	cancel context.CancelCauseFunc // cancels ctx
 
 	started atomic.Bool    // true iff Start() called
-	wgstart sync.WaitGroup // 1 before start, 0 after start
 	stopped atomic.Bool    // true iff Stop() called
+	wgstart sync.WaitGroup // 1 before start, 0 after start
 
-	pool *sync.Pool // message pool
+	cbs []*Callback // sorted callbacks
+	hds []*Handler  // sorted handlers
 
 	evch   chan *Event           // pipe event input
 	evwg   sync.WaitGroup        // event handler routine
 	events map[string][]*Handler // maps events to their handlers
 
-	Options Options   // pipe options; modify before Start()
-	Caps    caps.Caps // BGP capability context; always thread-safe
-	L       *Output   // output for L
-	R       *Output   // output for R
-
-	cbs []*Callback // sorted callbacks
-	hds []*Handler  // sorted handlers
-
-	inputs []*Input       // pipe inputs
-	lwg    sync.WaitGroup // running L inputs
-	rwg    sync.WaitGroup // running R inputs
-
-	lseq atomic.Int64 // last seq number assigned for L destination
-	rseq atomic.Int64 // last seq number assigned for R destination
-
-	// generic Key-Value store, always thread-safe
-	KV *xsync.MapOf[string, any]
+	msgpool *sync.Pool // pool for new messages
 }
 
 // NewPipe returns a new pipe, which can be configured through its Options.
@@ -70,17 +63,25 @@ func NewPipe(ctx context.Context) *Pipe {
 	p.evch = make(chan *Event, 10)
 	p.events = make(map[string][]*Handler)
 
-	p.L = NewOutput(p, 10)
-	p.L.Name = "L"
-	p.R = NewOutput(p, 10)
-	p.R.Name = "R"
+	p.R = &Line{
+		Pipe: p,
+		Dst:  msg.DST_R,
+		Out:  make(chan *msg.Msg, 10),
+	}
+	p.L = &Line{
+		Pipe: p,
+		Dst:  msg.DST_L,
+		Out:  make(chan *msg.Msg, 10),
+	}
 
 	p.wgstart.Add(1)
 
 	return p
 }
 
-func (p *Pipe) apply(opts *Options) {
+func (p *Pipe) attach() {
+	opts := &p.Options
+
 	if opts.Logger != nil {
 		p.Logger = opts.Logger
 	} else {
@@ -90,9 +91,9 @@ func (p *Pipe) apply(opts *Options) {
 	p.Logger = opts.Logger
 
 	if opts.MsgPool != nil {
-		p.pool = opts.MsgPool
+		p.msgpool = opts.MsgPool
 	} else {
-		p.pool = new(sync.Pool)
+		p.msgpool = new(sync.Pool)
 	}
 
 	// sort valid callbacks to p.cbs
@@ -118,14 +119,6 @@ func (p *Pipe) apply(opts *Options) {
 		}
 		return a.Order - b.Order
 	})
-
-	// apply to pipe inputs
-	for _, pi := range opts.Inputs {
-		if pi != nil && pi.Dst != 0 {
-			p.inputs = append(p.inputs, pi)
-			pi.apply(p)
-		}
-	}
 
 	// sort valid handlers to p.hds
 	for _, hd := range opts.Handlers {
@@ -166,6 +159,10 @@ func (p *Pipe) apply(opts *Options) {
 			p.events[typ] = append(p.events[typ], h)
 		}
 	}
+
+	// attach Inputs to Lines
+	p.L.attach()
+	p.R.attach()
 }
 
 // onAlive is called whenever either direction gets a new KEEPALIVE message,
@@ -221,33 +218,25 @@ func (p *Pipe) Start() {
 		return // already started or stopped
 	}
 
-	// apply opts
-	opts := &p.Options
-	p.apply(opts)
+	// apply options
+	p.attach()
 
-	// start pipe inputs
-	for _, pi := range p.inputs {
-		if pi.Dst == msg.DST_L {
-			p.lwg.Add(1)
-			go pi.process(&p.lwg)
-		} else {
-			p.rwg.Add(1)
-			go pi.process(&p.rwg)
-		}
-	}
+	// start line inputs
+	p.L.StartInputs()
+	p.R.StartInputs()
 
-	// wait for L, R, or both to finish
+	// wait for L, R, and both to finish
 	go func() {
-		p.lwg.Wait()
-		p.L.Close()
+		p.L.WaitInputs()
+		p.L.CloseOutput()
 	}()
 	go func() {
-		p.rwg.Wait()
-		p.R.Close()
+		p.R.WaitInputs()
+		p.R.CloseOutput()
 	}()
 	go func() {
-		p.lwg.Wait()
-		p.rwg.Wait()
+		p.L.WaitInputs()
+		p.R.WaitInputs()
 		p.Stop()
 	}()
 
@@ -278,18 +267,16 @@ func (p *Pipe) Stop() {
 	// publish the event (ignore the global context)
 	go p.event(&Event{Type: EVENT_STOP}, nil, false)
 
-	// close all inputs
-	for _, pi := range p.inputs {
-		pi.Close()
-	}
+	// close all inputs (if not done already)
+	p.L.CloseInputs()
+	p.R.CloseInputs()
 
 	// yank the cable out of blocked calls (hopefully)
 	p.cancel(ErrStopped)
 
 	// wait for input handlers
-	p.lwg.Wait()
-	p.rwg.Wait()
-	// NB: now [1] will close the R/L outputs
+	p.L.WaitInputs()
+	p.R.WaitInputs()
 
 	// stop the event handler and wait for it to finish
 	close(p.evch)
@@ -299,8 +286,8 @@ func (p *Pipe) Stop() {
 // Wait blocks until the pipe starts and stops completely.
 func (p *Pipe) Wait() {
 	p.wgstart.Wait()
-	p.rwg.Wait()
-	p.lwg.Wait()
+	p.L.WaitInputs()
+	p.R.WaitInputs()
 	p.evwg.Wait()
 }
 
@@ -316,7 +303,7 @@ func (p *Pipe) Stopped() bool {
 
 // Get returns empty msg from pool, or a new msg object
 func (p *Pipe) Get() (m *msg.Msg) {
-	if m, ok := p.pool.Get().(*msg.Msg); ok {
+	if m, ok := p.msgpool.Get().(*msg.Msg); ok {
 		return m
 	} else {
 		return msg.NewMsg()
@@ -339,53 +326,23 @@ func (p *Pipe) Put(m *msg.Msg) {
 	// re-use
 	pc.Reset()
 	m.Reset()
-	p.pool.Put(m)
+	p.msgpool.Put(m)
 }
 
-// OutputFor returns the output for messages flowing to dst
-func (p *Pipe) OutputFor(dst msg.Dst) *Output {
-	switch dst {
-	case msg.DST_L:
+// LineTo returns the line processing messages destined from dst
+func (p *Pipe) LineTo(dst msg.Dst) *Line {
+	if dst == msg.DST_L {
 		return p.L
-	case msg.DST_R:
+	} else {
 		return p.R
-	default:
-		return nil
 	}
 }
 
-// OutputFrom returns the output for messages flowing from dst
-func (p *Pipe) OutputFrom(dst msg.Dst) *Output {
-	switch dst {
-	case msg.DST_L:
+// LineFrom returns the line processing messages coming from dst
+func (p *Pipe) LineFrom(dst msg.Dst) *Line {
+	if dst == msg.DST_L {
 		return p.R
-	case msg.DST_R:
+	} else {
 		return p.L
-	default:
-		return nil
-	}
-}
-
-// OpenFor returns the last valid OPEN sent to dst
-func (p *Pipe) OpenFor(dst msg.Dst) *msg.Open {
-	switch dst {
-	case msg.DST_L:
-		return p.L.Open.Load()
-	case msg.DST_R:
-		return p.R.Open.Load()
-	default:
-		return nil
-	}
-}
-
-// OpenFrom returns the last valid OPEN received from dst
-func (p *Pipe) OpenFrom(dst msg.Dst) *msg.Open {
-	switch dst {
-	case msg.DST_L:
-		return p.R.Open.Load()
-	case msg.DST_R:
-		return p.L.Open.Load()
-	default:
-		return nil
 	}
 }

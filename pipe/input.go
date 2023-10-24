@@ -4,28 +4,30 @@ import (
 	"io"
 	"slices"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/bgpfix/bgpfix/msg"
 )
 
-// Input processes incoming BGP messages through Pipe Callbacks.
+// Input processes incoming BGP messages through Callbacks.
 type Input struct {
-	Pipe *Pipe  // parent pipe
-	Id   int    // optional input id number
-	Name string // optional name
+	Pipe *Pipe // parent pipe
+	Line *Line // parent line
 
-	// direction to impose on incoming messages
-	Dst msg.Dst
+	Name string  // optional name
+	Dst  msg.Dst // line direction
 
 	// In is the input, where to read incoming messages from.
-	// nil means create a new channel.
 	In chan *msg.Msg
 
-	// Out is the output, where to write processed messages to.
-	// nil means use the default Pipe output for Dst.
-	Out *Output
+	// Reverse, when true, runs callbacks in reverse order.
+	Reverse bool
+
+	// CallbackFilter controls which callbacks to skip (disabled by default)
+	CallbackFilter FilterMode
+
+	// FilterValue specifies the value for CallbackFilter
+	FilterValue any
 
 	// statistics
 	Stats struct {
@@ -34,50 +36,37 @@ type Input struct {
 		Garbled uint64
 	}
 
-	ibuf    []byte          // input buffer
-	seq     *atomic.Int64   // sequence numbers source
-	cbs     [16][]*Callback // callbacks
-	reverse bool            // run callbacks in reverse?
+	ibuf []byte          // input buffer
+	cbs  [16][]*Callback // callbacks for given message type
 }
 
-func (pi *Input) apply(p *Pipe) {
-	var (
-		opts = &p.Options
-	)
+func (li *Input) attach(p *Pipe, l *Line) {
+	li.Pipe = p
+	li.Line = l
 
-	pi.Pipe = p
-
-	// destination?
-	switch pi.Dst {
-	case msg.DST_L:
-		pi.Out = p.L
-		pi.seq = &p.lseq
-		pi.reverse = opts.ReverseL
-	default:
-		pi.Dst = msg.DST_R // override
-		pi.Out = p.R
-		pi.seq = &p.rseq
-		pi.reverse = opts.ReverseR
-	}
-
-	// callbacks
+	// copy all callbacks to cbs
 	var cbs []*Callback
 	cbs = append(cbs, p.cbs...)
-	if pi.reverse {
+	if li.Reverse {
 		slices.Reverse(cbs)
 	}
 
-	// reference only the relevant callbacks in pi.cbs
+	// reference only the relevant callbacks in li.cbs
 	for _, cb := range cbs {
-		// check dst
-		if cb.Dst != 0 && cb.Dst != pi.Dst {
+		// dst match?
+		if cb.Dst != 0 && cb.Dst != l.Dst {
+			continue
+		}
+
+		// callback filter?
+		if filterSkip(li, cb) {
 			continue
 		}
 
 		// message types?
 		var types []msg.Type
 		if len(cb.Types) == 0 {
-			for i := 1; i < len(pi.cbs); i++ {
+			for i := 1; i < len(li.cbs); i++ {
 				types = append(types, msg.Type(i))
 			}
 		} else {
@@ -88,10 +77,10 @@ func (pi *Input) apply(p *Pipe) {
 
 		// reference relevant callbacks
 		for _, t := range types {
-			if t < msg.Type(len(pi.cbs)) {
-				pi.cbs[t] = append(pi.cbs[t], cb)
+			if t < msg.Type(len(li.cbs)) {
+				li.cbs[t] = append(li.cbs[t], cb)
 			} else {
-				pi.cbs[0] = append(pi.cbs[0], cb)
+				li.cbs[0] = append(li.cbs[0], cb)
 			}
 		}
 	}
@@ -106,12 +95,11 @@ func (pi *Input) prepare(m *msg.Msg) (pc *PipeContext) {
 		return
 	}
 	pc.Input = pi
-	pc.Pipe = pi.Pipe
 
 	// message metadata
 	m.Dst = pi.Dst
 	if m.Seq == 0 {
-		m.Seq = pi.seq.Add(1)
+		m.Seq = pi.Line.seq.Add(1)
 	}
 	if m.Time.IsZero() {
 		m.Time = time.Now().UTC()
@@ -126,18 +114,14 @@ func (pi *Input) prepare(m *msg.Msg) (pc *PipeContext) {
 		}
 	}
 
-	// TODO: assign SkipId
-
 	return
 }
 
 func (pi *Input) process(wg *sync.WaitGroup) {
 	var (
-		p       = pi.Pipe
-		input   = pi.In
-		output  = pi.Out
-		reverse = pi.reverse
-		m       *msg.Msg
+		p      = pi.Pipe
+		l      = pi.Line
+		closed bool
 	)
 
 	if wg != nil {
@@ -145,34 +129,16 @@ func (pi *Input) process(wg *sync.WaitGroup) {
 	}
 
 input:
-	for m = range input {
+	for m := range pi.In {
 		// get context, clear actions except for BORROW
 		pc := pi.prepare(m)
 		pc.Action.Clear()
-		pcid := pc.SkipId
 
 		// run the callbacks
 		for len(pc.cbs) > 0 {
 			// eat first callback
 			cb := pc.cbs[0]
 			pc.cbs = pc.cbs[1:]
-
-			// skip the callback?
-			if cbid := cb.Id; pcid != 0 && cbid != 0 {
-				if reverse {
-					if pcid < 0 && cbid >= -pcid {
-						continue
-					} else if cbid > pcid {
-						continue
-					}
-				} else {
-					if pcid < 0 && cbid <= -pcid {
-						continue
-					} else if cbid < pcid {
-						continue
-					}
-				}
-			}
 
 			// disabled?
 			if cb.Enabled != nil && !cb.Enabled.Load() {
@@ -201,15 +167,47 @@ input:
 			}
 		}
 
-		// forward to output
-		output.WriteMsg(m)
+		// m updates the UNIX timestamp for its type?
+		t := m.Time.Unix()
+		switch m.Type {
+		case msg.OPEN:
+			if m.ParseUpper(p.Caps) != nil {
+				break // not valid
+			}
+
+			oldt := l.LastOpen.Load()
+			if t > oldt && l.LastOpen.CompareAndSwap(oldt, t) {
+				Context(m).Action.Add(ACTION_BORROW)
+				l.Open.Store(&m.Open)
+				p.Event(EVENT_OPEN, m.Dst, t, oldt)
+			}
+
+		case msg.KEEPALIVE:
+			oldt := l.LastAlive.Load()
+			if t > oldt && l.LastAlive.CompareAndSwap(oldt, t) {
+				p.Event(EVENT_ALIVE, m.Dst, t, oldt)
+			}
+
+		case msg.UPDATE:
+			oldt := l.LastUpdate.Load()
+			if t > oldt && l.LastUpdate.CompareAndSwap(oldt, t) {
+				p.Event(EVENT_UPDATE, m.Dst, t, oldt)
+			}
+		}
+
+		// output closed?
+		if closed {
+			p.Put(m) // drop on the floor
+		} else if l.WriteOut(m) != nil {
+			closed = true // start dropping from now on
+		}
 	}
 }
 
 // Close safely closes the .In channel, which should eventually stop the Input
-func (pi *Input) Close() {
+func (li *Input) Close() {
 	defer func() { recover() }()
-	close(pi.In)
+	close(li.In)
 }
 
 // WriteMsg safely sends m to pi.In, avoiding a panic if pi.In is closed.
@@ -219,6 +217,7 @@ func (pi *Input) WriteMsg(m *msg.Msg) (write_error error) {
 	defer func() {
 		if recover() != nil {
 			write_error = ErrInClosed
+			pi.Pipe.Put(m)
 		}
 	}()
 	pi.In <- m

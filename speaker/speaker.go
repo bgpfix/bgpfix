@@ -71,7 +71,8 @@ func (s *Speaker) onStart(_ *pipe.Event) bool {
 
 func (s *Speaker) onEstablished(ev *pipe.Event) bool {
 	// load last OPENs
-	up, down := s.pipe.OpenFor(s.dst), s.pipe.OpenFrom(s.dst)
+	p := s.pipe
+	up, down := p.LineTo(s.dst).Open.Load(), p.LineFrom(s.dst).Open.Load()
 	if up == nil || down == nil {
 		return true // huh?
 	}
@@ -103,9 +104,10 @@ func (s *Speaker) sendOpen(ro *msg.Open) {
 	}
 
 	// local and remote OPENs
-	o := &s.pipe.Get().Up(msg.OPEN).Open // our OPEN
+	p := s.pipe
+	o := &p.Get().Up(msg.OPEN).Open // our OPEN
 	if ro == nil {
-		ro = s.pipe.OpenFrom(s.dst)
+		ro = p.LineFrom(s.dst).Open.Load()
 	}
 
 	// set caps from pipe and local options
@@ -164,8 +166,8 @@ func (s *Speaker) keepaliver(negotiated int64) {
 
 	var (
 		p         = s.pipe
-		up        = p.OutputFor(s.dst)
-		down      = p.OutputFrom(s.dst)
+		up        = p.LineTo(s.dst)
+		down      = p.LineFrom(s.dst)
 		ticker    = time.NewTicker(time.Second)
 		now_ts    int64 // UNIX timestamp now
 		last_up   int64 // UNIX timestamp when we last sent something to peer

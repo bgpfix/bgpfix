@@ -24,9 +24,6 @@ type Options struct {
 
 	Caps bool // overwrite pipe.Caps using OPEN messages?
 
-	ReverseR bool // reverse the processing order for R lines?
-	ReverseL bool // reverse the processing order for L lines?
-
 	Callbacks []*Callback // message callbacks
 	Handlers  []*Handler  // event handlers
 	Inputs    []*Input    // pipe inputs (message processors)
@@ -226,7 +223,11 @@ func (o *Options) AddInput(dst msg.Dst, tpl ...*Input) *Input {
 	}
 
 	// dst
-	pi.Dst = dst
+	if dst == msg.DST_L {
+		pi.Dst = msg.DST_L
+	} else {
+		pi.Dst = msg.DST_R
+	}
 
 	o.Inputs = append(o.Inputs, &pi)
 	return &pi

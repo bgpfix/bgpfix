@@ -42,6 +42,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/netip"
 	"os"
@@ -49,7 +50,6 @@ import (
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
 	"github.com/bgpfix/bgpfix/speaker"
-	"github.com/bgpfix/bgpfix/util"
 )
 
 var (
@@ -67,18 +67,19 @@ func main() {
 		os.Exit(1)
 	}
 
-	// create a Pipe, add our callback and event handlers
+	// create a Pipe, add callback and event handlers
 	p := pipe.NewPipe(context.Background())
-	p.Options.OnMsg(print, msg.DST_LR) // call print() on every message in both directions
+	p.Options.OnMsg(print, msg.DST_LR) // call print() on every message in any direction
 	p.Options.OnEvent(event)           // call event() on any pipe event
 
-	// L side: a TCP target
+	// L side: a TCP target, sending to R
 	conn, err := net.Dial("tcp", flag.Arg(0)) // assumes a ":179" suffix
 	if err != nil {
 		panic(err)
 	}
+	R_input := p.Options.AddInput(msg.DST_R)
 
-	// R side: a local speaker
+	// R side: a local speaker, sending to L
 	spk := speaker.NewSpeaker(context.Background())
 	spk.Options.Passive = !*opt_active
 	spk.Options.LocalASN = *opt_asn
@@ -86,8 +87,21 @@ func main() {
 	spk.Options.LocalId = netip.MustParseAddr(*opt_id)
 	spk.Attach(p, msg.DST_L)
 
-	// run a copy util between p and conn
-	util.CopyThrough(p, conn, nil)
+	// copy from conn -> R
+	go func() {
+		io.Copy(R_input, conn)
+		p.Stop()
+	}()
+
+	// copy from L -> conn
+	go func() {
+		io.Copy(conn, p.L)
+		p.Stop()
+	}()
+
+	// start the pipe and wait till all processing is done
+	p.Start()
+	p.Wait()
 }
 
 func print(m *msg.Msg) pipe.Action {

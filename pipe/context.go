@@ -7,14 +7,7 @@ import (
 
 // PipeContext tracks message processing progress in a pipe
 type PipeContext struct {
-	Pipe  *Pipe  // pipe processing the message
 	Input *Input // pipe input processing the message (message source)
-
-	// Optional callback Id filter, by default 0 (disabled).
-	// Applies only to callbacks with a non-zero Id.
-	// If >0, skip callback if its Id < SkipId (or Id > SkipId in reverse mode).
-	// If <0, skip callback if its Id <= -SkipId (or Id >= -SkipId in reverse mode).
-	SkipId int
 
 	Callback *Callback // currently run callback
 	Action   Action    // requested message actions
@@ -48,13 +41,6 @@ func (pc *PipeContext) Clear() {
 	pc.Reset()
 	pc.Action = a & ACTION_BORROW
 }
-
-// NoCallbacks requests the message to skip running any callbacks
-func (pc *PipeContext) NoCallbacks() {
-	pc.cbs = noCallbacks
-}
-
-var noCallbacks = []*Callback{}
 
 // HasKV returns true iff the context already has a Key-Value store.
 func (pc *PipeContext) HasKV() bool {
