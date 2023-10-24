@@ -34,15 +34,14 @@ func main() {
 
 	// create a Pipe, add callback and event handlers
 	p := pipe.NewPipe(context.Background())
-	p.Options.OnMsg(print, msg.DST_LR) // call print() on every message in any direction
-	p.Options.OnEvent(event)           // call event() on any pipe event
+	p.OnMsg(print, msg.DST_LR) // call print() on every message in any direction
+	p.OnEvent(event)           // call event() on any pipe event
 
 	// L side: a TCP target, sending to R
 	conn, err := net.Dial("tcp", flag.Arg(0)) // assumes a ":179" suffix
 	if err != nil {
 		panic(err)
 	}
-	R_input := p.Options.AddInput(msg.DST_R)
 
 	// R side: a local speaker, sending to L
 	spk := speaker.NewSpeaker(context.Background())
@@ -54,7 +53,7 @@ func main() {
 
 	// copy from conn -> R
 	go func() {
-		io.Copy(R_input, conn)
+		io.Copy(p.R, conn)
 		p.Stop()
 	}()
 
@@ -64,7 +63,7 @@ func main() {
 		p.Stop()
 	}()
 
-	// start the pipe and wait till all processing is done
+	// start and wait till all processing is done
 	p.Start()
 	p.Wait()
 }
@@ -77,7 +76,7 @@ func print(m *msg.Msg) pipe.Action {
 func event(ev *pipe.Event) bool {
 	switch ev.Type {
 	case pipe.EVENT_ESTABLISHED:
-		fmt.Printf("session established, capabilities: %s", ev.Pipe.Caps.ToJSON(nil))
+		fmt.Printf("session established, capabilities: %s\n", ev.Pipe.Caps.ToJSON(nil))
 	}
 	return true
 }

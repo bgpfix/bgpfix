@@ -24,10 +24,10 @@ import (
 type Pipe struct {
 	*zerolog.Logger
 
-	Options Options   // pipe options; modify before Start()
+	Options           // pipe options; modify before Start()
 	Caps    caps.Caps // BGP capability context; always thread-safe
-	L       *Line     // L pipeline
-	R       *Line     // R pipeline
+	L       *Line     // pipeline processing messages from R to L
+	R       *Line     // pipeline processing messages from L to R
 
 	// generic Key-Value store, always thread-safe
 	KV *xsync.MapOf[string, any]
@@ -66,12 +66,23 @@ func NewPipe(ctx context.Context) *Pipe {
 	p.R = &Line{
 		Pipe: p,
 		Dst:  msg.DST_R,
+		In:   make(chan *msg.Msg, 10),
 		Out:  make(chan *msg.Msg, 10),
 	}
+	p.R.Input = &Input{
+		Dst: msg.DST_R,
+		In:  p.R.In,
+	}
+
 	p.L = &Line{
 		Pipe: p,
 		Dst:  msg.DST_L,
+		In:   make(chan *msg.Msg, 10),
 		Out:  make(chan *msg.Msg, 10),
+	}
+	p.L.Input = &Input{
+		Dst: msg.DST_L,
+		In:  p.L.In,
 	}
 
 	p.wgstart.Add(1)

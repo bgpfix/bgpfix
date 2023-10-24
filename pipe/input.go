@@ -11,9 +11,10 @@ import (
 
 // Input processes incoming BGP messages through Callbacks.
 type Input struct {
-	Pipe *Pipe // parent pipe
-	Line *Line // parent line
+	Pipe *Pipe // attached pipe (nil before pipe start)
+	Line *Line // attached line (nil before pipe start)
 
+	Id   int     // optional id
 	Name string  // optional name
 	Dst  msg.Dst // line direction
 
@@ -204,8 +205,8 @@ input:
 	}
 }
 
-// Close safely closes the .In channel, which should eventually stop the Input
-func (li *Input) Close() {
+// CloseInput safely closes the .In channel, which should eventually stop the Input
+func (li *Input) CloseInput() {
 	defer func() { recover() }()
 	close(li.In)
 }

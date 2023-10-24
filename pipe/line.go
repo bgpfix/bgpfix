@@ -14,7 +14,13 @@ type Line struct {
 	Pipe *Pipe   // parent pipe
 	Dst  msg.Dst // line direction
 
-	// Out is the output, where to write outgoing messages to.
+	// the default input
+	*Input
+
+	// In is the default input, where you write incoming messages to.
+	In chan *msg.Msg
+
+	// Out is the output, where you read processed messages from.
 	Out chan *msg.Msg
 
 	// UNIX timestamp (seconds) of the last valid OPEN message
@@ -38,6 +44,12 @@ type Line struct {
 // attach line inputs
 func (l *Line) attach() {
 	p := l.Pipe
+
+	// the default input
+	l.Input.attach(p, l)
+	l.inputs = append(l.inputs, l.Input)
+
+	// inputs from Options
 	for _, li := range p.Options.Inputs {
 		if li != nil && li.Dst == l.Dst {
 			li.attach(p, l)
@@ -58,7 +70,7 @@ func (l *Line) StartInputs() {
 // CloseInputs safely closes all inputs, which should eventually close the output.
 func (l *Line) CloseInputs() {
 	for _, li := range l.inputs {
-		li.Close()
+		li.CloseInput()
 	}
 }
 

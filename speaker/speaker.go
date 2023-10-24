@@ -21,8 +21,9 @@ type Speaker struct {
 	cancel context.CancelCauseFunc
 
 	pipe *pipe.Pipe  // attached BGP pipe
-	dst  msg.Dst     // direction for our messages
 	in   *pipe.Input // input for our messages
+	up   *pipe.Line  // TX line
+	down *pipe.Line  // RX line
 
 	Options Options     // options; do not modify after Attach()
 	opened  atomic.Bool // true iff OPEN already sent
@@ -36,11 +37,13 @@ func NewSpeaker(ctx context.Context) *Speaker {
 	return s
 }
 
-// Attach attaches the speaker to p, specifying the destination for new messages.
+// Attach attaches the speaker to given pipe input.
 // Must not be called more than once.
 func (s *Speaker) Attach(p *pipe.Pipe, dst msg.Dst) error {
 	s.pipe = p
-	s.dst = dst
+	s.in = p.AddInput(dst)
+	s.up = p.LineTo(dst)
+	s.down = p.LineFrom(dst)
 
 	// process options
 	opts := &s.Options
@@ -55,8 +58,7 @@ func (s *Speaker) Attach(p *pipe.Pipe, dst msg.Dst) error {
 	po := &s.pipe.Options
 	po.OnStart(s.onStart)                    // when the pipe starts
 	po.OnEstablished(s.onEstablished)        // when session is established
-	po.OnMsg(s.onOpen, dst.Flip(), msg.OPEN) // on OPEN for us
-	s.in = po.AddInput(dst)                  // input for our messages
+	po.OnMsg(s.onOpen, s.down.Dst, msg.OPEN) // on OPEN for us
 
 	return nil
 }
@@ -71,8 +73,7 @@ func (s *Speaker) onStart(_ *pipe.Event) bool {
 
 func (s *Speaker) onEstablished(ev *pipe.Event) bool {
 	// load last OPENs
-	p := s.pipe
-	up, down := p.LineTo(s.dst).Open.Load(), p.LineFrom(s.dst).Open.Load()
+	up, down := s.up.Open.Load(), s.down.Open.Load()
 	if up == nil || down == nil {
 		return true // huh?
 	}
@@ -104,10 +105,9 @@ func (s *Speaker) sendOpen(ro *msg.Open) {
 	}
 
 	// local and remote OPENs
-	p := s.pipe
-	o := &p.Get().Up(msg.OPEN).Open // our OPEN
+	o := &s.pipe.Get().Up(msg.OPEN).Open // our OPEN
 	if ro == nil {
-		ro = p.LineFrom(s.dst).Open.Load()
+		ro = s.down.Open.Load()
 	}
 
 	// set caps from pipe and local options
@@ -159,20 +159,16 @@ func (s *Speaker) sendKeepalive() {
 
 // keepaliver sends a KEEPALIVE message, and keeps sending them to respect the hold time.
 func (s *Speaker) keepaliver(negotiated int64) {
-	if negotiated < 3 {
-		negotiated = 3
-	}
-	s.Debug().Msgf("starting keepaliver(%d)", negotiated)
-
 	var (
-		p         = s.pipe
-		up        = p.LineTo(s.dst)
-		down      = p.LineFrom(s.dst)
 		ticker    = time.NewTicker(time.Second)
 		now_ts    int64 // UNIX timestamp now
 		last_up   int64 // UNIX timestamp when we last sent something to peer
 		last_down int64 // UNIX timestamp when we last received something from peer
 	)
+
+	if negotiated < 3 {
+		negotiated = 3
+	}
 
 	for {
 		// wait 1s
@@ -185,15 +181,15 @@ func (s *Speaker) keepaliver(negotiated int64) {
 		}
 
 		// remote timeout?
-		last_down = max(down.LastAlive.Load(), down.LastUpdate.Load(), last_down)
+		last_down = max(s.down.LastAlive.Load(), s.down.LastUpdate.Load(), last_down)
 		if delay := now_ts - last_down; delay > negotiated {
 			last_down = now_ts
 			s.Warn().Msg("remote hold timer expired")
-			p.Event(EVENT_PEER_TIMEOUT, delay)
+			s.pipe.Event(EVENT_PEER_TIMEOUT, delay)
 		}
 
 		// local timeout?
-		last_up = max(up.LastAlive.Load(), up.LastUpdate.Load(), last_up)
+		last_up = max(s.up.LastAlive.Load(), s.up.LastUpdate.Load(), last_up)
 		if delay := now_ts - last_up; delay >= negotiated/3 {
 			last_up = now_ts
 			s.sendKeepalive()

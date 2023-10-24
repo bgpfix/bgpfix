@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
 	"github.com/rs/zerolog"
 )
@@ -50,10 +51,10 @@ func NewReader(ctx context.Context) *Reader {
 
 // Attach attaches the speaker to given upstream pipe direction.
 // Must not be called more than once.
-func (br *Reader) Attach(in *pipe.Input) error {
+func (br *Reader) Attach(p *pipe.Pipe, dst msg.Dst) error {
 	opts := &br.Options
-	br.pipe = in.Pipe
-	br.in = in
+	br.pipe = p
+	br.in = p.AddInput(dst)
 
 	if opts.Logger != nil {
 		br.Logger = opts.Logger
