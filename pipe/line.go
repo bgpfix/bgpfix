@@ -3,7 +3,6 @@ package pipe
 import (
 	"bytes"
 	"io"
-	"sync"
 	"sync/atomic"
 
 	"github.com/bgpfix/bgpfix/msg"
@@ -12,7 +11,7 @@ import (
 // Line represents one direction of a Pipe: inputs with a common output
 type Line struct {
 	Pipe *Pipe   // parent pipe
-	Dst  msg.Dst // line direction
+	Dir  msg.Dir // line direction
 
 	// the default input
 	*Input
@@ -35,15 +34,16 @@ type Line struct {
 	// the OPEN message that updated LastOpen
 	Open atomic.Pointer[msg.Open]
 
-	inputs []*Input       // line inputs
-	wg     sync.WaitGroup // running inputs
-	seq    atomic.Int64   // last seq number assigned
-	obuf   bytes.Buffer   // output buffer
+	inputs []*Input      // line inputs
+	seq    atomic.Int64  // last seq number assigned
+	obuf   bytes.Buffer  // output buffer
+	done   chan struct{} // closed when done
 }
 
 // attach line inputs
 func (l *Line) attach() {
 	p := l.Pipe
+	l.done = make(chan struct{})
 
 	// the default input
 	l.Input.attach(p, l)
@@ -51,32 +51,39 @@ func (l *Line) attach() {
 
 	// inputs from Options
 	for _, li := range p.Options.Inputs {
-		if li != nil && li.Dst == l.Dst {
+		if li != nil && li.Dir == l.Dir {
 			li.attach(p, l)
 			l.inputs = append(l.inputs, li)
 		}
 	}
 }
 
-// StartInputs starts a processor goroutine for each input.
-// Called automatically from Pipe.Start().
-func (l *Line) StartInputs() {
-	for _, li := range l.inputs {
-		l.wg.Add(1)
-		go li.process(&l.wg)
+// start starts the processor of each input.
+func (l *Line) start() {
+	for _, in := range l.inputs {
+		go in.processor()
 	}
+
+	// wait for processors
+	go func() {
+		for _, in := range l.inputs {
+			in.Wait()
+		}
+		l.CloseOutput()
+		close(l.done)
+	}()
 }
 
-// CloseInputs safely closes all inputs, which should eventually close the output.
-func (l *Line) CloseInputs() {
-	for _, li := range l.inputs {
-		li.CloseInput()
-	}
+// Wait blocks until all processing is done
+func (l *Line) Wait() {
+	<-l.done
 }
 
-// WaitInputs blocks until all inputs are done with processing.
-func (l *Line) WaitInputs() {
-	l.wg.Wait()
+// Close safely closes all inputs, which should eventually stop the line
+func (l *Line) Close() {
+	for _, in := range l.inputs {
+		in.Close()
+	}
 }
 
 // CloseOutput safely closes the output channel.

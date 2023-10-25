@@ -7,7 +7,8 @@ import (
 
 // PipeContext tracks message processing progress in a pipe
 type PipeContext struct {
-	Input *Input // pipe input processing the message (message source)
+	Pipe  *Pipe  // pipe processing the message
+	Input *Input // input processing the message (message source)
 
 	Callback *Callback // currently run callback
 	Action   Action    // requested message actions

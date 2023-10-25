@@ -51,7 +51,7 @@ func NewReader(ctx context.Context) *Reader {
 
 // Attach attaches the speaker to given upstream pipe direction.
 // Must not be called more than once.
-func (br *Reader) Attach(p *pipe.Pipe, dst msg.Dst) error {
+func (br *Reader) Attach(p *pipe.Pipe, dst msg.Dir) error {
 	opts := &br.Options
 	br.pipe = p
 	br.in = p.AddInput(dst)

@@ -39,7 +39,7 @@ func NewSpeaker(ctx context.Context) *Speaker {
 
 // Attach attaches the speaker to given pipe input.
 // Must not be called more than once.
-func (s *Speaker) Attach(p *pipe.Pipe, dst msg.Dst) error {
+func (s *Speaker) Attach(p *pipe.Pipe, dst msg.Dir) error {
 	s.pipe = p
 	s.in = p.AddInput(dst)
 	s.up = p.LineTo(dst)
@@ -58,7 +58,7 @@ func (s *Speaker) Attach(p *pipe.Pipe, dst msg.Dst) error {
 	po := &s.pipe.Options
 	po.OnStart(s.onStart)                    // when the pipe starts
 	po.OnEstablished(s.onEstablished)        // when session is established
-	po.OnMsg(s.onOpen, s.down.Dst, msg.OPEN) // on OPEN for us
+	po.OnMsg(s.onOpen, s.down.Dir, msg.OPEN) // on OPEN for us
 
 	return nil
 }

@@ -3,7 +3,6 @@ package pipe
 import (
 	"io"
 	"slices"
-	"sync"
 	"time"
 
 	"github.com/bgpfix/bgpfix/msg"
@@ -16,7 +15,7 @@ type Input struct {
 
 	Id   int     // optional id
 	Name string  // optional name
-	Dst  msg.Dst // line direction
+	Dir  msg.Dir // line direction
 
 	// In is the input, where to read incoming messages from.
 	In chan *msg.Msg
@@ -39,49 +38,77 @@ type Input struct {
 
 	ibuf []byte          // input buffer
 	cbs  [16][]*Callback // callbacks for given message type
+	done chan struct{}   // closed when the input is done processing
 }
 
-func (li *Input) attach(p *Pipe, l *Line) {
-	li.Pipe = p
-	li.Line = l
+func (in *Input) attach(p *Pipe, l *Line) {
+	in.Pipe = p
+	in.Line = l
+	in.done = make(chan struct{})
 
-	// copy all callbacks to cbs
+	// copy relevant callbacks to cbs
 	var cbs []*Callback
-	cbs = append(cbs, p.cbs...)
-	if li.Reverse {
-		slices.Reverse(cbs)
-	}
+	for _, cb := range p.Options.Callbacks {
+		// nil?
+		if cb == nil || cb.Func == nil {
+			continue
+		}
 
-	// reference only the relevant callbacks in li.cbs
-	for _, cb := range cbs {
-		// dst match?
-		if cb.Dst != 0 && cb.Dst != l.Dst {
+		// direction match?
+		if cb.Dir != 0 && cb.Dir != l.Dir {
 			continue
 		}
 
 		// callback filter?
-		if filterSkip(li, cb) {
+		if filterSkip(in, cb) {
 			continue
 		}
 
-		// message types?
-		var types []msg.Type
-		if len(cb.Types) == 0 {
-			for i := 1; i < len(li.cbs); i++ {
-				types = append(types, msg.Type(i))
+		// take it
+		cbs = append(cbs, cb)
+	}
+
+	// sort
+	slices.SortStableFunc(cbs, func(a, b *Callback) int {
+		if a.Pre != b.Pre {
+			if a.Pre {
+				return -1
+			} else {
+				return 1
 			}
+		}
+		if a.Post != b.Post {
+			if a.Post {
+				return 1
+			} else {
+				return -1
+			}
+		}
+		if in.Reverse {
+			return b.Order - a.Order
 		} else {
-			types = append(types, cb.Types...)
-			slices.Sort(types)
-			types = slices.Compact(types)
+			return a.Order - b.Order
+		}
+	})
+
+	// reference in li.cbs[type]
+	for _, cb := range cbs {
+		// all types?
+		if len(cb.Types) == 0 {
+			for i := range in.cbs {
+				in.cbs[i] = append(in.cbs[i], cb)
+			}
+			continue
 		}
 
-		// reference relevant callbacks
-		for _, t := range types {
-			if t < msg.Type(len(li.cbs)) {
-				li.cbs[t] = append(li.cbs[t], cb)
+		// only select types
+		types := slices.Clone(cb.Types)
+		slices.Sort(types)
+		for _, t := range slices.Compact(types) {
+			if t < msg.Type(len(in.cbs)) {
+				in.cbs[t] = append(in.cbs[t], cb)
 			} else {
-				li.cbs[0] = append(li.cbs[0], cb)
+				in.cbs[0] = append(in.cbs[0], cb)
 			}
 		}
 	}
@@ -89,18 +116,19 @@ func (li *Input) attach(p *Pipe, l *Line) {
 
 // prepare prepares metadata and context of m for processing in this Line.
 // The message type must already be set.
-func (pi *Input) prepare(m *msg.Msg) (pc *PipeContext) {
+func (in *Input) prepare(m *msg.Msg) (pc *PipeContext) {
 	// already prepared?
 	pc = Context(m)
-	if pc.Input == pi {
+	if pc.Input == in {
 		return
 	}
-	pc.Input = pi
+	pc.Input = in
+	pc.Pipe = in.Pipe
 
 	// message metadata
-	m.Dst = pi.Dst
+	m.Dir = in.Dir
 	if m.Seq == 0 {
-		m.Seq = pi.Line.seq.Add(1)
+		m.Seq = in.Line.seq.Add(1)
 	}
 	if m.Time.IsZero() {
 		m.Time = time.Now().UTC()
@@ -108,31 +136,29 @@ func (pi *Input) prepare(m *msg.Msg) (pc *PipeContext) {
 
 	// callbacks
 	if pc.cbs == nil {
-		if int(m.Type) < len(pi.cbs) {
-			pc.cbs = pi.cbs[m.Type]
+		if int(m.Type) < len(in.cbs) {
+			pc.cbs = in.cbs[m.Type]
 		} else {
-			pc.cbs = pi.cbs[0]
+			pc.cbs = in.cbs[0]
 		}
 	}
 
 	return
 }
 
-func (pi *Input) process(wg *sync.WaitGroup) {
+func (in *Input) processor() {
 	var (
-		p      = pi.Pipe
-		l      = pi.Line
+		p      = in.Pipe
+		l      = in.Line
 		closed bool
 	)
 
-	if wg != nil {
-		defer wg.Done()
-	}
+	defer close(in.done)
 
 input:
-	for m := range pi.In {
+	for m := range in.In {
 		// get context, clear actions except for BORROW
-		pc := pi.prepare(m)
+		pc := in.prepare(m)
 		pc.Action.Clear()
 
 		// run the callbacks
@@ -149,7 +175,7 @@ input:
 			// need to parse first?
 			if !cb.Raw && m.Upper == msg.INVALID {
 				if err := m.ParseUpper(p.Caps); err != nil {
-					p.Event(EVENT_PARSE, pi.Dst, m, err)
+					p.Event(EVENT_PARSE, in.Dir, m, err)
 					continue input // next message
 				}
 			}
@@ -180,19 +206,19 @@ input:
 			if t > oldt && l.LastOpen.CompareAndSwap(oldt, t) {
 				Context(m).Action.Add(ACTION_BORROW)
 				l.Open.Store(&m.Open)
-				p.Event(EVENT_OPEN, m.Dst, t, oldt)
+				p.Event(EVENT_OPEN, m.Dir, t, oldt)
 			}
 
 		case msg.KEEPALIVE:
 			oldt := l.LastAlive.Load()
 			if t > oldt && l.LastAlive.CompareAndSwap(oldt, t) {
-				p.Event(EVENT_ALIVE, m.Dst, t, oldt)
+				p.Event(EVENT_ALIVE, m.Dir, t, oldt)
 			}
 
 		case msg.UPDATE:
 			oldt := l.LastUpdate.Load()
 			if t > oldt && l.LastUpdate.CompareAndSwap(oldt, t) {
-				p.Event(EVENT_UPDATE, m.Dst, t, oldt)
+				p.Event(EVENT_UPDATE, m.Dir, t, oldt)
 			}
 		}
 
@@ -205,23 +231,28 @@ input:
 	}
 }
 
-// CloseInput safely closes the .In channel, which should eventually stop the Input
-func (li *Input) CloseInput() {
+// Close safely closes the .In channel, which should eventually stop the Input
+func (in *Input) Close() {
 	defer func() { recover() }()
-	close(li.In)
+	close(in.In)
+}
+
+// Wait blocks until the input is done processing the messages
+func (in *Input) Wait() {
+	<-in.done
 }
 
 // WriteMsg safely sends m to pi.In, avoiding a panic if pi.In is closed.
 // It assigns a sequence number and timestamp before writing to the channel.
-func (pi *Input) WriteMsg(m *msg.Msg) (write_error error) {
-	pi.prepare(m)
+func (in *Input) WriteMsg(m *msg.Msg) (write_error error) {
+	in.prepare(m)
 	defer func() {
 		if recover() != nil {
 			write_error = ErrInClosed
-			pi.Pipe.Put(m)
+			in.Pipe.Put(m)
 		}
 	}()
-	pi.In <- m
+	in.In <- m
 	return nil
 }
 
@@ -233,27 +264,27 @@ func (pi *Input) WriteMsg(m *msg.Msg) (write_error error) {
 // until it returns a nil err.
 //
 // Must not be used concurrently.
-func (pi *Input) Write(src []byte) (n int, err error) {
+func (in *Input) Write(src []byte) (n int, err error) {
 	var (
-		p   = pi.Pipe
-		ss  = &pi.Stats
+		p   = in.Pipe
+		ss  = &in.Stats
 		now = time.Now().UTC()
 	)
 
 	// append src and switch to inbuf if needed
 	n = len(src) // NB: always return n=len(src)
 	raw := src
-	if len(pi.ibuf) > 0 {
-		pi.ibuf = append(pi.ibuf, raw...)
-		raw = pi.ibuf // [1]
+	if len(in.ibuf) > 0 {
+		in.ibuf = append(in.ibuf, raw...)
+		raw = in.ibuf // [1]
 	}
 
 	// on return, leave the remainder at the start of d.inbuf?
 	defer func() {
 		if len(raw) == 0 {
-			pi.ibuf = pi.ibuf[:0]
-		} else if len(pi.ibuf) == 0 || &raw[0] != &pi.ibuf[0] { // NB: trick to avoid self-copy [1]
-			pi.ibuf = append(pi.ibuf[:0], raw...)
+			in.ibuf = in.ibuf[:0]
+		} else if len(in.ibuf) == 0 || &raw[0] != &in.ibuf[0] { // NB: trick to avoid self-copy [1]
+			in.ibuf = append(in.ibuf[:0], raw...)
 		} // otherwise there is something left, but already @ s.inbuf[0:]
 	}()
 
@@ -286,7 +317,7 @@ func (pi *Input) Write(src []byte) (n int, err error) {
 		m.CopyData()
 
 		// send
-		if err := pi.WriteMsg(m); err != nil {
+		if err := in.WriteMsg(m); err != nil {
 			return n, err
 		}
 	}

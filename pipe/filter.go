@@ -30,7 +30,14 @@ const (
 
 func filterSkip(li *Input, cb *Callback) bool {
 	cbid := cb.Id
-	val, _ := li.FilterValue.(int)
+	if cbid == 0 {
+		return false
+	}
+
+	val, ok := li.FilterValue.(int)
+	if !ok {
+		return false
+	}
 
 	switch li.CallbackFilter {
 	case FILTER_NONE:

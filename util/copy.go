@@ -26,9 +26,9 @@ func CopyThrough(p *pipe.Pipe, lhs, rhs io.ReadWriteCloser) (lhsb, rhsb []int, e
 
 	// add inputs
 	po := &p.Options
-	rin = po.AddInput(msg.DST_R)
+	rin = po.AddInput(msg.DIR_R)
 	if rhs != nil {
-		lin = po.AddInput(msg.DST_L)
+		lin = po.AddInput(msg.DIR_L)
 	}
 
 	p.Start()
@@ -42,7 +42,7 @@ func CopyThrough(p *pipe.Pipe, lhs, rhs io.ReadWriteCloser) (lhsb, rhsb []int, e
 		if rhs == nil {
 			p.Stop()
 		} else {
-			rin.CloseInput()
+			rin.Close()
 		}
 
 		wg.Done()
@@ -69,7 +69,7 @@ func CopyThrough(p *pipe.Pipe, lhs, rhs io.ReadWriteCloser) (lhsb, rhsb []int, e
 			rhs_rx, rhs_rxerr = io.Copy(lin, rhs)
 			p.Debug().Err(rhs_rxerr).Msg("CopyThrough: RHS reader done")
 
-			lin.CloseInput()
+			lin.Close()
 			wg.Done()
 		}()
 

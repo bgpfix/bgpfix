@@ -3,8 +3,6 @@ package pipe
 
 import (
 	"context"
-	"slices"
-	"sort"
 	"sync"
 	"sync/atomic"
 
@@ -39,9 +37,6 @@ type Pipe struct {
 	stopped atomic.Bool    // true iff Stop() called
 	wgstart sync.WaitGroup // 1 before start, 0 after start
 
-	cbs []*Callback // sorted callbacks
-	hds []*Handler  // sorted handlers
-
 	evch   chan *Event           // pipe event input
 	evwg   sync.WaitGroup        // event handler routine
 	events map[string][]*Handler // maps events to their handlers
@@ -60,33 +55,37 @@ func NewPipe(ctx context.Context) *Pipe {
 	p.Caps.Init() // NB: make it thread-safe
 	p.KV = xsync.NewMapOf[any]()
 
-	p.evch = make(chan *Event, 10)
-	p.events = make(map[string][]*Handler)
-
 	p.R = &Line{
 		Pipe: p,
-		Dst:  msg.DST_R,
+		Dir:  msg.DIR_R,
 		In:   make(chan *msg.Msg, 10),
 		Out:  make(chan *msg.Msg, 10),
 	}
 	p.R.Input = &Input{
-		Dst: msg.DST_R,
+		Dir: msg.DIR_R,
 		In:  p.R.In,
 	}
 
 	p.L = &Line{
 		Pipe: p,
-		Dst:  msg.DST_L,
+		Dir:  msg.DIR_L,
 		In:   make(chan *msg.Msg, 10),
 		Out:  make(chan *msg.Msg, 10),
 	}
 	p.L.Input = &Input{
-		Dst: msg.DST_L,
+		Dir: msg.DIR_L,
 		In:  p.L.In,
 	}
 
-	p.wgstart.Add(1)
+	// NB: add internal handlers
+	p.events = map[string][]*Handler{
+		EVENT_ALIVE: {&Handler{
+			Func: p.onAlive,
+		}},
+	}
+	p.evch = make(chan *Event, 10)
 
+	p.wgstart.Add(1)
 	return p
 }
 
@@ -107,73 +106,12 @@ func (p *Pipe) attach() {
 		p.msgpool = new(sync.Pool)
 	}
 
-	// sort valid callbacks to p.cbs
-	for _, cb := range opts.Callbacks {
-		if cb != nil && cb.Func != nil {
-			p.cbs = append(p.cbs, cb)
-		}
-	}
-	slices.SortStableFunc(p.cbs, func(a, b *Callback) int {
-		if a.Pre != b.Pre {
-			if a.Pre {
-				return -1
-			} else {
-				return 1
-			}
-		}
-		if a.Post != b.Post {
-			if a.Post {
-				return 1
-			} else {
-				return -1
-			}
-		}
-		return a.Order - b.Order
-	})
-
-	// sort valid handlers to p.hds
-	for _, hd := range opts.Handlers {
-		if hd != nil && hd.Func != nil {
-			p.hds = append(p.hds, hd)
-		}
-	}
-	slices.SortStableFunc(p.hds, func(a, b *Handler) int {
-		if a.Pre != b.Pre {
-			if a.Pre {
-				return -1
-			} else {
-				return 1
-			}
-		}
-		if a.Post != b.Post {
-			if a.Post {
-				return 1
-			} else {
-				return -1
-			}
-		}
-		return a.Order - b.Order
-	})
-
-	// register the very first EVENT_ALIVE handler
-	p.events[EVENT_ALIVE] = append(p.events[EVENT_ALIVE], &Handler{
-		Func: p.onAlive,
-	})
-
-	// rewrite event handlers to p.events
-	for _, h := range p.hds {
-		if h == nil || h.Func == nil {
-			return
-		}
-		sort.Strings(h.Types)
-		for _, typ := range slices.Compact(h.Types) {
-			p.events[typ] = append(p.events[typ], h)
-		}
-	}
-
 	// attach Inputs to Lines
 	p.L.attach()
 	p.R.attach()
+
+	// attach Event handler
+	p.attachEvent()
 }
 
 // onAlive is called whenever either direction gets a new KEEPALIVE message,
@@ -233,21 +171,13 @@ func (p *Pipe) Start() {
 	p.attach()
 
 	// start line inputs
-	p.L.StartInputs()
-	p.R.StartInputs()
+	p.L.start()
+	p.R.start()
 
-	// wait for L, R, and both to finish
+	// stop the pipe when both lines finish
 	go func() {
-		p.L.WaitInputs()
-		p.L.CloseOutput()
-	}()
-	go func() {
-		p.R.WaitInputs()
-		p.R.CloseOutput()
-	}()
-	go func() {
-		p.L.WaitInputs()
-		p.R.WaitInputs()
+		p.L.Wait()
+		p.R.Wait()
 		p.Stop()
 	}()
 
@@ -255,7 +185,7 @@ func (p *Pipe) Start() {
 	p.evwg.Add(1)
 	go p.eventHandler(&p.evwg)
 
-	// stop everything on context cancel
+	// stop the pipe on context cancel
 	go func() {
 		<-p.ctx.Done()
 		p.Stop()
@@ -276,18 +206,18 @@ func (p *Pipe) Stop() {
 	}
 
 	// publish the event (ignore the global context)
-	go p.event(&Event{Type: EVENT_STOP}, nil, false)
+	go p.sendEvent(&Event{Type: EVENT_STOP}, nil, false)
 
 	// close all inputs (if not done already)
-	p.L.CloseInputs()
-	p.R.CloseInputs()
+	p.L.Close()
+	p.R.Close()
 
 	// yank the cable out of blocked calls (hopefully)
 	p.cancel(ErrStopped)
 
 	// wait for input handlers
-	p.L.WaitInputs()
-	p.R.WaitInputs()
+	p.L.Wait()
+	p.R.Wait()
 
 	// stop the event handler and wait for it to finish
 	close(p.evch)
@@ -297,8 +227,8 @@ func (p *Pipe) Stop() {
 // Wait blocks until the pipe starts and stops completely.
 func (p *Pipe) Wait() {
 	p.wgstart.Wait()
-	p.L.WaitInputs()
-	p.R.WaitInputs()
+	p.L.Wait()
+	p.R.Wait()
 	p.evwg.Wait()
 }
 
@@ -340,18 +270,18 @@ func (p *Pipe) Put(m *msg.Msg) {
 	p.msgpool.Put(m)
 }
 
-// LineTo returns the line processing messages destined from dst
-func (p *Pipe) LineTo(dst msg.Dst) *Line {
-	if dst == msg.DST_L {
+// LineTo returns the line processing messages destined to dst
+func (p *Pipe) LineTo(dst msg.Dir) *Line {
+	if dst == msg.DIR_L {
 		return p.L
 	} else {
 		return p.R
 	}
 }
 
-// LineFrom returns the line processing messages coming from dst
-func (p *Pipe) LineFrom(dst msg.Dst) *Line {
-	if dst == msg.DST_L {
+// LineFrom returns the line processing messages coming from src
+func (p *Pipe) LineFrom(src msg.Dir) *Line {
+	if src == msg.DIR_L {
 		return p.R
 	} else {
 		return p.L

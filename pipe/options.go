@@ -40,7 +40,7 @@ type Callback struct {
 	Raw  bool // if true, do not parse the message (which may already be parsed, but for other reasons)
 	Post bool // run after non-post callbacks?
 
-	Dst   msg.Dst      // if non-zero, limits the direction
+	Dir   msg.Dir      // if non-zero, limits the direction
 	Types []msg.Type   // if non-empty, limits message types
 	Func  CallbackFunc // the function to call
 }
@@ -55,7 +55,7 @@ type Handler struct {
 	Pre  bool // run before non-pre handlers?
 	Post bool // run after non-post handlers?
 
-	Dst   msg.Dst     // if non-zero, limits the direction
+	Dir   msg.Dir     // if non-zero, limits the direction
 	Types []string    // if non-empty, limits event types
 	Func  HandlerFunc // the function to call
 }
@@ -95,30 +95,30 @@ func (o *Options) AddCallback(cbf CallbackFunc, tpl ...*Callback) *Callback {
 }
 
 // OnMsg adds a callback for all messages of given types (or all types if not specified).
-func (o *Options) OnMsg(cbf CallbackFunc, dst msg.Dst, types ...msg.Type) *Callback {
+func (o *Options) OnMsg(cbf CallbackFunc, dir msg.Dir, types ...msg.Type) *Callback {
 	return o.AddCallback(cbf, &Callback{
 		Order: len(o.Callbacks) + 1,
-		Dst:   dst,
+		Dir:   dir,
 		Types: types,
 	})
 }
 
 // OnMsgPre is like OnMsg but requests to run cb before other callbacks
-func (o *Options) OnMsgPre(cbf CallbackFunc, dst msg.Dst, types ...msg.Type) *Callback {
+func (o *Options) OnMsgPre(cbf CallbackFunc, dir msg.Dir, types ...msg.Type) *Callback {
 	return o.AddCallback(cbf, &Callback{
 		Pre:   true,
 		Order: -len(o.Callbacks) - 1,
-		Dst:   dst,
+		Dir:   dir,
 		Types: types,
 	})
 }
 
 // OnMsgPost is like OnMsg but requests to run cb after other callbacks
-func (o *Options) OnMsgPost(cbf CallbackFunc, dst msg.Dst, types ...msg.Type) *Callback {
+func (o *Options) OnMsgPost(cbf CallbackFunc, dir msg.Dir, types ...msg.Type) *Callback {
 	return o.AddCallback(cbf, &Callback{
 		Post:  true,
 		Order: len(o.Callbacks) + 1,
-		Dst:   dst,
+		Dir:   dir,
 		Types: types,
 	})
 }
@@ -202,7 +202,7 @@ func (o *Options) OnParseError(hdf HandlerFunc) *Handler {
 }
 
 // AddInput adds pipe Input for given destination, with optional details in tpl.
-func (o *Options) AddInput(dst msg.Dst, tpl ...*Input) *Input {
+func (o *Options) AddInput(dir msg.Dir, tpl ...*Input) *Input {
 	var pi Input
 
 	// deep copy the tpl?
@@ -222,11 +222,11 @@ func (o *Options) AddInput(dst msg.Dst, tpl ...*Input) *Input {
 		pi.In = make(chan *msg.Msg, 10)
 	}
 
-	// dst
-	if dst == msg.DST_L {
-		pi.Dst = msg.DST_L
+	// dir
+	if dir == msg.DIR_L {
+		pi.Dir = msg.DIR_L
 	} else {
-		pi.Dst = msg.DST_R
+		pi.Dir = msg.DIR_R
 	}
 
 	o.Inputs = append(o.Inputs, &pi)

@@ -24,7 +24,7 @@ type Msg struct {
 
 	// optional metadata
 
-	Dst  Dst       // message destination
+	Dir  Dir       // message destination
 	Seq  int64     // sequence number
 	Time time.Time // message timestamp
 
@@ -54,23 +54,23 @@ type Value interface {
 	FromJSON(src []byte) error
 }
 
-// BGP message destination (message direction)
-type Dst byte
+// BGP message direction
+type Dir byte
 
-//go:generate go run github.com/dmarkham/enumer -type Dst -trimprefix DST_
+//go:generate go run github.com/dmarkham/enumer -type Dir -trimprefix DIR_
 const (
-	DST_LR Dst = 0 // no particular destination (ie. both L and R)
-	DST_L  Dst = 1 // destined for L ("left" or "local")
-	DST_R  Dst = 2 // destined for R ("right" or "remote")
+	DIR_LR Dir = 0 // no particular direction (ie. both L and R)
+	DIR_L  Dir = 1 // L direction: "left" or "local"
+	DIR_R  Dir = 2 // R direction: "right" or "remote"
 )
 
 // Flip returns the opposite direction
-func (d Dst) Flip() Dst {
+func (d Dir) Flip() Dir {
 	switch d {
-	case DST_L:
-		return DST_R
-	case DST_R:
-		return DST_L
+	case DIR_L:
+		return DIR_R
+	case DIR_R:
+		return DIR_L
 	default:
 		return 0
 	}
@@ -136,7 +136,7 @@ func (msg *Msg) Reset() *Msg {
 		msg.buf = nil
 	}
 
-	msg.Dst = 0
+	msg.Dir = 0
 	msg.Seq = 0
 	msg.Time = time.Time{}
 
@@ -382,7 +382,7 @@ func (msg *Msg) ToJSON(dst []byte) []byte {
 	dst = append(dst, `["`...)
 
 	// [0] direction
-	dst = append(dst, msg.Dst.String()...) // TODO: or number
+	dst = append(dst, msg.Dir.String()...) // TODO: or number
 	dst = append(dst, `",`...)
 
 	// [1] sequence number (for dir)
@@ -439,11 +439,11 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 		switch key {
 		case 0: // dst TODO: better
 			if typ == json.STRING {
-				msg.Dst, err = DstString(json.S(val))
+				msg.Dir, err = DirString(json.S(val))
 			} else if typ == json.NUMBER {
 				var v byte
 				v, err = json.UnByte(val)
-				msg.Dst = Dst(v)
+				msg.Dir = Dir(v)
 			}
 
 		case 1: // seq number

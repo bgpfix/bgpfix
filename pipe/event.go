@@ -3,6 +3,7 @@ package pipe
 import (
 	"context"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 
@@ -41,10 +42,12 @@ type Event struct {
 	Time time.Time `json:"time,omitempty"` // event timestamp
 
 	Type  string   `json:"type"`  // type, usually "lib/pkg.NAME"
-	Dst   msg.Dst  `json:"dst"`   // optional destination
+	Dir   msg.Dir  `json:"dir"`   // optional event direction
 	Msg   *msg.Msg `json:"-"`     // optional message that caused the event
-	Error error    `json:"err"`   // optional error value
+	Error error    `json:"err"`   // optional error related to the event
 	Value any      `json:"value"` // optional value, type-specific
+
+	done chan struct{} // closed when all handlers are done
 }
 
 // String returns the event Type, or "(nil)" if ev is nil
@@ -56,14 +59,60 @@ func (ev *Event) String() string {
 	}
 }
 
+// Wait blocks until the event is handled
+func (ev *Event) Wait() {
+	<-ev.done
+}
+
+// attachEvent initializes the event handler
+func (p *Pipe) attachEvent() {
+	// copy valid handlers to hds
+	var hds []*Handler
+	for _, hd := range p.Options.Handlers {
+		if hd != nil && hd.Func != nil {
+			hds = append(hds, hd)
+		}
+	}
+
+	// sort hds
+	slices.SortStableFunc(hds, func(a, b *Handler) int {
+		if a.Pre != b.Pre {
+			if a.Pre {
+				return -1
+			} else {
+				return 1
+			}
+		}
+		if a.Post != b.Post {
+			if a.Post {
+				return 1
+			} else {
+				return -1
+			}
+		}
+		return a.Order - b.Order
+	})
+
+	// rewrite event handlers to p.events
+	for _, h := range hds {
+		types := slices.Clone(h.Types)
+		slices.Sort(types)
+		for _, typ := range slices.Compact(types) {
+			p.events[typ] = append(p.events[typ], h)
+		}
+	}
+}
+
 // Event announces a new event type et to the pipe, with optional arguments.
-// The first msg.Dst argument is used as ev.Dst.
+// The first msg.Dir argument is used as ev.Dir.
 // The first *msg.Msg is used as ev.Msg and borrowed (add ACTION_BORROW).
 // All error arguments are joined together into single ev.Error.
 // The remaining arguments are used as ev.Val.
-// Returns true iff the event was queued for processing.
-func (p *Pipe) Event(et string, args ...any) (sent bool) {
-	ev := &Event{Type: et}
+func (p *Pipe) Event(et string, args ...any) *Event {
+	ev := &Event{
+		Type: et,
+		done: make(chan struct{}),
+	}
 
 	// process args
 	var errs []error
@@ -74,8 +123,8 @@ func (p *Pipe) Event(et string, args ...any) (sent bool) {
 			Context(m).Action.Add(ACTION_BORROW) // make m safe to reference for later use
 			ev.Msg = m
 			msg_set = true
-		} else if d, ok := arg.(msg.Dst); ok && !dst_set {
-			ev.Dst = d
+		} else if d, ok := arg.(msg.Dir); ok && !dst_set {
+			ev.Dir = d
 			dst_set = true
 		} else if err, ok := arg.(error); ok {
 			errs = append(errs, err)
@@ -104,11 +153,16 @@ func (p *Pipe) Event(et string, args ...any) (sent bool) {
 		ev.Value = vals
 	}
 
-	return p.event(ev, p.ctx, false)
+	sent := p.sendEvent(ev, p.ctx, false)
+	if !sent {
+		close(ev.done)
+	}
+
+	return ev
 }
 
-// event sends ev with given ctx; if noblock is true, it never blocks on full channel
-func (p *Pipe) event(ev *Event, ctx context.Context, noblock bool) (sent bool) {
+// sendEvent sends ev with given ctx; if noblock is true, it never blocks on full channel
+func (p *Pipe) sendEvent(ev *Event, ctx context.Context, noblock bool) (sent bool) {
 	defer func() { recover() }() // in case of closed p.events
 
 	ev.Pipe = p
@@ -168,7 +222,7 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 			if h.Enabled != nil && !h.Enabled.Load() {
 				continue // disabled
 			}
-			if h.Dst != 0 && h.Dst != ev.Dst {
+			if h.Dir != 0 && h.Dir != ev.Dir {
 				continue // different direction
 			}
 			if !h.Func(ev) {
@@ -184,12 +238,17 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 			if h.Enabled != nil && !h.Enabled.Load() {
 				continue // disabled
 			}
-			if h.Dst != 0 && h.Dst != ev.Dst {
+			if h.Dir != 0 && h.Dir != ev.Dir {
 				continue // different direction
 			}
 			if !h.Func(ev) {
 				h.Func = nil // drop [3]
 			}
+		}
+
+		// event is done
+		if ev.done != nil {
+			close(ev.done)
 		}
 	}
 }
