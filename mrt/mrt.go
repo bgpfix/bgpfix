@@ -182,7 +182,7 @@ func (m *Mrt) Parse(raw []byte) (off int, err error) {
 // WriteTo writes the MRT message to w, implementing io.WriterTo
 func (m *Mrt) WriteTo(w io.Writer) (n int64, err error) {
 	// data length ok?
-	if len(m.Data) > MAXLEN {
+	if int64(len(m.Data)) > MAXLEN {
 		return n, ErrLength
 	}
 

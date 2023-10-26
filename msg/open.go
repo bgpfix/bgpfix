@@ -165,7 +165,7 @@ func (o *Open) ParseCaps() error {
 // SetASN sets local ASN number in o and its AS4
 func (o *Open) SetASN(asn int) {
 	// o'rlly?
-	if asn < 0 || asn > math.MaxUint32 {
+	if asn < 0 || int64(asn) > math.MaxUint32 {
 		asn = 0
 	}
 
