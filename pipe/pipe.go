@@ -80,7 +80,7 @@ func NewPipe(ctx context.Context) *Pipe {
 	// NB: add internal handlers
 	p.events = map[string][]*Handler{
 		EVENT_ALIVE: {&Handler{
-			Func: p.onAlive,
+			Func: p.checkEstablished,
 		}},
 	}
 	p.evch = make(chan *Event, 10)
@@ -114,16 +114,16 @@ func (p *Pipe) attach() {
 	p.attachEvent()
 }
 
-// onAlive is called whenever either direction gets a new KEEPALIVE message,
+// checkEstablished is called whenever either direction gets a new KEEPALIVE message,
 // until it emits EVENT_ESTABLISHED and unregisters. Fills p.Caps if enabled.
-func (p *Pipe) onAlive(ev *Event) bool {
+func (p *Pipe) checkEstablished(ev *Event) bool {
 	// already seen KEEPALIVE in both directions?
 	rstamp, lstamp := p.R.LastAlive.Load(), p.L.LastAlive.Load()
 	if rstamp == 0 || lstamp == 0 {
 		return true // not yet, keep trying
 	}
 
-	// seen OPEN for both directions?
+	// seen OPEN in both directions?
 	ropen, lopen := p.R.Open.Load(), p.L.Open.Load()
 	if ropen == nil || lopen == nil {
 		return true // strange, but keep trying
@@ -154,7 +154,7 @@ func (p *Pipe) onAlive(ev *Event) bool {
 	}
 
 	// announce the session is established
-	p.Event(EVENT_ESTABLISHED, nil)
+	p.Event(EVENT_ESTABLISHED, max(rstamp, lstamp))
 
 	// no more calls to this callback
 	return false
@@ -192,7 +192,7 @@ func (p *Pipe) Start() {
 	}()
 
 	// publish the start event!
-	go p.Event(EVENT_START, nil)
+	go p.Event(EVENT_START)
 	p.wgstart.Done()
 }
 

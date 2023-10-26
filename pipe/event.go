@@ -144,12 +144,7 @@ func (p *Pipe) Event(et string, args ...any) *Event {
 	}
 
 	// set value
-	switch len(vals) {
-	case 0:
-		ev.Value = nil
-	case 1:
-		ev.Value = vals[0]
-	case 2:
+	if len(vals) > 0 {
 		ev.Value = vals
 	}
 
