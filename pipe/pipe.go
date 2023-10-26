@@ -8,7 +8,7 @@ import (
 
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/msg"
-	"github.com/puzpuzpuz/xsync/v2"
+	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/rs/zerolog"
 )
 
@@ -53,7 +53,7 @@ func NewPipe(ctx context.Context) *Pipe {
 	p.Options = DefaultOptions
 
 	p.Caps.Init() // NB: make it thread-safe
-	p.KV = xsync.NewMapOf[any]()
+	p.KV = xsync.NewMapOf[string, any]()
 
 	p.R = &Line{
 		Pipe: p,

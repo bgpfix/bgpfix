@@ -11,7 +11,7 @@ import (
 
 	"github.com/bgpfix/bgpfix/binary"
 	"github.com/bgpfix/bgpfix/json"
-	"github.com/puzpuzpuz/xsync/v2"
+	"github.com/puzpuzpuz/xsync/v3"
 )
 
 var msb = binary.Msb
@@ -32,7 +32,7 @@ type Caps struct {
 // Can be called multiple times for lazy init.
 func (cps *Caps) Init() {
 	if cps.db == nil {
-		cps.db = xsync.NewIntegerMapOf[Code, Cap]()
+		cps.db = xsync.NewMapOf[Code, Cap]()
 	}
 }
 
