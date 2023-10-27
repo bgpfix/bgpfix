@@ -141,6 +141,14 @@ func (a *Aspath) ToJSON(dst []byte) []byte {
 	return dst
 }
 
+func (a *Aspath) String() string {
+	if a != nil {
+		return json.S(a.ToJSON(nil))
+	} else {
+		return "(nil)"
+	}
+}
+
 func (a *Aspath) FromJSON(src []byte) error {
 	var seg AspathSegment
 

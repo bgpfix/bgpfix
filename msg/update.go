@@ -176,10 +176,29 @@ func (u *Update) Safi() af.SAFI {
 	}
 }
 
-// ReachMP returns attr.ATTR_MP_REACH value from u, or nil if not defined
+// ReachMP returns ATTR_MP_REACH value from u, or nil if not defined
 func (u *Update) ReachMP() attrs.MPValue {
 	if a, ok := u.Attrs.Get(attrs.ATTR_MP_REACH).(*attrs.MP); ok {
 		return a.Value
+	} else {
+		return nil
+	}
+}
+
+// ReachPrefixes returns ATTR_MP_REACH prefixes from u, if it matches afi/safi pair, or nil.
+func (u *Update) ReachPrefixes(afi af.AFI, safi af.SAFI) *attrs.MPPrefixes {
+	a, ok := u.Attrs.Get(attrs.ATTR_MP_REACH).(*attrs.MP)
+	if !ok {
+		return nil
+	}
+
+	p, ok := a.Value.(*attrs.MPPrefixes)
+	if !ok {
+		return nil
+	}
+
+	if a.AS.Afi() == afi && a.AS.Safi() == safi {
+		return p
 	} else {
 		return nil
 	}
@@ -189,6 +208,35 @@ func (u *Update) ReachMP() attrs.MPValue {
 func (u *Update) UnreachMP() attrs.MPValue {
 	if a, ok := u.Attrs.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); ok {
 		return a.Value
+	} else {
+		return nil
+	}
+}
+
+// UnreachPrefixes returns ATTR_MP_UNREACH prefixes from u, if it matches afi/safi pair, or nil.
+func (u *Update) UnreachPrefixes(afi af.AFI, safi af.SAFI) *attrs.MPPrefixes {
+	a, ok := u.Attrs.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP)
+	if !ok {
+		return nil
+	}
+
+	p, ok := a.Value.(*attrs.MPPrefixes)
+	if !ok {
+		return nil
+	}
+
+	if a.AS.Afi() == afi && a.AS.Safi() == safi {
+		return p
+	} else {
+		return nil
+	}
+}
+
+// Aspath returns the ATTR_ASPATH from u, or nil if not defined.
+// TODO: support ATTR_AS4PATH
+func (u *Update) Aspath() *attrs.Aspath {
+	if ap, ok := u.Attrs.Get(attrs.ATTR_ASPATH).(*attrs.Aspath); ok {
+		return ap
 	} else {
 		return nil
 	}
