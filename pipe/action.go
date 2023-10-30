@@ -5,7 +5,7 @@ type Action byte
 
 const (
 	// The default, zero action: keep processing as-is.
-	ACTION_CONTINUE Action = 0
+	ACTION_OK Action = 0
 
 	// Keep the message for later use, do not re-use its memory.
 	//

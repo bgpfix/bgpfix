@@ -228,10 +228,32 @@ func (ats *Attrs) MPPrefixes(ac Code) *MPPrefixes {
 
 // Aspath returns the ATTR_ASPATH from u, or nil if not defined.
 // TODO: support ATTR_AS4PATH
-func (ats *Attrs) Aspath() *Aspath {
+func (ats *Attrs) AsPath() *Aspath {
 	if ap, ok := ats.Get(ATTR_ASPATH).(*Aspath); ok {
 		return ap
 	} else {
 		return nil
 	}
+}
+
+// AsOrigin returns the last AS in AS_PATH, or 0 on error
+func (ats *Attrs) AsOrigin() uint32 {
+	asp := ats.AsPath()
+	if asp == nil {
+		return 0
+	}
+
+	for i := len(asp.Segments) - 1; i >= 0; i-- {
+		seg := &asp.Segments[i]
+		switch {
+		case len(seg.List) == 0:
+			continue
+		case seg.IsSet:
+			return 0
+		default:
+			return seg.List[len(seg.List)-1]
+		}
+	}
+
+	return 0
 }
