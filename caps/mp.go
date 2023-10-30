@@ -9,11 +9,11 @@ import (
 
 // MP implements CAP_MP rfc4760
 type MP struct {
-	Proto map[af.AS]bool
+	Proto map[af.AF]bool
 }
 
 func NewMP(cc Code) Cap {
-	return &MP{make(map[af.AS]bool)}
+	return &MP{make(map[af.AF]bool)}
 }
 
 func (c *MP) Unmarshal(buf []byte, caps Caps) error {
@@ -28,18 +28,18 @@ func (c *MP) Unmarshal(buf []byte, caps Caps) error {
 }
 
 func (c *MP) Add(afi af.AFI, safi af.SAFI) {
-	c.Proto[af.NewAS(afi, safi)] = true
+	c.Proto[af.New(afi, safi)] = true
 }
 
 func (c *MP) Has(afi af.AFI, safi af.SAFI) bool {
-	return c.Proto[af.NewAS(afi, safi)]
+	return c.Proto[af.New(afi, safi)]
 }
 
 func (c *MP) Drop(afi af.AFI, safi af.SAFI) {
-	delete(c.Proto, af.NewAS(afi, safi))
+	delete(c.Proto, af.New(afi, safi))
 }
 
-func (c *MP) Sorted() (dst []af.AS) {
+func (c *MP) Sorted() (dst []af.AF) {
 	for as, val := range c.Proto {
 		if val {
 			dst = append(dst, as)
@@ -58,7 +58,7 @@ func (c *MP) Intersect(cap2 Cap) Cap {
 	}
 
 	dst := &MP{
-		Proto: make(map[af.AS]bool),
+		Proto: make(map[af.AF]bool),
 	}
 	for as, val := range c.Proto {
 		if val && c2.Proto[as] {
@@ -88,7 +88,7 @@ func (c *MP) ToJSON(dst []byte) []byte {
 }
 
 func (c *MP) FromJSON(src []byte) (err error) {
-	var as af.AS
+	var as af.AF
 	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
 		if err := as.FromJSON(val); err != nil {
 			return err

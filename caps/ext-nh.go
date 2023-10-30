@@ -9,11 +9,11 @@ import (
 
 // ExtNH implements CAP_EXTENDED_NEXTHOP rfc8950
 type ExtNH struct {
-	Proto map[af.ASV]bool
+	Proto map[af.AFV]bool
 }
 
 func NewExtNH(cc Code) Cap {
-	return &ExtNH{make(map[af.ASV]bool)}
+	return &ExtNH{make(map[af.AFV]bool)}
 }
 
 func (c *ExtNH) Unmarshal(buf []byte, caps Caps) error {
@@ -33,18 +33,18 @@ func (c *ExtNH) Unmarshal(buf []byte, caps Caps) error {
 }
 
 func (c *ExtNH) Add(afi af.AFI, safi af.SAFI, nhf af.AFI) {
-	c.Proto[af.NewASV(afi, safi, uint32(nhf))] = true
+	c.Proto[af.NewAFV(afi, safi, uint32(nhf))] = true
 }
 
 func (c *ExtNH) Has(afi af.AFI, safi af.SAFI, nhf af.AFI) bool {
-	return c.Proto[af.NewASV(afi, safi, uint32(nhf))]
+	return c.Proto[af.NewAFV(afi, safi, uint32(nhf))]
 }
 
 func (c *ExtNH) Drop(afi af.AFI, safi af.SAFI, nhf af.AFI) {
-	delete(c.Proto, af.NewASV(afi, safi, uint32(nhf)))
+	delete(c.Proto, af.NewAFV(afi, safi, uint32(nhf)))
 }
 
-func (c *ExtNH) Sorted() (dst []af.ASV) {
+func (c *ExtNH) Sorted() (dst []af.AFV) {
 	for asv, val := range c.Proto {
 		if val {
 			dst = append(dst, asv)
@@ -62,7 +62,7 @@ func (c *ExtNH) Intersect(cap2 Cap) Cap {
 		return nil
 	}
 
-	dst := &ExtNH{make(map[af.ASV]bool)}
+	dst := &ExtNH{make(map[af.AFV]bool)}
 	for asv, val := range c.Proto {
 		if val && c2.Proto[asv] {
 			dst.Proto[asv] = true
@@ -74,7 +74,7 @@ func (c *ExtNH) Intersect(cap2 Cap) Cap {
 func (c *ExtNH) Marshal(dst []byte) []byte {
 	todo := c.Sorted()
 
-	var step []af.ASV
+	var step []af.AFV
 	for len(todo) > 0 {
 		if len(todo) > 42 {
 			dst = append(dst, byte(CAP_EXTENDED_NEXTHOP), 6*42)
@@ -108,7 +108,7 @@ func (c *ExtNH) ToJSON(dst []byte) []byte {
 }
 
 func (c *ExtNH) FromJSON(src []byte) (err error) {
-	var asv af.ASV
+	var asv af.AFV
 	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
 		if err := asv.FromJSONAfi(val); err != nil {
 			return err

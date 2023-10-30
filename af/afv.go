@@ -6,40 +6,40 @@ import (
 	"github.com/bgpfix/bgpfix/json"
 )
 
-// ASV represents AFI+SAFI+VAL as afi(16) + 0(8) + safi(8) + val(32)
-type ASV uint64
+// AFV represents AFI+SAFI+VAL as afi(16) + 0(8) + safi(8) + val(32)
+type AFV uint64
 
-func NewASV(afi AFI, safi SAFI, val uint32) ASV {
-	return ASV(uint64(afi)<<48 | uint64(safi)<<32 | uint64(val))
+func NewAFV(afi AFI, safi SAFI, val uint32) AFV {
+	return AFV(uint64(afi)<<48 | uint64(safi)<<32 | uint64(val))
 }
 
-func (asv ASV) Afi() AFI {
+func (asv AFV) Afi() AFI {
 	return AFI(asv >> 48)
 }
 
-func (asv ASV) Safi() SAFI {
+func (asv AFV) Safi() SAFI {
 	return SAFI(asv >> 32)
 }
 
-func (asv ASV) Val() uint32 {
+func (asv AFV) Val() uint32 {
 	return uint32(asv)
 }
 
 // ToJSONAfi interprets Val as an AFI
-func (asv ASV) ToJSONAfi(dst []byte) []byte {
+func (afv AFV) ToJSONAfi(dst []byte) []byte {
 	dst = append(dst, '"')
-	dst = append(dst, asv.Afi().String()...)
+	dst = append(dst, afv.Afi().String()...)
 	dst = append(dst, '/')
-	dst = append(dst, asv.Safi().String()...)
+	dst = append(dst, afv.Safi().String()...)
 	dst = append(dst, '/')
-	afi2 := AFI(asv.Val())
+	afi2 := AFI(afv.Val())
 	dst = append(dst, afi2.String()...)
 	dst = append(dst, '"')
 	return dst
 }
 
 // FromJSONAfi interprets Val as an AFI
-func (asv *ASV) FromJSONAfi(src []byte) error {
+func (afv *AFV) FromJSONAfi(src []byte) error {
 	d := strings.Split(json.SQ(src), "/")
 	if len(d) != 3 {
 		return ErrValue
@@ -60,6 +60,6 @@ func (asv *ASV) FromJSONAfi(src []byte) error {
 		return err
 	}
 
-	*asv = NewASV(afi, safi, uint32(afi2))
+	*afv = NewAFV(afi, safi, uint32(afi2))
 	return nil
 }

@@ -208,3 +208,30 @@ func (ats *Attrs) FromJSON(src []byte) error {
 		return nil
 	})
 }
+
+// MP returns raw MP-BGP attribute ac
+func (ats *Attrs) MP(ac Code) *MP {
+	if a, ok := ats.Get(ac).(*MP); ok {
+		return a
+	}
+	return nil
+}
+
+// MPPrefixes returns *MPPrefixes MP-BGP attribute ac
+func (ats *Attrs) MPPrefixes(ac Code) *MPPrefixes {
+	if a, ok := ats.Get(ac).(*MP); ok && a.Value != nil {
+		pfx, _ := a.Value.(*MPPrefixes)
+		return pfx
+	}
+	return nil
+}
+
+// Aspath returns the ATTR_ASPATH from u, or nil if not defined.
+// TODO: support ATTR_AS4PATH
+func (ats *Attrs) Aspath() *Aspath {
+	if ap, ok := ats.Get(ATTR_ASPATH).(*Aspath); ok {
+		return ap
+	} else {
+		return nil
+	}
+}

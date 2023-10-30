@@ -9,7 +9,7 @@ import (
 // MP represents ATTR_MP_REACH and ATTR_MP_UNREACH attributes
 type MP struct {
 	CodeFlags
-	af.AS
+	af.AF
 
 	NH    []byte  // only for ATTR_MP_REACH
 	Data  []byte  // NLRI or unreachable
@@ -41,12 +41,12 @@ type MPValue interface {
 type MPNewFunc func(mp *MP) MPValue
 
 // MPNewFuncs maps ATTR_MP_* afi/safi pairs to their NewFunc
-var MPNewFuncs = map[af.AS]MPNewFunc{
-	af.NewAS(af.AFI_IPV4, af.SAFI_UNICAST):  NewMPPrefixes,
-	af.NewAS(af.AFI_IPV4, af.SAFI_FLOWSPEC): NewMPFlowspec,
+var MPNewFuncs = map[af.AF]MPNewFunc{
+	af.New(af.AFI_IPV4, af.SAFI_UNICAST):  NewMPPrefixes,
+	af.New(af.AFI_IPV4, af.SAFI_FLOWSPEC): NewMPFlowspec,
 
-	af.NewAS(af.AFI_IPV6, af.SAFI_UNICAST):  NewMPPrefixes,
-	af.NewAS(af.AFI_IPV6, af.SAFI_FLOWSPEC): NewMPFlowspec,
+	af.New(af.AFI_IPV6, af.SAFI_UNICAST):  NewMPPrefixes,
+	af.New(af.AFI_IPV6, af.SAFI_FLOWSPEC): NewMPFlowspec,
 }
 
 func NewMP(at CodeFlags) Attr {
@@ -56,7 +56,7 @@ func NewMP(at CodeFlags) Attr {
 // NewMPValue returns a new MPValue for parent mp,
 // or nil if its AFI/SAFI pair is not supported.
 func NewMPValue(mp *MP) MPValue {
-	if newfunc, ok := MPNewFuncs[mp.AS]; ok {
+	if newfunc, ok := MPNewFuncs[mp.AF]; ok {
 		return newfunc(mp)
 	} else {
 		return nil
@@ -68,7 +68,7 @@ func (mp *MP) Unmarshal(buf []byte, cps caps.Caps) error {
 	if len(buf) < 3 {
 		return ErrLength
 	}
-	mp.AS = af.NewASBytes(buf[0:3])
+	mp.AF = af.NewASBytes(buf[0:3])
 	buf = buf[3:]
 
 	// nexthop?
@@ -110,7 +110,7 @@ func (mp *MP) Marshal(dst []byte, cps caps.Caps) []byte {
 	}
 	dst = mp.CodeFlags.MarshalLen(dst, tl)
 
-	dst = mp.AS.Marshal3(dst)
+	dst = mp.AF.Marshal3(dst)
 	if mp.Code() == ATTR_MP_REACH {
 		dst = append(dst, byte(len(mp.NH)))
 		dst = append(dst, mp.NH...)
@@ -122,7 +122,7 @@ func (mp *MP) Marshal(dst []byte, cps caps.Caps) []byte {
 
 func (mp *MP) ToJSON(dst []byte) []byte {
 	dst = append(dst, '{')
-	dst = mp.AS.ToJSONKey(dst, "af")
+	dst = mp.AF.ToJSONKey(dst, "af")
 	dst = append(dst, ',')
 
 	if mp.Value != nil {
@@ -144,7 +144,7 @@ func (mp *MP) FromJSON(src []byte) error {
 	err := json.ObjectEach(src, func(key string, val []byte, typ json.Type) (err error) {
 		switch key {
 		case "af":
-			err = mp.AS.FromJSON(val)
+			err = mp.AF.FromJSON(val)
 		case "nh":
 			mp.NH, err = json.UnHex(val, mp.NH[:0])
 		case "data":

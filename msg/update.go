@@ -20,8 +20,7 @@ type Update struct {
 	RawAttrs []byte         // raw attributes
 
 	Attrs attrs.Attrs // parsed attributes
-	afi   af.AFI      // AFI from attr.ATTR_MP_REACH / attr.ATTR_MP_UNREACH
-	safi  af.SAFI     // SAFI from attr.ATTR_MP_REACH / attr.ATTR_MP_UNREACH
+	af    af.AF       // AFI/SAFI from MP-BGP
 }
 
 const (
@@ -39,8 +38,7 @@ func (u *Update) Reset() {
 	u.Reach = u.Reach[:0]
 	u.RawAttrs = nil
 	u.Attrs.Reset()
-	u.afi = 0
-	u.safi = 0
+	u.af = 0
 }
 
 // Parse parses msg.Data as BGP UPDATE
@@ -144,102 +142,19 @@ func (u *Update) ParseAttrs(cps caps.Caps) error {
 	return nil
 }
 
-func (u *Update) afisafi() bool {
-	if reach, ok := u.Attrs.Get(attrs.ATTR_MP_REACH).(*attrs.MP); ok {
-		u.afi = reach.Afi()
-		u.safi = reach.Safi()
-		return true
-	} else if unreach, ok := u.Attrs.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); ok {
-		u.afi = unreach.Afi()
-		u.safi = unreach.Safi()
-		return true
-	} else {
-		return false
-	}
-}
-
-// Afi returns the AFI from MP_REACH attribute (or MP_UNREACH)
-func (u *Update) Afi() af.AFI {
-	if u.afi > 0 || u.afisafi() {
-		return u.afi
-	} else {
-		return 0
-	}
-}
-
-// Safi returns the SAFI from MP_REACH attribute (or MP_UNREACH)
-func (u *Update) Safi() af.SAFI {
-	if u.safi > 0 || u.afisafi() {
-		return u.safi
-	} else {
-		return 0
-	}
-}
-
-// ReachMP returns ATTR_MP_REACH value from u, or nil if not defined
-func (u *Update) ReachMP() attrs.MPValue {
-	if a, ok := u.Attrs.Get(attrs.ATTR_MP_REACH).(*attrs.MP); ok {
-		return a.Value
-	} else {
-		return nil
-	}
-}
-
-// ReachPrefixes returns ATTR_MP_REACH prefixes from u, if it matches afi/safi pair, or nil.
-func (u *Update) ReachPrefixes(afi af.AFI, safi af.SAFI) *attrs.MPPrefixes {
-	a, ok := u.Attrs.Get(attrs.ATTR_MP_REACH).(*attrs.MP)
-	if !ok {
-		return nil
+// AF returns the message address family, giving priority to MP-BGP attributes
+func (u *Update) AF() af.AF {
+	if u.af == 0 {
+		if reach, ok := u.Attrs.Get(attrs.ATTR_MP_REACH).(*attrs.MP); ok {
+			u.af = reach.AF
+		} else if unreach, ok := u.Attrs.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); ok {
+			u.af = unreach.AF
+		} else {
+			u.af = af.New(af.AFI_IPV4, af.SAFI_UNICAST)
+		}
 	}
 
-	p, ok := a.Value.(*attrs.MPPrefixes)
-	if !ok {
-		return nil
-	}
-
-	if a.AS.Afi() == afi && a.AS.Safi() == safi {
-		return p
-	} else {
-		return nil
-	}
-}
-
-// UnreachMP returns attr.ATTR_MP_UNREACH value from u, or nil if not defined
-func (u *Update) UnreachMP() attrs.MPValue {
-	if a, ok := u.Attrs.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); ok {
-		return a.Value
-	} else {
-		return nil
-	}
-}
-
-// UnreachPrefixes returns ATTR_MP_UNREACH prefixes from u, if it matches afi/safi pair, or nil.
-func (u *Update) UnreachPrefixes(afi af.AFI, safi af.SAFI) *attrs.MPPrefixes {
-	a, ok := u.Attrs.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP)
-	if !ok {
-		return nil
-	}
-
-	p, ok := a.Value.(*attrs.MPPrefixes)
-	if !ok {
-		return nil
-	}
-
-	if a.AS.Afi() == afi && a.AS.Safi() == safi {
-		return p
-	} else {
-		return nil
-	}
-}
-
-// Aspath returns the ATTR_ASPATH from u, or nil if not defined.
-// TODO: support ATTR_AS4PATH
-func (u *Update) Aspath() *attrs.Aspath {
-	if ap, ok := u.Attrs.Get(attrs.ATTR_ASPATH).(*attrs.Aspath); ok {
-		return ap
-	} else {
-		return nil
-	}
+	return u.af
 }
 
 // MarshalAttrs marshals u.Attrs into u.RawAttrs
