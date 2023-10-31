@@ -6,7 +6,9 @@
 
 A generic-purpose, high-performance Golang library for [bridging the gaps in BGP](https://twitter.com/ACM_IMC2021/status/1445725066403196928).
 
-The main idea is it can "fix" or "extend" BGP sessions in-flight, possibly adding new features or protection layers to proprietary BGP speakers (think big router vendors). As an example, the vision is it can be used to implement:
+See the [bgpipe](https://github.com/bgpfix/bgpipe) BGP reverse proxy for a CLI tool.
+
+BGPFix can "fix" or "extend" BGP sessions in-flight, possibly adding new features or protection layers to proprietary BGP speakers (think big router vendors). The vision is it will allow for implementing:
  * bidirectional BGP session to JSON translation, replacing [exabgp](https://github.com/Exa-Networks/exabgp/) for some use-cases,
  * transparent BGP proxy, optionally rewriting the messages in-flight,
  * streaming MRT files to BGP routers, adding the necessary OPEN negotiation beforehand,
@@ -17,9 +19,11 @@ The main idea is it can "fix" or "extend" BGP sessions in-flight, possibly addin
  * academic research ideas, eg. [Pretty Good BGP](https://www.cs.princeton.edu/~jrex/papers/pgbgp.pdf) or protection against [distributed prefix de-aggregation attacks](https://arxiv.org/abs/2210.10676).
 
 If you're interested in bgpfix, you might also want to see:
- * [exabgp](https://github.com/Exa-Networks/exabgp/) (of course)
+ * [exabgp](https://github.com/Exa-Networks/exabgp/)
  * [corebgp](https://github.com/jwhited/corebgp)
  * [xBGP](https://www.usenix.org/conference/nsdi23/presentation/wirtgen)
+ * [RouteNormalizer](https://web.eecs.umich.edu/~zmao/Papers/RouteNormalizer.pdf)
+ * [BGPKIT](https://bgpkit.com/)
 
 # Idea
 
@@ -77,7 +81,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	R_input := p.Options.AddInput(msg.DST_R)
 
 	// R side: a local speaker, sending to L
 	spk := speaker.NewSpeaker(context.Background())
@@ -89,7 +92,7 @@ func main() {
 
 	// copy from conn -> R
 	go func() {
-		io.Copy(R_input, conn)
+		io.Copy(p.R, conn)
 		p.Stop()
 	}()
 
