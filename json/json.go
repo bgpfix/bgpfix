@@ -141,14 +141,13 @@ func UnPrefix(src []byte) (netip.Prefix, error) {
 	return netip.ParsePrefix(SQ(src))
 }
 
-// SString appends "safe" string from src to dst,
-// which is the set of printable ASCII, minus " and \
-func SString(dst, src []byte) []byte {
+// Ascii appends printable ASCII characters from src to dst, escaping " and \
+func Ascii(dst, src []byte) []byte {
 	for _, c := range src {
-		if c < ' ' || c > '~' {
+		if c < 0x20 || c > 0x7e {
 			continue
 		} else if c == '"' || c == '\\' {
-			continue
+			dst = append(dst, '\\')
 		}
 		dst = append(dst, c)
 	}
