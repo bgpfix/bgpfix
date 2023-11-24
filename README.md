@@ -2,7 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/bgpfix/bgpfix.svg)](https://pkg.go.dev/github.com/bgpfix/bgpfix)
 
-**WORK IN PROGRESS PREVIEW 11/2023**
+**WORK IN PROGRESS PREVIEW 12/2023**
 
 A generic-purpose, high-performance Golang library for [bridging the gaps in BGP](https://twitter.com/ACM_IMC2021/status/1445725066403196928).
 
@@ -282,8 +282,9 @@ pjf@pjf:~/bgp2json$ ./bgp2json -active -asn 65055 85.232.240.180:179 | jq .
 
 ```
 
-# Supported RFCs (incl. partial/wip support)
+# Supported features (some partial/wip)
 
+RFCs:
  * [RFC1997 BGP Communities Attribute](https://datatracker.ietf.org/doc/html/rfc1997)
  * [RFC2918 Route Refresh Capability for BGP-4](https://datatracker.ietf.org/doc/html/rfc2918)
  * [RFC4360 BGP Extended Communities Attribute](https://datatracker.ietf.org/doc/html/rfc4360)
@@ -299,8 +300,11 @@ pjf@pjf:~/bgp2json$ ./bgp2json -active -asn 65055 85.232.240.180:179 | jq .
  * [RFC8950 Advertising IPv4 Network Layer Reachability Information (NLRI) with an IPv6 Next Hop](https://datatracker.ietf.org/doc/html/rfc8950)
  * [RFC8955 Dissemination of Flow Specification Rules](https://datatracker.ietf.org/doc/html/rfc8955)
  * [RFC8956 Dissemination of Flow Specification Rules for IPv6](https://datatracker.ietf.org/doc/html/rfc8956)
- * [draft-simpson-idr-flowspec-redirect BGP Flow-Spec Extended Community for Traffic Redirect to IP Next Hop](https://datatracker.ietf.org/doc/html/draft-simpson-idr-flowspec-redirect-02)
  * [RFC9072 Extended Optional Parameters Length for BGP OPEN Message](https://datatracker.ietf.org/doc/html/rfc9072)
+
+Drafts:
+ * [draft-simpson-idr-flowspec-redirect: BGP Flow-Spec Extended Community for Traffic Redirect to IP Next Hop](https://datatracker.ietf.org/doc/html/draft-simpson-idr-flowspec-redirect-02)
+ * [draft-walton-bgp-hostname-capability-02: Hostname Capability for BGP](https://datatracker.ietf.org/doc/html/draft-walton-bgp-hostname-capability-02)
 
 # Author
 

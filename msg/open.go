@@ -229,7 +229,9 @@ func (o *Open) MarshalCaps() error {
 	// marshal one-by-one
 	var raw []byte
 	o.Caps.Each(func(i int, cc caps.Code, c caps.Cap) {
-		raw = c.Marshal(raw)
+		if res := c.Marshal(raw); res != nil {
+			raw = res
+		}
 	})
 
 	// done?

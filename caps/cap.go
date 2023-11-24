@@ -7,26 +7,6 @@ import (
 	"github.com/bgpfix/bgpfix/json"
 )
 
-// Cap represents a particular BGP capability
-type Cap interface {
-	// Intersect returns a new instance of the capability that
-	// represents its intersection with cap2. Returns nil if equal.
-	Intersect(cap2 Cap) Cap
-
-	// Unmarshal parses wire representation from src.
-	// It must support multiple calls for the same message.
-	Unmarshal(src []byte, caps Caps) error
-
-	// Marshal appends wire representation to dst, including code and length
-	Marshal(dst []byte) []byte
-
-	// ToJSON appends JSON representation of the value to dst
-	ToJSON(dst []byte) []byte
-
-	// FromJSON reads from JSON representation in src
-	FromJSON(src []byte) error
-}
-
 // Code represents BGP capability code
 type Code byte
 
@@ -57,6 +37,27 @@ const (
 
 //go:generate go run github.com/dmarkham/enumer -type=Code -trimprefix CAP_
 
+// Cap represents a particular BGP capability
+type Cap interface {
+	// Unmarshal parses wire representation from src.
+	// It must support multiple calls for the same message.
+	Unmarshal(src []byte, caps Caps) error
+
+	// Marshal appends wire representation to dst, including code and length.
+	// Return nil to skip this capability.
+	Marshal(dst []byte) []byte
+
+	// ToJSON appends JSON representation of the value to dst
+	ToJSON(dst []byte) []byte
+
+	// FromJSON reads from JSON representation in src
+	FromJSON(src []byte) error
+
+	// Intersect returns a new instance that represents its intersection with cap2.
+	// This is used during capability negotiation. Return nil if equal or N/A.
+	Intersect(cap2 Cap) Cap
+}
+
 // NewFunc returns a new instance of capability cc.
 type NewFunc func(cc Code) Cap
 
@@ -65,6 +66,7 @@ var NewFuncs = map[Code]NewFunc{
 	CAP_MP:               NewMP,
 	CAP_AS4:              NewAS4,
 	CAP_EXTENDED_NEXTHOP: NewExtNH,
+	CAP_FQDN:             NewFqdn,
 }
 
 // NewCap returns a new Cap instance for given code cc
