@@ -259,7 +259,7 @@ func (p *Pipe) Put(m *msg.Msg) {
 	}
 
 	// do not re-use?
-	pc := Context(m)
+	pc := MsgContext(m)
 	if pc.Action.Is(ACTION_BORROW) {
 		return
 	}

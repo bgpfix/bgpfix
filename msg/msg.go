@@ -19,7 +19,7 @@ import (
 type Msg struct {
 	// internal
 
-	ref bool   // true iff Data is a reference we don't own
+	ref bool   // true iff Data references memory we don't own
 	buf []byte // internal buffer
 
 	// optional metadata
@@ -40,7 +40,7 @@ type Msg struct {
 	Open   Open   // parsed BGP OPEN message
 	Update Update // parsed BGP UPDATE message
 
-	// for optional use beyond this pkg
+	// for optional use beyond this pkg, eg. to store pipe.Context
 
 	Value Value // NB: not affected by Reset()
 }

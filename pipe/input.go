@@ -8,7 +8,8 @@ import (
 	"github.com/bgpfix/bgpfix/msg"
 )
 
-// Input processes incoming BGP messages through Callbacks.
+// Input processes incoming BGP messages through Callbacks
+// and (optionally) writes the output to attached Line.
 type Input struct {
 	Pipe *Pipe // attached pipe (nil before pipe start)
 	Line *Line // attached line (nil before pipe start)
@@ -116,9 +117,9 @@ func (in *Input) attach(p *Pipe, l *Line) {
 
 // prepare prepares metadata and context of m for processing in this Line.
 // The message type must already be set.
-func (in *Input) prepare(m *msg.Msg) (pc *PipeContext) {
+func (in *Input) prepare(m *msg.Msg) (pc *Context) {
 	// already prepared?
-	pc = Context(m)
+	pc = MsgContext(m)
 	if pc.Input == in {
 		return
 	}
@@ -204,7 +205,7 @@ input:
 
 			oldt := l.LastOpen.Load()
 			if t > oldt && l.LastOpen.CompareAndSwap(oldt, t) {
-				Context(m).Action.Add(ACTION_BORROW)
+				MsgContext(m).Action.Add(ACTION_BORROW)
 				l.Open.Store(&m.Open)
 				p.Event(EVENT_OPEN, m.Dir, t, oldt)
 			}

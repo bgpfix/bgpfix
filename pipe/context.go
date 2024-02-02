@@ -5,64 +5,97 @@ import (
 	"github.com/bgpfix/bgpfix/msg"
 )
 
-// PipeContext tracks message processing progress in a pipe
-type PipeContext struct {
-	Pipe  *Pipe  // pipe processing the message
-	Input *Input // input processing the message (message source)
+// Context tracks message processing progress in a pipe,
+// and is usually stored in Msg.Value.
+type Context struct {
+	Pipe     *Pipe     // pipe processing the message
+	Input    *Input    // input processing the message (message source)
+	Callback *Callback // currently running callback
 
-	Callback *Callback // currently run callback
-	Action   Action    // requested message actions
+	// TODO: add ActionDrop() etc. helpers, maybe hide Actions
+	Action Action // requested message actions
 
-	cbs []*Callback    // callbacks scheduled to run
-	kv  map[string]any // generic Key-Value store
+	cbs  []*Callback       // callbacks scheduled to run
+	tags map[string]string // simple Tag-Value store
 }
 
-// Context returns pipe Context inside message m,
+// MsgContext returns pipe Context inside message m,
 // updating m.Value if needed.
-func Context(m *msg.Msg) *PipeContext {
+func MsgContext(m *msg.Msg) *Context {
 	if m == nil {
 		return nil
-	} else if pc, ok := m.Value.(*PipeContext); ok {
+	} else if pc, ok := m.Value.(*Context); ok {
 		return pc
 	} else {
-		pc = new(PipeContext)
+		pc = new(Context)
 		m.Value = pc
 		return pc
 	}
 }
 
 // Reset resets pc to empty state
-func (pc *PipeContext) Reset() {
-	*pc = PipeContext{}
+func (pc *Context) Reset() {
+	// try to re-use tags map
+	old_tags := pc.tags
+	if old_tags != nil {
+		clear(old_tags)
+	}
+
+	*pc = Context{}    // set all to zero/nil
+	pc.tags = old_tags // try to re-use tags mem
 }
 
 // Clear resets pc, but preserves ACTION_BORROW if set.
-func (pc *PipeContext) Clear() {
+func (pc *Context) Clear() {
 	a := pc.Action
 	pc.Reset()
 	pc.Action = a & ACTION_BORROW
 }
 
-// HasKV returns true iff the context already has a Key-Value store.
-func (pc *PipeContext) HasKV() bool {
-	return pc.kv != nil
+// HasTag returns true iff the context has a Tag set
+func (pc *Context) HasTag(tag string) bool {
+	if pc.tags == nil {
+		return false
+	}
+	_, ok := pc.tags[tag]
+	return ok
 }
 
-// KV returns a generic Key-Value store, creating it first if needed.
-func (pc *PipeContext) KV() map[string]any {
-	if pc.kv == nil {
-		pc.kv = make(map[string]interface{})
+// GetTag returns given Tag value, or "" if not set
+func (pc *Context) GetTag(tag string) string {
+	if pc.tags == nil {
+		return ""
 	}
-	return pc.kv
+	return pc.tags[tag]
+}
+
+// SetTag set given Tag to given value,
+// or to a value of "" if not provided
+func (pc *Context) SetTag(tag string, val ...string) {
+	tags := pc.Tags()
+	if len(val) > 0 {
+		tags[tag] = val[0]
+	} else {
+		tags[tag] = ""
+	}
+}
+
+// Tags returns a generic string Tag-Value store,
+// creating it first if needed.
+func (pc *Context) Tags() map[string]string {
+	if pc.tags == nil {
+		pc.tags = make(map[string]string)
+	}
+	return pc.tags
 }
 
 // TODO
-func (pc *PipeContext) ToJSON(dst []byte) []byte {
+func (pc *Context) ToJSON(dst []byte) []byte {
 	return json.Byte(dst, byte(pc.Action))
 }
 
 // TODO
-func (pc *PipeContext) FromJSON(src []byte) error {
+func (pc *Context) FromJSON(src []byte) error {
 	val, err := json.UnByte(src)
 	if err != nil {
 		return err

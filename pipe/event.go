@@ -120,7 +120,7 @@ func (p *Pipe) Event(et string, args ...any) *Event {
 	var dst_set, msg_set bool
 	for _, arg := range args {
 		if m, ok := arg.(*msg.Msg); ok && !msg_set {
-			Context(m).Action.Add(ACTION_BORROW) // make m safe to reference for later use
+			MsgContext(m).Action.Add(ACTION_BORROW) // make m safe to reference for later use
 			ev.Msg = m
 			msg_set = true
 		} else if d, ok := arg.(msg.Dir); ok && !dst_set {
