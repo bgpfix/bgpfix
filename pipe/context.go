@@ -9,7 +9,7 @@ import (
 // and is usually stored in Msg.Value.
 type Context struct {
 	Pipe     *Pipe     // pipe processing the message
-	Input    *Input    // input processing the message (message source)
+	Input    *Proc     // input processing the message (message source)
 	Callback *Callback // currently running callback
 
 	// TODO: add ActionDrop() etc. helpers, maybe hide Actions

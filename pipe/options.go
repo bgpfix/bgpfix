@@ -26,7 +26,7 @@ type Options struct {
 
 	Callbacks []*Callback // message callbacks
 	Handlers  []*Handler  // event handlers
-	Inputs    []*Input    // pipe inputs (message processors)
+	Procs     []*Proc     // input processors
 }
 
 // Callback represents a function to call for matching BGP messages
@@ -201,9 +201,9 @@ func (o *Options) OnParseError(hdf HandlerFunc) *Handler {
 	return o.OnEvent(hdf, EVENT_PARSE)
 }
 
-// AddInput adds pipe Input for given destination, with optional details in tpl.
-func (o *Options) AddInput(dir msg.Dir, tpl ...*Input) *Input {
-	var pi Input
+// AddProc adds input processor for given pipe direction, with optional details in tpl.
+func (o *Options) AddProc(dir msg.Dir, tpl ...*Proc) *Proc {
+	var pi Proc
 
 	// deep copy the tpl?
 	if len(tpl) > 0 {
@@ -229,6 +229,6 @@ func (o *Options) AddInput(dir msg.Dir, tpl ...*Input) *Input {
 		pi.Dir = msg.DIR_R
 	}
 
-	o.Inputs = append(o.Inputs, &pi)
+	o.Procs = append(o.Procs, &pi)
 	return &pi
 }

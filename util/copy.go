@@ -20,15 +20,15 @@ func CopyThrough(p *pipe.Pipe, lhs, rhs io.ReadWriteCloser) (lhsb, rhsb []int, e
 		rhs_tx, rhs_rx       int64
 		rhs_txerr, rhs_rxerr error
 		wg                   sync.WaitGroup
-		rin                  *pipe.Input
-		lin                  *pipe.Input
+		rin                  *pipe.Proc
+		lin                  *pipe.Proc
 	)
 
 	// add inputs
 	po := &p.Options
-	rin = po.AddInput(msg.DIR_R)
+	rin = po.AddProc(msg.DIR_R)
 	if rhs != nil {
-		lin = po.AddInput(msg.DIR_L)
+		lin = po.AddProc(msg.DIR_L)
 	}
 
 	p.Start()

@@ -61,7 +61,7 @@ func NewPipe(ctx context.Context) *Pipe {
 		In:   make(chan *msg.Msg, 10),
 		Out:  make(chan *msg.Msg, 10),
 	}
-	p.R.Input = &Input{
+	p.R.Proc = &Proc{
 		Dir: msg.DIR_R,
 		In:  p.R.In,
 	}
@@ -72,7 +72,7 @@ func NewPipe(ctx context.Context) *Pipe {
 		In:   make(chan *msg.Msg, 10),
 		Out:  make(chan *msg.Msg, 10),
 	}
-	p.L.Input = &Input{
+	p.L.Proc = &Proc{
 		Dir: msg.DIR_L,
 		In:  p.L.In,
 	}
@@ -259,13 +259,13 @@ func (p *Pipe) Put(m *msg.Msg) {
 	}
 
 	// do not re-use?
-	pc := MsgContext(m)
-	if pc.Action.Is(ACTION_BORROW) {
+	mx := MsgContext(m)
+	if mx.Action.Is(ACTION_BORROW) {
 		return
 	}
 
 	// re-use
-	pc.Reset()
+	mx.Reset()
 	m.Reset()
 	p.msgpool.Put(m)
 }

@@ -8,18 +8,19 @@ import (
 	"github.com/bgpfix/bgpfix/msg"
 )
 
-// Line represents one direction of a Pipe: inputs with a common output
+// Line implements one direction of a Pipe: possibly several input processors
+// run messages through callbacks and write the results to a common output.
 type Line struct {
 	Pipe *Pipe   // parent pipe
 	Dir  msg.Dir // line direction
 
-	// the default input
-	*Input
+	// the default Proc, which processes messages through all callbacks.
+	*Proc
 
-	// In is the default input, where you write incoming messages to.
+	// In corresponds to the default Proc, where you write incoming messages to.
 	In chan *msg.Msg
 
-	// Out is the output, where you read processed messages from.
+	// Out is the Line output, where you can read processed messages from.
 	Out chan *msg.Msg
 
 	// UNIX timestamp (seconds) of the last valid OPEN message
@@ -34,10 +35,10 @@ type Line struct {
 	// the OPEN message that updated LastOpen
 	Open atomic.Pointer[msg.Open]
 
-	inputs []*Input      // line inputs
-	seq    atomic.Int64  // last seq number assigned
-	obuf   bytes.Buffer  // output buffer
-	done   chan struct{} // closed when done
+	procs []*Proc       // input processors, [0] is the default
+	seq   atomic.Int64  // last seq number assigned
+	obuf  bytes.Buffer  // output buffer
+	done  chan struct{} // closed when done
 }
 
 // attach line inputs
@@ -46,27 +47,27 @@ func (l *Line) attach() {
 	l.done = make(chan struct{})
 
 	// the default input
-	l.Input.attach(p, l)
-	l.inputs = append(l.inputs, l.Input)
+	l.Proc.attach(p, l)
+	l.procs = append(l.procs, l.Proc)
 
 	// inputs from Options
-	for _, li := range p.Options.Inputs {
+	for _, li := range p.Options.Procs {
 		if li != nil && li.Dir == l.Dir {
 			li.attach(p, l)
-			l.inputs = append(l.inputs, li)
+			l.procs = append(l.procs, li)
 		}
 	}
 }
 
-// start starts the processor of each input.
+// start starts all input processors
 func (l *Line) start() {
-	for _, in := range l.inputs {
-		go in.processor()
+	for _, in := range l.procs {
+		go in.process()
 	}
 
-	// wait for processors
+	// close line output when all processors finish
 	go func() {
-		for _, in := range l.inputs {
+		for _, in := range l.procs {
 			in.Wait()
 		}
 		l.CloseOutput()
@@ -81,7 +82,7 @@ func (l *Line) Wait() {
 
 // Close safely closes all inputs, which should eventually stop the line
 func (l *Line) Close() {
-	for _, in := range l.inputs {
+	for _, in := range l.procs {
 		in.Close()
 	}
 }

@@ -20,10 +20,10 @@ type Speaker struct {
 	ctx    context.Context
 	cancel context.CancelCauseFunc
 
-	pipe *pipe.Pipe  // attached BGP pipe
-	in   *pipe.Input // input for our messages
-	up   *pipe.Line  // TX line
-	down *pipe.Line  // RX line
+	pipe *pipe.Pipe // attached BGP pipe
+	in   *pipe.Proc // input for our messages
+	up   *pipe.Line // TX line
+	down *pipe.Line // RX line
 
 	Options Options     // options; do not modify after Attach()
 	opened  atomic.Bool // true iff OPEN already sent
@@ -41,7 +41,7 @@ func NewSpeaker(ctx context.Context) *Speaker {
 // Must not be called more than once.
 func (s *Speaker) Attach(p *pipe.Pipe, dst msg.Dir) error {
 	s.pipe = p
-	s.in = p.AddInput(dst)
+	s.in = p.AddProc(dst)
 	s.up = p.LineTo(dst)
 	s.down = p.LineFrom(dst)
 

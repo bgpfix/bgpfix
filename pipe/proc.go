@@ -8,17 +8,17 @@ import (
 	"github.com/bgpfix/bgpfix/msg"
 )
 
-// Input processes incoming BGP messages through Callbacks
+// Proc processes incoming BGP messages through Callbacks
 // and (optionally) writes the output to attached Line.
-type Input struct {
-	Pipe *Pipe // attached pipe (nil before pipe start)
-	Line *Line // attached line (nil before pipe start)
+type Proc struct {
+	Pipe *Pipe // attached to this Pipe (nil before pipe start)
+	Line *Line // attached to this Line (nil before pipe start)
 
 	Id   int     // optional id
 	Name string  // optional name
 	Dir  msg.Dir // line direction
 
-	// In is the input, where to read incoming messages from.
+	// In is the input for incoming messages.
 	In chan *msg.Msg
 
 	// Reverse, when true, runs callbacks in reverse order.
@@ -42,7 +42,7 @@ type Input struct {
 	done chan struct{}   // closed when the input is done processing
 }
 
-func (in *Input) attach(p *Pipe, l *Line) {
+func (in *Proc) attach(p *Pipe, l *Line) {
 	in.Pipe = p
 	in.Line = l
 	in.done = make(chan struct{})
@@ -92,7 +92,7 @@ func (in *Input) attach(p *Pipe, l *Line) {
 		}
 	})
 
-	// reference in li.cbs[type]
+	// reference in in.cbs[type]
 	for _, cb := range cbs {
 		// all types?
 		if len(cb.Types) == 0 {
@@ -117,7 +117,7 @@ func (in *Input) attach(p *Pipe, l *Line) {
 
 // prepare prepares metadata and context of m for processing in this Line.
 // The message type must already be set.
-func (in *Input) prepare(m *msg.Msg) (pc *Context) {
+func (in *Proc) prepare(m *msg.Msg) (pc *Context) {
 	// already prepared?
 	pc = MsgContext(m)
 	if pc.Input == in {
@@ -147,7 +147,7 @@ func (in *Input) prepare(m *msg.Msg) (pc *Context) {
 	return
 }
 
-func (in *Input) processor() {
+func (in *Proc) process() {
 	var (
 		p      = in.Pipe
 		l      = in.Line
@@ -233,19 +233,19 @@ input:
 }
 
 // Close safely closes the .In channel, which should eventually stop the Input
-func (in *Input) Close() {
+func (in *Proc) Close() {
 	defer func() { recover() }()
 	close(in.In)
 }
 
 // Wait blocks until the input is done processing the messages
-func (in *Input) Wait() {
+func (in *Proc) Wait() {
 	<-in.done
 }
 
 // WriteMsg safely sends m to pi.In, avoiding a panic if pi.In is closed.
 // It assigns a sequence number and timestamp before writing to the channel.
-func (in *Input) WriteMsg(m *msg.Msg) (write_error error) {
+func (in *Proc) WriteMsg(m *msg.Msg) (write_error error) {
 	in.prepare(m)
 	defer func() {
 		if recover() != nil {
@@ -265,7 +265,7 @@ func (in *Input) WriteMsg(m *msg.Msg) (write_error error) {
 // until it returns a nil err.
 //
 // Must not be used concurrently.
-func (in *Input) Write(src []byte) (n int, err error) {
+func (in *Proc) Write(src []byte) (n int, err error) {
 	var (
 		p   = in.Pipe
 		ss  = &in.Stats

@@ -21,8 +21,8 @@ type Reader struct {
 	ctx    context.Context
 	cancel context.CancelCauseFunc
 
-	pipe *pipe.Pipe  // target pipe
-	in   *pipe.Input // target input
+	pipe *pipe.Pipe // target pipe
+	in   *pipe.Proc // target input
 
 	Stats   ReaderStats   // our stats
 	Options ReaderOptions // options; do not modify after Attach()
@@ -54,7 +54,7 @@ func NewReader(ctx context.Context) *Reader {
 func (br *Reader) Attach(p *pipe.Pipe, dst msg.Dir) error {
 	opts := &br.Options
 	br.pipe = p
-	br.in = p.AddInput(dst)
+	br.in = p.AddProc(dst)
 
 	if opts.Logger != nil {
 		br.Logger = opts.Logger

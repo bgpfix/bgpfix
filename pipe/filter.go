@@ -28,7 +28,7 @@ const (
 	FILTER_ALL
 )
 
-func filterSkip(li *Input, cb *Callback) bool {
+func filterSkip(li *Proc, cb *Callback) bool {
 	cbid := cb.Id
 	if cbid == 0 {
 		return false
