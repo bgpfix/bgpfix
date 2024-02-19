@@ -42,8 +42,8 @@ func NewSpeaker(ctx context.Context) *Speaker {
 func (s *Speaker) Attach(p *pipe.Pipe, dst msg.Dir) error {
 	s.pipe = p
 	s.in = p.AddProc(dst)
-	s.up = p.LineTo(dst)
-	s.down = p.LineFrom(dst)
+	s.up = p.LineFor(dst)
+	s.down = p.LineFor(dst.Flip())
 
 	// process options
 	opts := &s.Options

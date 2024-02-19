@@ -24,8 +24,8 @@ type Pipe struct {
 
 	Options           // pipe options; modify before Start()
 	Caps    caps.Caps // BGP capability context; always thread-safe
-	L       *Line     // pipeline processing messages from R to L
-	R       *Line     // pipeline processing messages from L to R
+	L       *Line     // line processing messages from R to L
+	R       *Line     // line processing messages from L to R
 
 	// generic Key-Value store, always thread-safe
 	KV *xsync.MapOf[string, any]
@@ -270,20 +270,12 @@ func (p *Pipe) Put(m *msg.Msg) {
 	p.msgpool.Put(m)
 }
 
-// LineTo returns the line processing messages destined to dst
-func (p *Pipe) LineTo(dst msg.Dir) *Line {
+// LineFor returns the line processing messages destined for dst.
+// Returns p.R if dst is bidir (DST_LR).
+func (p *Pipe) LineFor(dst msg.Dir) *Line {
 	if dst == msg.DIR_L {
 		return p.L
 	} else {
 		return p.R
-	}
-}
-
-// LineFrom returns the line processing messages coming from src
-func (p *Pipe) LineFrom(src msg.Dir) *Line {
-	if src == msg.DIR_L {
-		return p.R
-	} else {
-		return p.L
 	}
 }
