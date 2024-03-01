@@ -117,14 +117,14 @@ func (in *Proc) attach(p *Pipe, l *Line) {
 
 // prepare prepares metadata and context of m for processing in this Line.
 // The message type must already be set.
-func (in *Proc) prepare(m *msg.Msg) (pc *Context) {
+func (in *Proc) prepare(m *msg.Msg) (mx *Context) {
 	// already prepared?
-	pc = MsgContext(m)
-	if pc.Input == in {
+	mx = MsgContext(m)
+	if mx.Input == in {
 		return
 	}
-	pc.Input = in
-	pc.Pipe = in.Pipe
+	mx.Input = in
+	mx.Pipe = in.Pipe
 
 	// message metadata
 	m.Dir = in.Dir
@@ -136,11 +136,11 @@ func (in *Proc) prepare(m *msg.Msg) (pc *Context) {
 	}
 
 	// callbacks
-	if pc.cbs == nil {
+	if mx.cbs == nil {
 		if int(m.Type) < len(in.cbs) {
-			pc.cbs = in.cbs[m.Type]
+			mx.cbs = in.cbs[m.Type]
 		} else {
-			pc.cbs = in.cbs[0]
+			mx.cbs = in.cbs[0]
 		}
 	}
 
@@ -159,14 +159,14 @@ func (in *Proc) process() {
 input:
 	for m := range in.In {
 		// get context, clear actions except for BORROW
-		pc := in.prepare(m)
-		pc.Action.Clear()
+		mx := in.prepare(m)
+		mx.Action.Clear()
 
 		// run the callbacks
-		for len(pc.cbs) > 0 {
+		for len(mx.cbs) > 0 {
 			// eat first callback
-			cb := pc.cbs[0]
-			pc.cbs = pc.cbs[1:]
+			cb := mx.cbs[0]
+			mx.cbs = mx.cbs[1:]
 
 			// disabled?
 			if cb.Enabled != nil && !cb.Enabled.Load() {
@@ -182,15 +182,15 @@ input:
 			}
 
 			// run and wait
-			pc.Callback = cb
-			pc.Action |= cb.Func(m)
-			pc.Callback = nil
+			mx.Callback = cb
+			mx.Action |= cb.Func(m)
+			mx.Callback = nil
 
 			// what's next?
-			if pc.Action.Is(ACTION_DROP) {
+			if mx.Action.Is(ACTION_DROP) {
 				p.Put(m)
 				continue input // next message
-			} else if pc.Action.Is(ACTION_ACCEPT) {
+			} else if mx.Action.Is(ACTION_ACCEPT) {
 				break // take it as-is
 			}
 		}
@@ -205,7 +205,7 @@ input:
 
 			oldt := l.LastOpen.Load()
 			if t > oldt && l.LastOpen.CompareAndSwap(oldt, t) {
-				MsgContext(m).Action.Add(ACTION_BORROW)
+				mx.Action.Add(ACTION_BORROW)
 				l.Open.Store(&m.Open)
 				p.Event(EVENT_OPEN, m.Dir, t, oldt)
 			}

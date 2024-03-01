@@ -5,74 +5,64 @@ import (
 	"github.com/bgpfix/bgpfix/msg"
 )
 
-// Context tracks message processing progress in a pipe,
-// and is usually stored in Msg.Value.
+// Context tracks message processing in a Pipe, stored in Msg.Value.
 type Context struct {
 	Pipe     *Pipe     // pipe processing the message
 	Input    *Proc     // input processing the message (message source)
 	Callback *Callback // currently running callback
 
-	// TODO: add ActionDrop() etc. helpers, maybe hide Actions
 	Action Action // requested message actions
 
 	cbs  []*Callback       // callbacks scheduled to run
 	tags map[string]string // simple Tag-Value store
 }
 
-// MsgContext returns pipe Context inside message m,
-// updating m.Value if needed.
+// MsgContext returns message Context inside m, creating one if needed.
 func MsgContext(m *msg.Msg) *Context {
-	if m == nil {
-		return nil
-	} else if pc, ok := m.Value.(*Context); ok {
-		return pc
+	if mx, ok := m.Value.(*Context); ok {
+		return mx
 	} else {
-		pc = new(Context)
-		m.Value = pc
-		return pc
+		mx = new(Context)
+		m.Value = mx
+		return mx
 	}
 }
 
 // Reset resets pc to empty state
-func (pc *Context) Reset() {
-	// try to re-use tags map
-	old_tags := pc.tags
-	if old_tags != nil {
-		clear(old_tags)
+func (mx *Context) Reset() {
+	if mx == nil {
+		return
 	}
 
-	*pc = Context{}    // set all to zero/nil
-	pc.tags = old_tags // try to re-use tags mem
-}
-
-// Clear resets pc, but preserves ACTION_BORROW if set.
-func (pc *Context) Clear() {
-	a := pc.Action
-	pc.Reset()
-	pc.Action = a & ACTION_BORROW
+	mx.Pipe = nil
+	mx.Input = nil
+	mx.Callback = nil
+	mx.Action = 0
+	mx.cbs = nil // NB: do not [:0] and re-use
+	clear(mx.tags)
 }
 
 // HasTag returns true iff the context has a Tag set
-func (pc *Context) HasTag(tag string) bool {
-	if pc.tags == nil {
+func (mx *Context) HasTag(tag string) bool {
+	if mx.tags == nil {
 		return false
 	}
-	_, ok := pc.tags[tag]
+	_, ok := mx.tags[tag]
 	return ok
 }
 
 // GetTag returns given Tag value, or "" if not set
-func (pc *Context) GetTag(tag string) string {
-	if pc.tags == nil {
+func (mx *Context) GetTag(tag string) string {
+	if mx.tags == nil {
 		return ""
 	}
-	return pc.tags[tag]
+	return mx.tags[tag]
 }
 
 // SetTag set given Tag to given value,
 // or to a value of "" if not provided
-func (pc *Context) SetTag(tag string, val ...string) {
-	tags := pc.Tags()
+func (mx *Context) SetTag(tag string, val ...string) {
+	tags := mx.Tags()
 	if len(val) > 0 {
 		tags[tag] = val[0]
 	} else {
@@ -82,24 +72,24 @@ func (pc *Context) SetTag(tag string, val ...string) {
 
 // Tags returns a generic string Tag-Value store,
 // creating it first if needed.
-func (pc *Context) Tags() map[string]string {
-	if pc.tags == nil {
-		pc.tags = make(map[string]string)
+func (mx *Context) Tags() map[string]string {
+	if mx.tags == nil {
+		mx.tags = make(map[string]string)
 	}
-	return pc.tags
+	return mx.tags
 }
 
 // TODO
-func (pc *Context) ToJSON(dst []byte) []byte {
-	return json.Byte(dst, byte(pc.Action))
+func (mx *Context) ToJSON(dst []byte) []byte {
+	return json.Byte(dst, byte(mx.Action))
 }
 
 // TODO
-func (pc *Context) FromJSON(src []byte) error {
+func (mx *Context) FromJSON(src []byte) error {
 	val, err := json.UnByte(src)
 	if err != nil {
 		return err
 	}
-	pc.Action = Action(val)
+	mx.Action = Action(val)
 	return nil
 }

@@ -258,14 +258,18 @@ func (p *Pipe) Put(m *msg.Msg) {
 		return
 	}
 
-	// do not re-use?
-	mx := MsgContext(m)
-	if mx.Action.Is(ACTION_BORROW) {
-		return
+	// has context?
+	if mx, ok := m.Value.(*Context); ok {
+		// do not re-use?
+		if mx.Action.Is(ACTION_BORROW) {
+			return
+		}
+
+		// clear context, leave mem for re-use
+		mx.Reset()
 	}
 
 	// re-use
-	mx.Reset()
 	m.Reset()
 	p.msgpool.Put(m)
 }

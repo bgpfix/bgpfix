@@ -1,6 +1,8 @@
 package pipe
 
-// Action corresponds to m.Action values
+import "github.com/bgpfix/bgpfix/msg"
+
+// Action requests special handling of a message in Pipe
 type Action byte
 
 const (
@@ -27,7 +29,7 @@ const (
 	ACTION_ACCEPT
 )
 
-// Clear clears all bits except for BORROW
+// Clear clears all bits except for ACTION_BORROW
 func (ac *Action) Clear() {
 	*ac &= ACTION_BORROW
 }
@@ -45,4 +47,43 @@ func (ac Action) Is(a Action) bool {
 // IsNot returns true iff a is NOT set in ac
 func (ac Action) Not(a Action) bool {
 	return ac&a == 0
+}
+
+// ActionClear clears all action flags but ACTION_BORROW in m and returns it.
+func ActionClear(m *msg.Msg) *msg.Msg {
+	MsgContext(m).Action.Clear()
+	return m
+}
+
+// ActionBorrow adds ACTION_BORROW to m and returns it.
+func ActionBorrow(m *msg.Msg) *msg.Msg {
+	MsgContext(m).Action.Add(ACTION_BORROW)
+	return m
+}
+
+// ActionIsBorrow returns true if ACTION_BORROW is set in m.
+func ActionIsBorrow(m *msg.Msg) bool {
+	return MsgContext(m).Action.Is(ACTION_BORROW)
+}
+
+// ActionDrop adds ACTION_DROP to m and returns it.
+func ActionDrop(m *msg.Msg) *msg.Msg {
+	MsgContext(m).Action.Add(ACTION_DROP)
+	return m
+}
+
+// ActionIsDrop returns true if ACTION_DROP is set in m.
+func ActionIsDrop(m *msg.Msg) bool {
+	return MsgContext(m).Action.Is(ACTION_DROP)
+}
+
+// ActionAccept adds ACTION_ACCEPT to m and returns it.
+func ActionAccept(m *msg.Msg) *msg.Msg {
+	MsgContext(m).Action.Add(ACTION_ACCEPT)
+	return m
+}
+
+// ActionIsAccept returns true if ACTION_ACCEPT is set in m context
+func ActionIsAccept(m *msg.Msg) bool {
+	return MsgContext(m).Action.Is(ACTION_ACCEPT)
 }

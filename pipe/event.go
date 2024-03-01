@@ -117,20 +117,27 @@ func (p *Pipe) Event(et string, args ...any) *Event {
 	// process args
 	var errs []error
 	var vals []any
-	var dst_set, msg_set bool
+	var dir_set, msg_set bool
 	for _, arg := range args {
-		if m, ok := arg.(*msg.Msg); ok && !msg_set {
-			MsgContext(m).Action.Add(ACTION_BORROW) // make m safe to reference for later use
-			ev.Msg = m
-			msg_set = true
-		} else if d, ok := arg.(msg.Dir); ok && !dst_set {
-			ev.Dir = d
-			dst_set = true
-		} else if err, ok := arg.(error); ok {
-			errs = append(errs, err)
-		} else {
-			vals = append(vals, arg)
+		switch v := arg.(type) {
+		case *msg.Msg:
+			if !msg_set {
+				ev.Msg = ActionBorrow(v) // make m safe to reference later
+				msg_set = true
+				continue
+			}
+		case msg.Dir:
+			if !dir_set {
+				ev.Dir = v
+				dir_set = true
+				continue
+			}
+		case error:
+			errs = append(errs, v)
+			continue
 		}
+		// ...and if nothing worked:
+		vals = append(vals, arg)
 	}
 
 	// set error
