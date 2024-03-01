@@ -68,7 +68,7 @@ func main() {
 }
 
 func print(m *msg.Msg) {
-	fmt.Printf("%s\n", m.ToJSON(nil))
+	fmt.Printf("%s\n", m.GetJSON())
 }
 
 func event(ev *pipe.Event) bool {

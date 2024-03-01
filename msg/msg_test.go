@@ -14,10 +14,6 @@ func TestMsg_Parse(t *testing.T) {
 	opMsg := NewMsg()
 	opMsg.Type = OPEN
 
-	opMsgData := NewMsg()
-	opMsgData.Type = OPEN
-	opMsgData.SetData([]byte("data"))
-
 	tests := []struct {
 		name    string
 		raw     []byte
@@ -54,11 +50,6 @@ func TestMsg_Parse(t *testing.T) {
 			"OPEN empty",
 			append(bgp_marker[:], 0x00, HEADLEN, byte(OPEN), 0x31, 0x37),
 			opMsg, HEADLEN, nil,
-		},
-		{
-			"OPEN data",
-			append(bgp_marker[:], 0x00, HEADLEN+4, byte(OPEN), 'd', 'a', 't', 'a'),
-			opMsgData, HEADLEN + 4, nil,
 		},
 	}
 
