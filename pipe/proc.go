@@ -45,6 +45,7 @@ type Proc struct {
 func (in *Proc) attach(p *Pipe, l *Line) {
 	in.Pipe = p
 	in.Line = l
+	in.Dir = l.Dir
 	in.done = make(chan struct{})
 
 	// copy relevant callbacks to cbs
@@ -115,16 +116,19 @@ func (in *Proc) attach(p *Pipe, l *Line) {
 	}
 }
 
-// prepare prepares metadata and context of m for processing in this Line.
+// prepare prepares metadata and context of m for processing in this Proc.
 // The message type must already be set.
-func (in *Proc) prepare(m *msg.Msg) (mx *Context) {
+func (in *Proc) prepare(m *msg.Msg) *Context {
+	mx := MsgContext(m)
+
 	// already prepared?
-	mx = MsgContext(m)
 	if mx.Input == in {
-		return
+		return mx
 	}
-	mx.Input = in
+
+	// nope, own it
 	mx.Pipe = in.Pipe
+	mx.Input = in
 
 	// message metadata
 	m.Dir = in.Dir
@@ -144,7 +148,7 @@ func (in *Proc) prepare(m *msg.Msg) (mx *Context) {
 		}
 	}
 
-	return
+	return mx
 }
 
 func (in *Proc) process() {
@@ -183,7 +187,7 @@ input:
 
 			// run and wait
 			mx.Callback = cb
-			mx.Action |= cb.Func(m)
+			cb.Func(m)
 			mx.Callback = nil
 
 			// what's next?

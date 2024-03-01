@@ -61,11 +61,10 @@ type Handler struct {
 }
 
 // CallbackFunc processes message m.
-// Optionally returns an Action to add to m's pipe.Context.Action.
-type CallbackFunc func(m *msg.Msg) (add_action Action)
+type CallbackFunc func(m *msg.Msg)
 
 // HandlerFunc handles event ev.
-// If returns false, unregisters the parent Handler for all Types.
+// If returns false, unregisters the parent Handler (for all Types).
 type HandlerFunc func(ev *Event) (keep_event bool)
 
 // AddCallbacks adds a callback function using tpl as its template (if present).

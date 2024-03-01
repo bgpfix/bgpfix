@@ -58,23 +58,19 @@ func NewPipe(ctx context.Context) *Pipe {
 	p.R = &Line{
 		Pipe: p,
 		Dir:  msg.DIR_R,
-		In:   make(chan *msg.Msg, 10),
-		Out:  make(chan *msg.Msg, 10),
-	}
-	p.R.Proc = &Proc{
-		Dir: msg.DIR_R,
-		In:  p.R.In,
+		Proc: Proc{
+			In: make(chan *msg.Msg, 10),
+		},
+		Out: make(chan *msg.Msg, 10),
 	}
 
 	p.L = &Line{
 		Pipe: p,
 		Dir:  msg.DIR_L,
-		In:   make(chan *msg.Msg, 10),
-		Out:  make(chan *msg.Msg, 10),
-	}
-	p.L.Proc = &Proc{
-		Dir: msg.DIR_L,
-		In:  p.L.In,
+		Proc: Proc{
+			In: make(chan *msg.Msg, 10),
+		},
+		Out: make(chan *msg.Msg, 10),
 	}
 
 	// NB: add internal handlers

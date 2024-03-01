@@ -87,7 +87,7 @@ func (s *Speaker) onEstablished(ev *pipe.Event) bool {
 	return false // unregister
 }
 
-func (s *Speaker) onOpen(m *msg.Msg) pipe.Action {
+func (s *Speaker) onOpen(m *msg.Msg) {
 	// TODO: validate received OPEN - drop if wrong caps / other params
 
 	// send our OPEN (nop if we did that already)
@@ -95,8 +95,6 @@ func (s *Speaker) onOpen(m *msg.Msg) pipe.Action {
 
 	// confirm the received OPEN is OK
 	s.sendKeepalive()
-
-	return 0
 }
 
 func (s *Speaker) sendOpen(ro *msg.Open) {

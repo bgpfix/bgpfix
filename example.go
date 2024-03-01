@@ -1,6 +1,5 @@
-/*
- * a basic example for bgpfix usage
- */
+// a basic example for bgpfix usage
+
 package main
 
 import (
@@ -68,9 +67,8 @@ func main() {
 	p.Wait()
 }
 
-func print(m *msg.Msg) pipe.Action {
+func print(m *msg.Msg) {
 	fmt.Printf("%s\n", m.ToJSON(nil))
-	return 0
 }
 
 func event(ev *pipe.Event) bool {

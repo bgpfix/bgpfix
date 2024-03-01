@@ -14,11 +14,8 @@ type Line struct {
 	Pipe *Pipe   // parent pipe
 	Dir  msg.Dir // line direction
 
-	// the default Proc, which processes messages through all callbacks.
-	*Proc
-
-	// In corresponds to the default Proc, where you write incoming messages to.
-	In chan *msg.Msg
+	// the default input Proc, which processes messages through all callbacks.
+	Proc
 
 	// Out is the Line output, where you can read processed messages from.
 	Out chan *msg.Msg
@@ -35,7 +32,7 @@ type Line struct {
 	// the OPEN message that updated LastOpen
 	Open atomic.Pointer[msg.Open]
 
-	procs []*Proc       // input processors, [0] is the default
+	procs []*Proc       // all input processors, [0] is the default
 	seq   atomic.Int64  // last seq number assigned
 	obuf  bytes.Buffer  // output buffer
 	done  chan struct{} // closed when done
@@ -48,7 +45,7 @@ func (l *Line) attach() {
 
 	// the default input
 	l.Proc.attach(p, l)
-	l.procs = append(l.procs, l.Proc)
+	l.procs = append(l.procs, &l.Proc)
 
 	// inputs from Options
 	for _, li := range p.Options.Procs {
