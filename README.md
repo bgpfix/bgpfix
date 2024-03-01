@@ -2,7 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/bgpfix/bgpfix.svg)](https://pkg.go.dev/github.com/bgpfix/bgpfix)
 
-**WORK IN PROGRESS PREVIEW 12/2023**
+**WORK IN PROGRESS PREVIEW 03/2024**
 
 A generic-purpose, high-performance Golang library for [bridging the gaps in BGP](https://twitter.com/ACM_IMC2021/status/1445725066403196928).
 
@@ -73,8 +73,8 @@ func main() {
 
 	// create a Pipe, add callback and event handlers
 	p := pipe.NewPipe(context.Background())
-	p.Options.OnMsg(print, msg.DST_LR) // call print() on every message in any direction
-	p.Options.OnEvent(event)           // call event() on any pipe event
+	p.OnMsg(print, msg.DIR_LR) // call print() on every message in any direction
+	p.OnEvent(event)           // call event() on any pipe event
 
 	// L side: a TCP target, sending to R
 	conn, err := net.Dial("tcp", flag.Arg(0)) // assumes a ":179" suffix
@@ -88,7 +88,7 @@ func main() {
 	spk.Options.LocalASN = *opt_asn
 	spk.Options.LocalHoldTime = *opt_hold
 	spk.Options.LocalId = netip.MustParseAddr(*opt_id)
-	spk.Attach(p, msg.DST_L)
+	spk.Attach(p, msg.DIR_L)
 
 	// copy from conn -> R
 	go func() {
@@ -102,20 +102,19 @@ func main() {
 		p.Stop()
 	}()
 
-	// start the pipe and wait till all processing is done
+	// start and wait till all processing is done
 	p.Start()
 	p.Wait()
 }
 
-func print(m *msg.Msg) pipe.Action {
-	fmt.Printf("%s\n", m.ToJSON(nil))
-	return 0
+func print(m *msg.Msg) {
+	fmt.Printf("%s\n", m.GetJSON())
 }
 
 func event(ev *pipe.Event) bool {
 	switch ev.Type {
 	case pipe.EVENT_ESTABLISHED:
-		fmt.Printf("session established, capabilities: %s", ev.Pipe.Caps.ToJSON(nil))
+		fmt.Printf("session established, capabilities: %s\n", ev.Pipe.Caps.ToJSON(nil))
 	}
 	return true
 }
@@ -308,4 +307,4 @@ Drafts:
 
 # Author
 
-Pawel Foremski [@pforemski](https://twitter.com/pforemski) 2023
+Pawel Foremski [@pforemski](https://twitter.com/pforemski) 2023-2024
