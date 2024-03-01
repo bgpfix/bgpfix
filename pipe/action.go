@@ -83,7 +83,46 @@ func ActionAccept(m *msg.Msg) *msg.Msg {
 	return m
 }
 
-// ActionIsAccept returns true if ACTION_ACCEPT is set in m context
+// ActionIsAccept returns true if ACTION_ACCEPT is set in m.
 func ActionIsAccept(m *msg.Msg) bool {
 	return MsgContext(m).Action.Is(ACTION_ACCEPT)
+}
+
+// ActionClear clears all action flags but ACTION_BORROW in mx and returns it.
+func (mx *Context) ActionClear() *Context {
+	mx.Action.Clear()
+	return mx
+}
+
+// ActionBorrow adds ACTION_BORROW to mx and returns it.
+func (mx *Context) ActionBorrow() *Context {
+	mx.Action.Add(ACTION_BORROW)
+	return mx
+}
+
+// ActionIsBorrow returns true if ACTION_BORROW is set in mx.
+func (mx *Context) ActionIsBorrow() bool {
+	return mx.Action.Is(ACTION_BORROW)
+}
+
+// ActionDrop adds ACTION_DROP to mx and returns it.
+func (mx *Context) ActionDrop() *Context {
+	mx.Action.Add(ACTION_DROP)
+	return mx
+}
+
+// ActionIsDrop returns true if ACTION_DROP is set in mx.
+func (mx *Context) ActionIsDrop() bool {
+	return mx.Action.Is(ACTION_DROP)
+}
+
+// ActionAccept adds ACTION_ACCEPT to mx and returns it.
+func (mx *Context) ActionAccept() *Context {
+	mx.Action.Add(ACTION_ACCEPT)
+	return mx
+}
+
+// ActionIsAccept returns true if ACTION_ACCEPT is set in mx.
+func (mx *Context) ActionIsAccept() bool {
+	return mx.Action.Is(ACTION_ACCEPT)
 }
