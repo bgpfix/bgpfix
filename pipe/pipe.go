@@ -238,8 +238,8 @@ func (p *Pipe) Stopped() bool {
 	return p.stopped.Load()
 }
 
-// Get returns empty msg from pool, or a new msg object
-func (p *Pipe) Get() (m *msg.Msg) {
+// GetMsg returns empty msg from pool, or a new msg object
+func (p *Pipe) GetMsg() (m *msg.Msg) {
 	if m, ok := p.msgpool.Get().(*msg.Msg); ok {
 		return m
 	} else {
@@ -247,8 +247,8 @@ func (p *Pipe) Get() (m *msg.Msg) {
 	}
 }
 
-// Put resets msg and returns it to pool, which might free it
-func (p *Pipe) Put(m *msg.Msg) {
+// PutMsg resets msg and returns it to pool, which might free it
+func (p *Pipe) PutMsg(m *msg.Msg) {
 	// NOP
 	if m == nil {
 		return

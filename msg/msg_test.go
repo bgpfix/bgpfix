@@ -57,7 +57,7 @@ func TestMsg_Parse(t *testing.T) {
 	var buf bytes.Buffer
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			off, err := msg.Parse(tt.raw)
+			off, err := msg.FromBytes(tt.raw)
 			if tt.wantErr == nil {
 				assert.NoError(err)
 			} else {

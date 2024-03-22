@@ -179,7 +179,7 @@ input:
 
 			// need to parse first?
 			if !cb.Raw && m.Upper == msg.INVALID {
-				if err := m.ParseUpper(p.Caps); err != nil {
+				if err := m.Parse(p.Caps); err != nil {
 					p.Event(EVENT_PARSE, in.Dir, m, err)
 					continue input // next message
 				}
@@ -192,7 +192,7 @@ input:
 
 			// what's next?
 			if mx.Action.Is(ACTION_DROP) {
-				p.Put(m)
+				p.PutMsg(m)
 				continue input // next message
 			} else if mx.Action.Is(ACTION_ACCEPT) {
 				break // take it as-is
@@ -203,7 +203,7 @@ input:
 		t := m.Time.Unix()
 		switch m.Type {
 		case msg.OPEN:
-			if m.ParseUpper(p.Caps) != nil {
+			if m.Parse(p.Caps) != nil {
 				break // not valid
 			}
 
@@ -229,7 +229,7 @@ input:
 
 		// output closed?
 		if closed {
-			p.Put(m) // drop on the floor
+			p.PutMsg(m) // drop on the floor
 		} else if l.WriteOut(m) != nil {
 			closed = true // start dropping from now on
 		}
@@ -254,7 +254,7 @@ func (in *Proc) WriteMsg(m *msg.Msg) (write_error error) {
 	defer func() {
 		if recover() != nil {
 			write_error = ErrInClosed
-			in.Pipe.Put(m)
+			in.Pipe.PutMsg(m)
 		}
 	}()
 	in.In <- m
@@ -296,8 +296,8 @@ func (in *Proc) Write(src []byte) (n int, err error) {
 	// process until raw is empty
 	for len(raw) > 0 {
 		// grab memory, parse raw, take mem reference
-		m := p.Get()
-		off, perr := m.Parse(raw)
+		m := p.GetMsg()
+		off, perr := m.FromBytes(raw)
 
 		// success?
 		switch perr {
@@ -319,7 +319,7 @@ func (in *Proc) Write(src []byte) (n int, err error) {
 
 		// prepare m
 		m.Time = now
-		m.CopyData()
+		m.Own()
 
 		// send
 		if err := in.WriteMsg(m); err != nil {

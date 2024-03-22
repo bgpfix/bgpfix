@@ -133,14 +133,14 @@ func (br *Reader) Write(src []byte) (n int, err error) {
 		}
 
 		// parse as a raw BGP message
-		m := p.Get()
-		off, perr = m.Parse(bm.Data)
+		m := p.GetMsg()
+		off, perr = m.FromBytes(bm.Data)
 		switch {
 		case perr != nil:
-			p.Put(m)
+			p.PutMsg(m)
 			return n, fmt.Errorf("BGP: %w", perr)
 		case off != len(bm.Data):
-			p.Put(m)
+			p.PutMsg(m)
 			return n, fmt.Errorf("BGP: %w", ErrLength)
 		}
 

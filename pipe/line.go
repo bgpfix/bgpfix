@@ -95,7 +95,7 @@ func (l *Line) WriteOut(m *msg.Msg) (write_error error) {
 	defer func() {
 		if recover() != nil {
 			write_error = ErrOutClosed
-			l.Pipe.Put(m)
+			l.Pipe.PutMsg(m)
 		}
 	}()
 	l.Out <- m
@@ -124,13 +124,13 @@ func (l *Line) Read(dst []byte) (int, error) {
 		// marshal upper layer to m.Data if needed
 		err = m.MarshalUpper(p.Caps)
 		if err != nil {
-			p.Put(m)
+			p.PutMsg(m)
 			break
 		}
 
 		// write m.Data to buf
 		_, err = m.WriteTo(buf)
-		p.Put(m)
+		p.PutMsg(m)
 
 		// what's next?
 		if err != nil {
@@ -159,13 +159,13 @@ func (l *Line) WriteTo(w io.Writer) (int64, error) {
 		// marshal upper layer to m.Data if needed
 		err = m.MarshalUpper(p.Caps)
 		if err != nil {
-			p.Put(m)
+			p.PutMsg(m)
 			break
 		}
 
 		// write m.Data to w
 		k, err = m.WriteTo(w)
-		p.Put(m)
+		p.PutMsg(m)
 		n += k
 
 		// continue?

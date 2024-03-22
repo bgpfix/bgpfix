@@ -21,7 +21,7 @@ type Msg struct {
 
 	ref   bool   // true iff Data references memory we don't own
 	buf   []byte // internal buffer
-	dirty bool   // if true, no sync between Upper vs. Data and Json
+	dirty bool   // if true, no sync between Upper vs. Data and Json // TODO: use Data = nil and Upper = INVALID instead
 
 	// optional metadata
 
@@ -180,60 +180,45 @@ func (msg *Msg) Dirty() {
 	msg.json = msg.json[:0]
 }
 
-// Own tags msg as the owner of referenced data. Does not copy the data.
+// Own copies the referenced data bytes iff needed, making msg the owner of msg.Data.
 func (msg *Msg) Own() *Msg {
-	msg.ref = false
-	return msg
-}
-
-// Disown tags msg as not the owner of data.
-func (msg *Msg) Disown() *Msg {
-	msg.ref = true
-	return msg
-}
-
-// CopyData copies the referenced data iff needed and makes msg the owner
-func (msg *Msg) CopyData() *Msg {
 	if !msg.ref {
 		return msg // already owned
-	}
-
-	// tag as owned
-	msg.ref = false
-
-	// special case: nothing to do
-	if msg.Data == nil {
-		return msg
+	} else {
+		msg.ref = false // tag as owned
 	}
 
 	// copy re-using our internal buffer
-	msg.buf = append(msg.buf[:0], msg.Data...)
-	msg.Data = msg.buf
-	msg.ref = false
+	if msg.Data != nil {
+		msg.buf = append(msg.buf[:0], msg.Data...)
+		msg.Data = msg.buf
+	}
+
 	return msg
 }
 
-// Parse parses the BGP message in raw. Does not copy.
-// Returns the number of parsed bytes from raw.
-func (msg *Msg) Parse(raw []byte) (off int, err error) {
+// FromBytes reads one BGP message from buf, referencing buf memory internally.
+// It does not copy, use Own() to make an internal copy of buf afterwards, if you need it.
+// Returns the number of read bytes from buf (can be less than len(buf)).
+func (msg *Msg) FromBytes(buf []byte) (off int, err error) {
 	// enough data for marker + length + type?
-	if len(raw) < HEADLEN {
+	if len(buf) < HEADLEN {
 		return off, io.ErrUnexpectedEOF
 	}
-	data := raw
+	data := buf
 
 	// find marker
 	if !bytes.HasPrefix(data, bgp_marker[:]) {
 		return off, ErrMarker
 	}
 	off = len(bgp_marker)
-	data = raw[off:]
+	data = buf[off:]
 
 	// read type and length
 	l := int(msb.Uint16(data[:2]))
 	msg.Type = Type(data[2])
 	off += 3
-	data = raw[off:]
+	data = buf[off:]
 
 	// check length
 	dlen := l - HEADLEN
@@ -257,9 +242,9 @@ func (msg *Msg) Parse(raw []byte) (off int, err error) {
 	return off + dlen, nil
 }
 
-// ParseUpper parses the upper layer iff needed.
+// Parse parses Data into the upper layers iff needed.
 // caps can infuence the upper layer decoders.
-func (msg *Msg) ParseUpper(caps caps.Caps) error {
+func (msg *Msg) Parse(caps caps.Caps) error {
 	if msg.Upper != INVALID {
 		return nil // assume already done
 	}
