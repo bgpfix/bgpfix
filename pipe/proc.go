@@ -319,7 +319,7 @@ func (in *Proc) Write(src []byte) (n int, err error) {
 
 		// prepare m
 		m.Time = now
-		m.Own()
+		m.CopyData()
 
 		// send
 		if err := in.WriteMsg(m); err != nil {

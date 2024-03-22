@@ -122,7 +122,7 @@ func (l *Line) Read(dst []byte) (int, error) {
 	// marshal from dir's output into obuf as much as possible
 	for m := range l.Out {
 		// marshal upper layer to m.Data if needed
-		err = m.MarshalUpper(p.Caps)
+		err = m.Marshal(p.Caps)
 		if err != nil {
 			p.PutMsg(m)
 			break
@@ -157,7 +157,7 @@ func (l *Line) WriteTo(w io.Writer) (int64, error) {
 
 	for m := range l.Out {
 		// marshal upper layer to m.Data if needed
-		err = m.MarshalUpper(p.Caps)
+		err = m.Marshal(p.Caps)
 		if err != nil {
 			p.PutMsg(m)
 			break

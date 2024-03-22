@@ -103,7 +103,7 @@ func (s *Speaker) sendOpen(ro *msg.Open) {
 	}
 
 	// local and remote OPENs
-	o := &s.pipe.GetMsg().Up(msg.OPEN).Open // our OPEN
+	o := &s.pipe.GetMsg().Use(msg.OPEN).Open // our OPEN
 	if ro == nil {
 		ro = s.down.Open.Load()
 	}
@@ -151,7 +151,7 @@ func (s *Speaker) sendOpen(ro *msg.Open) {
 }
 
 func (s *Speaker) sendKeepalive() {
-	m := s.pipe.GetMsg().Up(msg.KEEPALIVE)
+	m := s.pipe.GetMsg().Use(msg.KEEPALIVE)
 	s.in.WriteMsg(m)
 }
 

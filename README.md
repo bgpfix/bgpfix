@@ -6,7 +6,7 @@
 
 A generic-purpose, high-performance Golang library for [bridging the gaps in BGP](https://twitter.com/ACM_IMC2021/status/1445725066403196928).
 
-See the [bgpipe](https://github.com/bgpfix/bgpipe) BGP reverse proxy for a CLI tool.
+For a CLI tool, see the [bgpipe](https://github.com/bgpfix/bgpipe) BGP reverse proxy.
 
 BGPFix can "fix" or "extend" BGP sessions in-flight, possibly adding new features or protection layers to proprietary BGP speakers (think big router vendors). The vision is it will allow for implementing:
  * bidirectional BGP session to JSON translation, replacing [exabgp](https://github.com/Exa-Networks/exabgp/) for some use-cases,

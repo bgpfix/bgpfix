@@ -141,15 +141,26 @@ func UnPrefix(src []byte) (netip.Prefix, error) {
 	return netip.ParsePrefix(SQ(src))
 }
 
-// Ascii appends printable ASCII characters from src to dst, escaping " and \
+// Ascii appends ASCII characters from src to JSON string in dst
 func Ascii(dst, src []byte) []byte {
 	for _, c := range src {
-		if c < 0x20 || c > 0x7e {
-			continue
-		} else if c == '"' || c == '\\' {
-			dst = append(dst, '\\')
+		if c >= 0x20 && c <= 0x7e {
+			dst = append(dst, c)
+		} else {
+			switch c {
+			case '"', '\\':
+				dst = append(dst, '\\', c)
+			case '\r':
+				dst = append(dst, '\\', 'r')
+			case '\n':
+				dst = append(dst, '\\', 'n')
+			case '\t':
+				dst = append(dst, '\\', 't')
+			default:
+				dst = append(dst, "\\u00"...)
+				dst = append(dst, hextable[c>>4], hextable[c&0x0f])
+			}
 		}
-		dst = append(dst, c)
 	}
 	return dst
 }
@@ -202,7 +213,7 @@ func SQ(buf []byte) string {
 	return *(*string)(unsafe.Pointer(&buf))
 }
 
-// ArrayEach calls cb for each non-null value in the src array.
+// ArrayEach calls cb for each *non-nil* value in the src array.
 // If the callback returns or panics with an error, ArrayEach immediately returns it.
 func ArrayEach(src []byte, cb func(key int, val []byte, typ Type) error) (reterr error) {
 	var key int

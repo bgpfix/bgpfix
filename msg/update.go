@@ -171,34 +171,34 @@ func (u *Update) MarshalAttrs(cps caps.Caps) error {
 	return nil
 }
 
-// Marshal marshals o to o.Msg and returns it
+// Marshal marshals u to u.Msg.Data.
 func (u *Update) Marshal(cps caps.Caps) error {
 	msg := u.Msg
-	msg.Data = nil
-	dst := msg.buf[:0]
+	buf := msg.buf[:0]
 
 	// withdrawn routes
-	dst = append(dst, 0, 0) // length (tbd [1])
-	dst = attrs.WritePrefixes(dst, u.Unreach)
-	if l := len(dst) - 2; l > math.MaxUint16 {
+	buf = append(buf, 0, 0) // length (tbd [1])
+	buf = attrs.WritePrefixes(buf, u.Unreach)
+	if l := len(buf) - 2; l > math.MaxUint16 {
 		return fmt.Errorf("Marshal: too long Withdrawn Routes: %w (%d)", ErrLength, l)
 	} else if l > 0 {
-		msb.PutUint16(dst, uint16(l)) // [1]
+		msb.PutUint16(buf, uint16(l)) // [1]
 	}
 
 	// attributes
 	if len(u.RawAttrs) > math.MaxUint16 {
 		return fmt.Errorf("Marshal: too long Attributes: %w (%d)", ErrLength, len(u.RawAttrs))
 	}
-	dst = msb.AppendUint16(dst, uint16(len(u.RawAttrs)))
-	dst = append(dst, u.RawAttrs...)
+	buf = msb.AppendUint16(buf, uint16(len(u.RawAttrs)))
+	buf = append(buf, u.RawAttrs...)
 
 	// NLRI
-	dst = attrs.WritePrefixes(dst, u.Reach)
+	buf = attrs.WritePrefixes(buf, u.Reach)
 
 	// done
-	msg.buf = dst
-	msg.Data = dst
+	msg.Type = UPDATE
+	msg.buf = buf
+	msg.Data = buf
 	msg.ref = false
 	return nil
 }
