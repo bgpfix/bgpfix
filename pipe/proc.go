@@ -168,13 +168,17 @@ input:
 
 		// run the callbacks
 		for len(mx.cbs) > 0 {
-			// eat first callback
+			// eat the head
 			cb := mx.cbs[0]
 			mx.cbs = mx.cbs[1:]
 
-			// disabled?
-			if cb.Enabled != nil && !cb.Enabled.Load() {
-				continue
+			// skip callback?
+			if cb.Dropped {
+				continue // dropped
+			} else if cb.Id != 0 && mx.Input.Id == cb.Id {
+				continue // skip own messages
+			} else if cb.Enabled != nil && !cb.Enabled.Load() {
+				continue // disabled
 			}
 
 			// need to parse first?
@@ -185,16 +189,17 @@ input:
 				}
 			}
 
-			// run and wait
+			// run the callback, block until done
 			mx.Callback = cb
 			cb.Func(m)
 			mx.Callback = nil
 
 			// what's next?
-			if mx.Action.Is(ACTION_DROP) {
+			if mx.Action.IsDrop() {
 				p.PutMsg(m)
 				continue input // next message
-			} else if mx.Action.Is(ACTION_ACCEPT) {
+			}
+			if mx.Action.IsAccept() {
 				break // take it as-is
 			}
 		}

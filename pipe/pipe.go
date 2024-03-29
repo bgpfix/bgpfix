@@ -112,20 +112,20 @@ func (p *Pipe) attach() {
 
 // checkEstablished is called whenever either direction gets a new KEEPALIVE message,
 // until it emits EVENT_ESTABLISHED and unregisters. Fills p.Caps if enabled.
-func (p *Pipe) checkEstablished(ev *Event) bool {
+func (p *Pipe) checkEstablished(ev *Event) {
 	// already seen KEEPALIVE in both directions?
 	rstamp, lstamp := p.R.LastAlive.Load(), p.L.LastAlive.Load()
 	if rstamp == 0 || lstamp == 0 {
-		return true // not yet, keep trying
+		return // not yet, keep trying
 	}
 
 	// seen OPEN in both directions?
 	ropen, lopen := p.R.Open.Load(), p.L.Open.Load()
 	if ropen == nil || lopen == nil {
-		return true // strange, but keep trying
+		return // strange, but keep trying
 	}
 
-	// find out common caps
+	// find out common caps?
 	if p.Options.Caps {
 		// collect common caps into common
 		var common caps.Caps
@@ -149,11 +149,11 @@ func (p *Pipe) checkEstablished(ev *Event) bool {
 		p.Caps.SetFrom(common)
 	}
 
-	// announce the session is established
+	// announce that the session is established
 	p.Event(EVENT_ESTABLISHED, max(rstamp, lstamp))
 
 	// no more calls to this callback
-	return false
+	ev.Handler.Drop()
 }
 
 // Start starts given number of r/t message handlers in background,

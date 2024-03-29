@@ -64,18 +64,19 @@ func (s *Speaker) Attach(p *pipe.Pipe, dst msg.Dir) error {
 }
 
 // onStart sends our OPEN message, if the speaker is not passive.
-func (s *Speaker) onStart(_ *pipe.Event) bool {
+func (s *Speaker) onStart(ev *pipe.Event) {
 	if !s.Options.Passive {
 		s.sendOpen(nil)
 	}
-	return false // unregister
+	ev.Handler.Drop() // unregister the handler
 }
 
-func (s *Speaker) onEstablished(ev *pipe.Event) bool {
+// onEstablished starts periodic KEEPALIVE sender
+func (s *Speaker) onEstablished(ev *pipe.Event) {
 	// load last OPENs
 	up, down := s.up.Open.Load(), s.down.Open.Load()
 	if up == nil || down == nil {
-		return true // huh?
+		return // what?!
 	}
 
 	// start keepaliver with common hold time
@@ -84,7 +85,7 @@ func (s *Speaker) onEstablished(ev *pipe.Event) bool {
 		go s.keepaliver(int64(ht))
 	}
 
-	return false // unregister
+	ev.Handler.Drop() // unregister the handler
 }
 
 func (s *Speaker) onOpen(m *msg.Msg) {

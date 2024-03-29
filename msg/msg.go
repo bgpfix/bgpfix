@@ -399,7 +399,7 @@ func (msg *Msg) String() string {
 }
 
 // GetJSON returns JSON representation of msg + "\n" directly from an internal buffer.
-// The result is always non-nil and non-empty. Copy the result if you need to keep it!
+// The result is always non-nil and non-empty. Copy the result if you need to keep it.
 func (msg *Msg) GetJSON() []byte {
 	// still good?
 	if msg.Upper != INVALID && len(msg.json) > 0 {

@@ -1,6 +1,7 @@
 package pipe
 
 import (
+	"fmt"
 	"reflect"
 	"runtime"
 	"sync"
@@ -35,6 +36,7 @@ type Callback struct {
 	Name    string       // optional name
 	Order   int          // the lower the order, the sooner callback is run
 	Enabled *atomic.Bool // if non-nil, disables the callback unless true
+	Dropped bool         // if true, permanently drops (unregisters) the callback
 
 	Pre  bool // run before non-pre callbacks?
 	Raw  bool // if true, do not parse the message (which may already be parsed, but for other reasons)
@@ -51,6 +53,7 @@ type Handler struct {
 	Name    string       // optional name
 	Order   int          // the lower the order, the sooner handler is run
 	Enabled *atomic.Bool // if non-nil, disables the handler unless true
+	Dropped bool         // if true, permanently drops (unregisters) the handler
 
 	Pre  bool // run before non-pre handlers?
 	Post bool // run after non-post handlers?
@@ -64,8 +67,7 @@ type Handler struct {
 type CallbackFunc func(m *msg.Msg)
 
 // HandlerFunc handles event ev.
-// If returns false, unregisters the parent Handler (for all Types).
-type HandlerFunc func(ev *Event) (keep_event bool)
+type HandlerFunc func(ev *Event)
 
 // AddCallbacks adds a callback function using tpl as its template (if present).
 // It returns the added Callback, which can be further configured.
@@ -91,6 +93,38 @@ func (o *Options) AddCallback(cbf CallbackFunc, tpl ...*Callback) *Callback {
 
 	o.Callbacks = append(o.Callbacks, &cb)
 	return &cb
+}
+
+// Enable sets cb.Enabled to true and returns true. If cb.Enabled is nil, returns false.
+func (cb *Callback) Enable() bool {
+	if cb == nil || cb.Enabled == nil {
+		return false
+	} else {
+		cb.Enabled.Store(true)
+		return true
+	}
+}
+
+// Disable sets cb.Enabled to false and returns true. If cb.Enabled is nil, returns false.
+func (cb *Callback) Disable() bool {
+	if cb == nil || cb.Enabled == nil {
+		return false
+	} else {
+		cb.Enabled.Store(false)
+		return true
+	}
+}
+
+// Drop drops the callback, permanently unregistering it from running
+func (cb *Callback) Drop() {
+	if cb != nil {
+		cb.Dropped = true
+	}
+}
+
+// String returns callback name and id as string
+func (cb *Callback) String() string {
+	return fmt.Sprintf("C%d:%s", cb.Id, cb.Name)
 }
 
 // OnMsg adds a callback for all messages of given types (or all types if not specified).
@@ -151,6 +185,38 @@ func (o *Options) AddHandler(hdf HandlerFunc, tpl ...*Handler) *Handler {
 
 	o.Handlers = append(o.Handlers, &h)
 	return &h
+}
+
+// String returns handler name and id as string
+func (h *Handler) String() string {
+	return fmt.Sprintf("H%d:%s", h.Id, h.Name)
+}
+
+// Enable sets h.Enabled to true and returns true. If h.Enabled is nil, returns false.
+func (h *Handler) Enable() bool {
+	if h == nil || h.Enabled == nil {
+		return false
+	} else {
+		h.Enabled.Store(true)
+		return true
+	}
+}
+
+// Disable sets h.Enabled to false and returns true. If h.Enabled is nil, returns false.
+func (h *Handler) Disable() bool {
+	if h == nil || h.Enabled == nil {
+		return false
+	} else {
+		h.Enabled.Store(false)
+		return true
+	}
+}
+
+// Drop drops the handler, permanently unregistering it from running
+func (h *Handler) Drop() {
+	if h != nil {
+		h.Dropped = true
+	}
 }
 
 // OnEvent request hdf to be called for given event types.

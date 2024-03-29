@@ -2,7 +2,7 @@ package pipe
 
 import "github.com/bgpfix/bgpfix/msg"
 
-// Action requests special handling of a message in Pipe
+// Action requests special handling of a message or event in a Pipe
 type Action byte
 
 const (
@@ -18,14 +18,14 @@ const (
 	// unless you know you are the sole owner of this message.
 	ACTION_BORROW Action = 1 << iota
 
-	// Drop the message immediately from the pipe.
+	// Drop the message/event immediately (skip other calls, drop from output).
 	//
-	// If you want to re-inject the message later, set ACTION_BORROW too,
+	// If you want to re-inject a message later, set ACTION_BORROW too,
 	// and keep in mind the message will try to re-start after where
 	// you dropped it, unless you call Context.Clear on it.
 	ACTION_DROP
 
-	// Accept the message immediately and write to pipe output.
+	// Accept the message/event immediately (skip other calls, proceed to output)
 	ACTION_ACCEPT
 )
 
@@ -42,6 +42,36 @@ func (ac *Action) Add(a Action) {
 // Is returns true iff a is set in ac
 func (ac Action) Is(a Action) bool {
 	return ac&a != 0
+}
+
+// IsBorrow returns true iff ACTION_BORROW is set in ac
+func (ac Action) IsBorrow() bool {
+	return ac&ACTION_BORROW != 0
+}
+
+// Borrow adds ACTION_BORROW
+func (ac *Action) Borrow() {
+	*ac |= ACTION_BORROW
+}
+
+// IsAccept returns true iff ACTION_ACCEPT is set in ac
+func (ac Action) IsAccept() bool {
+	return ac&ACTION_ACCEPT != 0
+}
+
+// Accept adds ACTION_ACCEPT
+func (ac *Action) Accept() {
+	*ac |= ACTION_ACCEPT
+}
+
+// IsDrop returns true iff ACTION_DROP is set in ac
+func (ac Action) IsDrop() bool {
+	return ac&ACTION_DROP != 0
+}
+
+// Drop adds ACTION_DROP
+func (ac *Action) Drop() {
+	*ac |= ACTION_DROP
 }
 
 // IsNot returns true iff a is NOT set in ac
@@ -86,43 +116,4 @@ func ActionAccept(m *msg.Msg) *msg.Msg {
 // ActionIsAccept returns true if ACTION_ACCEPT is set in m.
 func ActionIsAccept(m *msg.Msg) bool {
 	return MsgContext(m).Action.Is(ACTION_ACCEPT)
-}
-
-// ActionClear clears all action flags but ACTION_BORROW in mx and returns it.
-func (mx *Context) ActionClear() *Context {
-	mx.Action.Clear()
-	return mx
-}
-
-// ActionBorrow adds ACTION_BORROW to mx and returns it.
-func (mx *Context) ActionBorrow() *Context {
-	mx.Action.Add(ACTION_BORROW)
-	return mx
-}
-
-// ActionIsBorrow returns true if ACTION_BORROW is set in mx.
-func (mx *Context) ActionIsBorrow() bool {
-	return mx.Action.Is(ACTION_BORROW)
-}
-
-// ActionDrop adds ACTION_DROP to mx and returns it.
-func (mx *Context) ActionDrop() *Context {
-	mx.Action.Add(ACTION_DROP)
-	return mx
-}
-
-// ActionIsDrop returns true if ACTION_DROP is set in mx.
-func (mx *Context) ActionIsDrop() bool {
-	return mx.Action.Is(ACTION_DROP)
-}
-
-// ActionAccept adds ACTION_ACCEPT to mx and returns it.
-func (mx *Context) ActionAccept() *Context {
-	mx.Action.Add(ACTION_ACCEPT)
-	return mx
-}
-
-// ActionIsAccept returns true if ACTION_ACCEPT is set in mx.
-func (mx *Context) ActionIsAccept() bool {
-	return mx.Action.Is(ACTION_ACCEPT)
 }

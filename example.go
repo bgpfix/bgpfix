@@ -68,13 +68,12 @@ func main() {
 }
 
 func print(m *msg.Msg) {
-	fmt.Printf("%s\n", m.GetJSON())
+	os.Stdout.Write(m.GetJSON())
 }
 
-func event(ev *pipe.Event) bool {
+func event(ev *pipe.Event) {
 	switch ev.Type {
 	case pipe.EVENT_ESTABLISHED:
-		fmt.Printf("session established, capabilities: %s\n", ev.Pipe.Caps.ToJSON(nil))
+		fmt.Printf("session established, capabilities: %s\n", ev.Pipe.Caps.String())
 	}
-	return true
 }
