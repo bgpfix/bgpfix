@@ -109,7 +109,8 @@ const (
 var (
 	msb = binary.Msb
 
-	bgp_marker = [...]byte{
+	// https://datatracker.ietf.org/doc/html/rfc4271#autoid-9
+	BgpMarker = []byte{
 		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 	}
@@ -228,10 +229,10 @@ func (msg *Msg) FromBytes(buf []byte) (off int, err error) {
 	data := buf
 
 	// find marker
-	if !bytes.HasPrefix(data, bgp_marker[:]) {
+	if !bytes.HasPrefix(data, BgpMarker) {
 		return off, ErrMarker
 	}
-	off = len(bgp_marker)
+	off = len(BgpMarker)
 	data = buf[off:]
 
 	// read type and length
@@ -361,7 +362,7 @@ func (msg *Msg) WriteTo(w io.Writer) (n int64, err error) {
 	}
 
 	// write the marker
-	m, err = w.Write(bgp_marker[:])
+	m, err = w.Write(BgpMarker)
 	if err != nil {
 		return
 	}

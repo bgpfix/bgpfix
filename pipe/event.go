@@ -55,7 +55,11 @@ type Event struct {
 
 // String returns event type and seq number as string
 func (ev *Event) String() string {
-	return fmt.Sprintf("E%d:%s", ev.Seq, ev.Type)
+	if ev == nil {
+		return "nil"
+	} else {
+		return fmt.Sprintf("E%d:%s", ev.Seq, ev.Type)
+	}
 }
 
 // Wait blocks until the event is handled
