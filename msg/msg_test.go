@@ -13,6 +13,8 @@ func TestMsg_Parse(t *testing.T) {
 
 	opMsg := NewMsg()
 	opMsg.Type = OPEN
+	opMsg.ref = true
+	opMsg.Data = []byte{}
 
 	tests := []struct {
 		name    string
@@ -33,22 +35,22 @@ func TestMsg_Parse(t *testing.T) {
 		},
 		{
 			"invalid length 1",
-			append(bgp_marker[:], 0x00, 0x01, 0x00),
+			append(BgpMarker[:], 0x00, 0x01, 0x00),
 			nil, HEADLEN, ErrLength,
 		},
 		{
 			"EOF 65k",
-			append(bgp_marker[:], 0xff, 0xff, 0x00),
+			append(BgpMarker[:], 0xff, 0xff, 0x00),
 			nil, HEADLEN, io.ErrUnexpectedEOF,
 		},
 		{
 			"EOF 1",
-			append(bgp_marker[:], 0x00, HEADLEN+1, 0x00),
+			append(BgpMarker[:], 0x00, HEADLEN+1, 0x00),
 			nil, HEADLEN, io.ErrUnexpectedEOF,
 		},
 		{
 			"OPEN empty",
-			append(bgp_marker[:], 0x00, HEADLEN, byte(OPEN), 0x31, 0x37),
+			append(BgpMarker[:], 0x00, HEADLEN, byte(OPEN), 0x31, 0x37),
 			opMsg, HEADLEN, nil,
 		},
 	}
