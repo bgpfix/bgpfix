@@ -9,4 +9,5 @@ var (
 	ErrType   = errors.New("invalid MRT type")
 	ErrSub    = errors.New("invalid MRT subtype")
 	ErrAF     = errors.New("invalid Address Family")
+	ErrNoData = errors.New("no message data")
 )

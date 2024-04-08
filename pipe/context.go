@@ -61,13 +61,9 @@ func (mx *Context) GetTag(tag string) string {
 
 // SetTag set given Tag to given value,
 // or to a value of "" if not provided
-func (mx *Context) SetTag(tag string, val ...string) {
+func (mx *Context) SetTag(tag string, val string) {
 	tags := mx.Tags()
-	if len(val) > 0 {
-		tags[tag] = val[0]
-	} else {
-		tags[tag] = ""
-	}
+	tags[tag] = val
 }
 
 // Tags returns a generic string Tag-Value store,

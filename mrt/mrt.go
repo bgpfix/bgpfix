@@ -19,27 +19,30 @@ type Mrt struct {
 	Type Type      // message type
 	Sub  Sub       // message subtype
 	Data []byte    // message data (referenced or owned), can be nil
+
+	Upper Type // which of the upper layers is valid?
+	Bgp4  Bgp4 // BGP4MP or BGP4MP_ET
 }
 
 // MRT message type, see https://www.iana.org/assignments/mrt/mrt.xhtml
 type Type uint16
 
-//go:generate go run github.com/dmarkham/enumer -type Type -trimprefix TYPE_
+//go:generate go run github.com/dmarkham/enumer -type Type
 const (
-	TYPE_INVALID Type = 0
+	INVALID Type = 0
 
-	TYPE_OSPF2    Type = 11
-	TYPE_OSPF3    Type = 48
-	TYPE_OSPF3_ET Type = 49
+	OSPF2    Type = 11
+	OSPF3    Type = 48
+	OSPF3_ET Type = 49
 
-	TYPE_TABLE_DUMP  Type = 12
-	TYPE_TABLE_DUMP2 Type = 13
+	TABLE_DUMP  Type = 12
+	TABLE_DUMP2 Type = 13
 
-	TYPE_BGP4MP    Type = 16
-	TYPE_BGP4MP_ET Type = 17
+	BGP4MP    Type = 16
+	BGP4MP_ET Type = 17
 
-	TYPE_ISIS    Type = 32
-	TYPE_ISIS_ET Type = 33
+	ISIS    Type = 32
+	ISIS_ET Type = 33
 )
 
 // MRT message subtype, see https://www.iana.org/assignments/mrt/mrt.xhtml
@@ -61,7 +64,9 @@ var (
 
 // NewMrt returns new empty message
 func NewMrt() *Mrt {
-	return new(Mrt)
+	m := new(Mrt)
+	m.Bgp4.Init(m)
+	return m
 }
 
 // Reset clears the message
@@ -78,55 +83,57 @@ func (m *Mrt) Reset() *Mrt {
 	m.Sub = 0
 	m.Data = nil
 
+	switch m.Upper {
+	case BGP4MP, BGP4MP_ET:
+		m.Bgp4.Reset()
+	}
+	m.Upper = INVALID
+
 	return m
 }
 
 // Length returns total MRT message length, including header
 func (m *Mrt) Length() int {
-	return len(m.Data) + HEADLEN
-}
-
-// SetData updates the data to reference given value
-func (m *Mrt) SetData(data []byte) *Mrt {
-	m.Data = data
-	m.ref = data != nil
-	return m
-}
-
-// Own tags msg as the owner of referenced data. Does not copy the data.
-func (m *Mrt) Own() {
-	m.ref = false
-}
-
-// Disown tags msg as not the owner of data.
-func (m *Mrt) Disown() {
-	m.ref = true
+	if m.Data == nil {
+		return 0
+	} else {
+		return len(m.Data) + HEADLEN
+	}
 }
 
 // CopyData copies the referenced data iff needed and makes msg the owner
 func (m *Mrt) CopyData() *Mrt {
 	if !m.ref {
 		return m // already owned
+	} else {
+		m.ref = false // tag as owned
 	}
-
-	// tag as owned
-	m.ref = false
 
 	// special case: nothing to do
 	if m.Data == nil {
 		return m
 	}
 
-	// copy re-using our internal buffer
-	m.buf = append(m.buf[:0], m.Data...)
+	switch {
+	case m.Data == nil: // no data
+		return m
+	case len(m.Data) == 0: // data empty
+		if m.buf == nil {
+			m.buf = make([]byte, 0)
+		} else {
+			m.buf = m.buf[:0]
+		}
+	default: // copy data
+		m.buf = append(m.buf[:0], m.Data...)
+	}
+
 	m.Data = m.buf
-	m.ref = false
 	return m
 }
 
-// Parse parses the MRT message in raw. Does not copy.
+// FromBytes parses the MRT message in raw. Does not copy.
 // Returns the number of parsed bytes from raw.
-func (m *Mrt) Parse(raw []byte) (off int, err error) {
+func (m *Mrt) FromBytes(raw []byte) (off int, err error) {
 	// enough bytes for header?
 	if len(raw) < HEADLEN {
 		return off, io.ErrUnexpectedEOF
@@ -156,7 +163,7 @@ func (m *Mrt) Parse(raw []byte) (off int, err error) {
 
 	// extended timestamp?
 	switch m.Type {
-	case TYPE_BGP4MP_ET, TYPE_ISIS_ET, TYPE_OSPF3_ET:
+	case BGP4MP_ET, ISIS_ET, OSPF3_ET:
 		if l < 4 {
 			return off, ErrShort
 		}
@@ -177,6 +184,33 @@ func (m *Mrt) Parse(raw []byte) (off int, err error) {
 
 	// done!
 	return off, nil
+}
+
+// Parse parses m.Data into the upper layer iff needed.
+func (m *Mrt) Parse() error {
+	if m.Upper != INVALID {
+		return nil // assume already done
+	} else if m.Data == nil {
+		return ErrNoData
+	}
+
+	var err error
+	switch m.Type {
+	case BGP4MP, BGP4MP_ET:
+		bgp4 := &m.Bgp4
+		err = bgp4.Parse()
+		if err != nil {
+			break
+		}
+	default:
+		err = ErrType
+	}
+
+	if err == nil {
+		m.Upper = m.Type
+	}
+
+	return err
 }
 
 // WriteTo writes the MRT message to w, implementing io.WriterTo

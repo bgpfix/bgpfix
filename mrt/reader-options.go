@@ -13,4 +13,6 @@ var DefaultReaderOptions = ReaderOptions{
 // MRT-BGP Reader options
 type ReaderOptions struct {
 	Logger *zerolog.Logger // if nil logging is disabled
+	NoTime bool            // if true, do not set message time
+	NoTags bool            // if true, do not set message tags
 }

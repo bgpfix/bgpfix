@@ -35,9 +35,9 @@ type Msg struct {
 
 	// upper layer
 
-	Upper  Type   // which of the upper layer is valid?
-	Open   Open   // parsed BGP OPEN message
-	Update Update // parsed BGP UPDATE message
+	Upper  Type   // which of the upper layers is valid?
+	Open   Open   // BGP OPEN message
+	Update Update // BGP UPDATE message
 
 	// for optional use beyond this pkg, eg. to store pipe.Context
 

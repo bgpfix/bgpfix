@@ -49,7 +49,7 @@ func (o *Open) Reset() {
 	o.Caps.Reset()
 }
 
-// Parse parses msg.Data as BGP OPEN
+// Parse parses o.Msg.Data as BGP OPEN
 func (o *Open) Parse() error {
 	buf := o.Msg.Data
 	if len(buf) < OPEN_MINLEN {
