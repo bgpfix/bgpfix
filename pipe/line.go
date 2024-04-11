@@ -14,8 +14,8 @@ type Line struct {
 	Pipe *Pipe   // parent pipe
 	Dir  msg.Dir // line direction
 
-	// the default input Proc, which processes messages through all callbacks.
-	Proc
+	// the default Input, which processes messages through all callbacks.
+	Input
 
 	// Out is the Line output, where you can read processed messages from.
 	Out chan *msg.Msg
@@ -32,10 +32,10 @@ type Line struct {
 	// the OPEN message that updated LastOpen
 	Open atomic.Pointer[msg.Open]
 
-	procs []*Proc       // all input processors, [0] is the default
-	seq   atomic.Int64  // last seq number assigned
-	obuf  bytes.Buffer  // output buffer
-	done  chan struct{} // closed when done
+	inputs []*Input      // all input processors, [0] is the default .Input
+	seq    atomic.Int64  // last seq number assigned
+	obuf   bytes.Buffer  // output buffer
+	done   chan struct{} // closed when done
 }
 
 // attach line inputs
@@ -44,27 +44,27 @@ func (l *Line) attach() {
 	l.done = make(chan struct{})
 
 	// the default input
-	l.Proc.attach(p, l)
-	l.procs = append(l.procs, &l.Proc)
+	l.Input.attach(p, l)
+	l.inputs = append(l.inputs, &l.Input)
 
 	// inputs from Options
-	for _, li := range p.Options.Procs {
+	for _, li := range p.Options.Inputs {
 		if li != nil && li.Dir == l.Dir {
 			li.attach(p, l)
-			l.procs = append(l.procs, li)
+			l.inputs = append(l.inputs, li)
 		}
 	}
 }
 
 // start starts all input processors
 func (l *Line) start() {
-	for _, in := range l.procs {
+	for _, in := range l.inputs {
 		go in.process()
 	}
 
 	// close line output when all processors finish
 	go func() {
-		for _, in := range l.procs {
+		for _, in := range l.inputs {
 			in.Wait()
 		}
 		l.CloseOutput()
@@ -79,7 +79,7 @@ func (l *Line) Wait() {
 
 // Close safely closes all inputs, which should eventually stop the line
 func (l *Line) Close() {
-	for _, in := range l.procs {
+	for _, in := range l.inputs {
 		in.Close()
 	}
 }
@@ -90,8 +90,8 @@ func (l *Line) CloseOutput() {
 	close(l.Out)
 }
 
-// WriteOut safely sends m to l.Out, avoiding a panic if closed.
-func (l *Line) WriteOut(m *msg.Msg) (write_error error) {
+// WriteOutput safely sends m to l.Out, avoiding a panic if closed.
+func (l *Line) WriteOutput(m *msg.Msg) (write_error error) {
 	defer func() {
 		if recover() != nil {
 			write_error = ErrOutClosed

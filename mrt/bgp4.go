@@ -3,9 +3,11 @@ package mrt
 import (
 	"fmt"
 	"net/netip"
+	"strconv"
 
 	"github.com/bgpfix/bgpfix/af"
 	"github.com/bgpfix/bgpfix/msg"
+	"github.com/bgpfix/bgpfix/pipe"
 )
 
 // from https://www.iana.org/assignments/mrt/mrt.xhtml
@@ -29,15 +31,15 @@ const (
 	BGPMSG_HEADLEN = 16
 )
 
-// Bgp4 represents an MRT BGP4MP message
+// Bgp4 represents an MRT BGP4MP_MESSAGE message
 type Bgp4 struct {
-	Mrt     *Mrt       // parent MRT message
-	PeerAS  uint32     // peer AS
-	LocalAS uint32     // local AS
-	Iface   uint16     // interface index
-	PeerIP  netip.Addr // peer IP address
-	LocalIP netip.Addr // local IP address
-	Data    []byte     // BGP message, referenced
+	Mrt       *Mrt       // parent MRT message
+	PeerAS    uint32     // peer AS
+	LocalAS   uint32     // local AS
+	Interface uint16     // interface index
+	PeerIP    netip.Addr // peer IP address
+	LocalIP   netip.Addr // local IP address
+	Data      []byte     // BGP message, referenced
 }
 
 // Init initializes b4 to use parent mrt
@@ -50,7 +52,86 @@ func (b4 *Bgp4) Reset() {
 	b4.Data = nil
 }
 
-// Parse parses bm.Mrt.Data as BGP4MP message
+// FromMsg writes b4 and b4.Mrt from m, referencing m.Data.
+func (b4 *Bgp4) FromMsg(m *msg.Msg) error {
+	// update parent Mrt
+	mrt := b4.Mrt
+	mrt.Time = m.Time
+	mrt.Type = BGP4MP_ET
+	mrt.Upper = BGP4MP_ET
+	mrt.Sub = BGP4_MESSAGE_AS4
+	mrt.Data = nil
+
+	// reference m.Data in b4
+	if m.Data == nil {
+		return ErrNoData
+	}
+	b4.Data = m.Data
+
+	// m has Context with relevant tags?
+	if pipe.HasTags(m) {
+		tags := pipe.MsgTags(m)
+		if s := tags["PEER_AS"]; len(s) > 0 {
+			v, err := strconv.ParseUint(s, 10, 32)
+			if err == nil {
+				b4.PeerAS = uint32(v)
+			}
+		}
+		if s := tags["PEER_IP"]; len(s) > 0 {
+			v, err := netip.ParseAddr(s)
+			if err == nil {
+				b4.PeerIP = v
+			}
+		}
+		if s := tags["LOCAL_AS"]; len(s) > 0 {
+			v, err := strconv.ParseUint(s, 10, 32)
+			if err == nil {
+				b4.LocalAS = uint32(v)
+			}
+		}
+		if s := tags["LOCAL_IP"]; len(s) > 0 {
+			v, err := netip.ParseAddr(s)
+			if err == nil {
+				b4.LocalIP = v
+			}
+		}
+		if s := tags["INTERFACE"]; len(s) > 0 {
+			v, err := strconv.ParseUint(s, 10, 16)
+			if err == nil {
+				b4.Interface = uint16(v)
+			}
+		}
+	}
+	return nil
+}
+
+// ToMsg writes MRT-BGP4MP message b4 to BGP message m, referencing data.
+func (b4 *Bgp4) ToMsg(m *msg.Msg, set_tags bool) error {
+	off, err := m.FromBytes(b4.Data)
+	switch {
+	case err != nil:
+		return err
+	case off != len(b4.Data):
+		return ErrLength
+	}
+
+	// copy MRT time
+	m.Time = b4.Mrt.Time
+
+	// copy BGP4MP metadata?
+	if set_tags {
+		tags := pipe.MsgTags(m)
+		tags["PEER_AS"] = strconv.FormatUint(uint64(b4.PeerAS), 10)
+		tags["PEER_IP"] = b4.PeerIP.String()
+		tags["LOCAL_AS"] = strconv.FormatUint(uint64(b4.LocalAS), 10)
+		tags["LOCAL_IP"] = b4.LocalIP.String()
+		tags["INTERFACE"] = strconv.FormatUint(uint64(b4.Interface), 10)
+	}
+
+	return nil
+}
+
+// Parse parses b4.Mrt as BGP4MP message, referencing data.
 func (b4 *Bgp4) Parse() error {
 	// check type
 	mrt := b4.Mrt
@@ -63,7 +144,7 @@ func (b4 *Bgp4) Parse() error {
 
 	// check buf length
 	buf := mrt.Data
-	if len(buf) < BGPMSG_HEADLEN+msg.HEADLEN {
+	if len(buf) < BGPMSG_HEADLEN {
 		return ErrShort
 	}
 
@@ -73,13 +154,13 @@ func (b4 *Bgp4) Parse() error {
 	case BGP4_MESSAGE, BGP4_MESSAGE_LOCAL:
 		b4.PeerAS = uint32(msb.Uint16(buf[0:2]))
 		b4.LocalAS = uint32(msb.Uint16(buf[2:4]))
-		b4.Iface = msb.Uint16(buf[4:6])
+		b4.Interface = msb.Uint16(buf[4:6])
 		afi = af.NewAFIBytes(buf[6:8])
 		buf = buf[8:]
 	case BGP4_MESSAGE_AS4, BGP4_MESSAGE_AS4_LOCAL:
 		b4.PeerAS = msb.Uint32(buf[0:4])
 		b4.LocalAS = msb.Uint32(buf[4:8])
-		b4.Iface = msb.Uint16(buf[8:10])
+		b4.Interface = msb.Uint16(buf[8:10])
 		afi = af.NewAFIBytes(buf[10:12])
 		buf = buf[12:]
 	default:
@@ -106,7 +187,79 @@ func (b4 *Bgp4) Parse() error {
 		return fmt.Errorf("%w: %d", ErrAF, afi)
 	}
 
-	// reference the message, done
+	// reference the raw BGP message
 	b4.Data = buf
+
+	// done
+	mrt.Upper = mrt.Type
+	return nil
+}
+
+// Marshal marshals b4 to b4.Mrt.Data.
+// Type and Sub must already be set in b4.Mrt parent.
+func (b4 *Bgp4) Marshal() error {
+	// has valid Data?
+	if b4.Data == nil {
+		return ErrNoData
+	}
+
+	// check type
+	mrt := b4.Mrt
+	switch mrt.Type {
+	case BGP4MP:
+	case BGP4MP_ET:
+	default:
+		return ErrType
+	}
+
+	// write peer AS, local AS, interface
+	buf := mrt.buf[:0]
+	switch mrt.Sub {
+	case BGP4_MESSAGE, BGP4_MESSAGE_LOCAL:
+		buf = msb.AppendUint16(buf, uint16(b4.PeerAS))
+		buf = msb.AppendUint16(buf, uint16(b4.LocalAS))
+		buf = msb.AppendUint16(buf, b4.Interface)
+	case BGP4_MESSAGE_AS4, BGP4_MESSAGE_AS4_LOCAL:
+		buf = msb.AppendUint32(buf, b4.PeerAS)
+		buf = msb.AppendUint32(buf, b4.LocalAS)
+		buf = msb.AppendUint16(buf, b4.Interface)
+	default:
+		return ErrSub
+	}
+
+	// write AF, peer IP, local IP
+	peerip := b4.PeerIP.AsSlice()
+	localip := b4.PeerIP.AsSlice()
+	switch {
+	case b4.PeerIP.Is6() || b4.LocalIP.Is6():
+		buf = msb.AppendUint16(buf, uint16(af.AFI_IPV6))
+		for len(peerip) < 16 {
+			peerip = append(peerip, 0)
+		}
+		buf = append(buf, peerip[:16]...)
+		for len(localip) < 16 {
+			localip = append(localip, 0)
+		}
+		buf = append(buf, localip[:16]...)
+	default:
+		buf = msb.AppendUint16(buf, uint16(af.AFI_IPV4))
+		for len(peerip) < 4 {
+			peerip = append(peerip, 0)
+		}
+		buf = append(buf, peerip[:4]...)
+		for len(localip) < 4 {
+			localip = append(localip, 0)
+		}
+		buf = append(buf, localip[:4]...)
+	}
+
+	// write BGP raw data
+	buf = append(buf, b4.Data...)
+
+	// done
+	mrt.Upper = mrt.Type
+	mrt.buf = buf
+	mrt.Data = buf
+	mrt.ref = false
 	return nil
 }

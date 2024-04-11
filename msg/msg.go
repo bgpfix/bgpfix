@@ -211,13 +211,6 @@ func (msg *Msg) CopyData() *Msg {
 	return msg
 }
 
-// DropData drops msg.Data, removing any reference to external data.
-func (msg *Msg) DropData() *Msg {
-	msg.Data = nil
-	msg.ref = false
-	return msg
-}
-
 // FromBytes reads one BGP message from buf, referencing buf data inside msg.Data.
 // If needed, call CopyData(), DropData() or Reset() later to remove the reference.
 // Returns the number of bytes read from buf, which can be less than len(buf).
@@ -346,7 +339,8 @@ func (msg *Msg) Marshal(cps caps.Caps) error {
 	return err
 }
 
-// WriteTo writes raw BGP message to w, implementing io.WriterTo
+// WriteTo writes raw BGP msg.Data to w, implementing io.WriterTo.
+// Call msg.Marshal() first if needed.
 func (msg *Msg) WriteTo(w io.Writer) (n int64, err error) {
 	var m int
 
@@ -357,7 +351,7 @@ func (msg *Msg) WriteTo(w io.Writer) (n int64, err error) {
 
 	// data length ok?
 	l := msg.Length()
-	if l <= 0 || l > MAXLEN {
+	if l < HEADLEN || l > MAXLEN {
 		return 0, ErrLength
 	}
 

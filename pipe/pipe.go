@@ -58,7 +58,7 @@ func NewPipe(ctx context.Context) *Pipe {
 	p.R = &Line{
 		Pipe: p,
 		Dir:  msg.DIR_R,
-		Proc: Proc{
+		Input: Input{
 			In: make(chan *msg.Msg, 10),
 		},
 		Out: make(chan *msg.Msg, 10),
@@ -67,7 +67,7 @@ func NewPipe(ctx context.Context) *Pipe {
 	p.L = &Line{
 		Pipe: p,
 		Dir:  msg.DIR_L,
-		Proc: Proc{
+		Input: Input{
 			In: make(chan *msg.Msg, 10),
 		},
 		Out: make(chan *msg.Msg, 10),
@@ -112,17 +112,17 @@ func (p *Pipe) attach() {
 
 // checkEstablished is called whenever either direction gets a new KEEPALIVE message,
 // until it emits EVENT_ESTABLISHED and unregisters. Fills p.Caps if enabled.
-func (p *Pipe) checkEstablished(ev *Event) {
+func (p *Pipe) checkEstablished(ev *Event) bool {
 	// already seen KEEPALIVE in both directions?
 	rstamp, lstamp := p.R.LastAlive.Load(), p.L.LastAlive.Load()
 	if rstamp == 0 || lstamp == 0 {
-		return // not yet, keep trying
+		return true // not yet, keep trying
 	}
 
 	// seen OPEN in both directions?
 	ropen, lopen := p.R.Open.Load(), p.L.Open.Load()
 	if ropen == nil || lopen == nil {
-		return // strange, but keep trying
+		return true // strange, but keep trying
 	}
 
 	// find out common caps?
@@ -153,11 +153,10 @@ func (p *Pipe) checkEstablished(ev *Event) {
 	p.Event(EVENT_ESTABLISHED, max(rstamp, lstamp))
 
 	// no more calls to this callback
-	ev.Handler.Drop()
+	return false
 }
 
-// Start starts given number of r/t message handlers in background,
-// by default r/t = 1/1 (single-threaded, strictly ordered processing).
+// Start starts the Pipe in background and returns.
 func (p *Pipe) Start() {
 	if p.started.Swap(true) || p.stopped.Load() {
 		return // already started or stopped
@@ -192,9 +191,9 @@ func (p *Pipe) Start() {
 	p.wgstart.Done()
 }
 
-// Stop stops all handlers and blocks till handlers finish.
+// Stop stops all inputs and blocks till they finish processing.
 // Pipe must not be used again past this point.
-// Closes all input channels, which should eventually close all output channels,
+// Closes all inputs, which should eventually close all outputs,
 // possibly after this function returns.
 func (p *Pipe) Stop() {
 	if p.stopped.Swap(true) || !p.started.Load() {

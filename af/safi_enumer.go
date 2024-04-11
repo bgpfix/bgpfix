@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	_SAFIName_0      = "UNICASTMULTICAST"
-	_SAFILowerName_0 = "unicastmulticast"
+	_SAFIName_0      = "INVALIDUNICASTMULTICAST"
+	_SAFILowerName_0 = "invalidunicastmulticast"
 	_SAFIName_1      = "MPLSMCAST_VPNPLACEMENT_MSPW"
 	_SAFILowerName_1 = "mplsmcast_vpnplacement_mspw"
 	_SAFIName_2      = "MCAST_VPLSSFC"
@@ -27,7 +27,7 @@ const (
 )
 
 var (
-	_SAFIIndex_0 = [...]uint8{0, 7, 16}
+	_SAFIIndex_0 = [...]uint8{0, 7, 14, 23}
 	_SAFIIndex_1 = [...]uint8{0, 4, 13, 27}
 	_SAFIIndex_2 = [...]uint8{0, 10, 13}
 	_SAFIIndex_3 = [...]uint8{0, 6, 10, 13, 19, 25, 40, 45, 47, 53, 65, 84, 98, 116, 133, 143, 146, 152}
@@ -39,8 +39,7 @@ var (
 
 func (i SAFI) String() string {
 	switch {
-	case 1 <= i && i <= 2:
-		i -= 1
+	case 0 <= i && i <= 2:
 		return _SAFIName_0[_SAFIIndex_0[i]:_SAFIIndex_0[i+1]]
 	case 4 <= i && i <= 6:
 		i -= 4
@@ -71,6 +70,7 @@ func (i SAFI) String() string {
 // Re-run the stringer command to generate them again.
 func _SAFINoOp() {
 	var x [1]struct{}
+	_ = x[SAFI_INVALID-(0)]
 	_ = x[SAFI_UNICAST-(1)]
 	_ = x[SAFI_MULTICAST-(2)]
 	_ = x[SAFI_MPLS-(4)]
@@ -106,13 +106,15 @@ func _SAFINoOp() {
 	_ = x[SAFI_VPN_DISCOVERY-(140)]
 }
 
-var _SAFIValues = []SAFI{SAFI_UNICAST, SAFI_MULTICAST, SAFI_MPLS, SAFI_MCAST_VPN, SAFI_PLACEMENT_MSPW, SAFI_MCAST_VPLS, SAFI_SFC, SAFI_TUNNEL, SAFI_VPLS, SAFI_MDT, SAFI_4OVER6, SAFI_6OVER4, SAFI_L1VPN_DISCOVERY, SAFI_EVPNS, SAFI_LS, SAFI_LS_VPN, SAFI_SR_TE_POLICY, SAFI_SD_WAN_CAPABILITIES, SAFI_ROUTING_POLICY, SAFI_CLASSFUL_TRANSPORT, SAFI_TUNNELED_FLOWSPEC, SAFI_MCAST_TREE, SAFI_DPS, SAFI_LS_SPF, SAFI_CAR, SAFI_VPN_CAR, SAFI_MUP, SAFI_MPLS_VPN, SAFI_MULTICAST_VPNS, SAFI_ROUTE_TARGET, SAFI_FLOWSPEC, SAFI_L3VPN_FLOWSPEC, SAFI_VPN_DISCOVERY}
+var _SAFIValues = []SAFI{SAFI_INVALID, SAFI_UNICAST, SAFI_MULTICAST, SAFI_MPLS, SAFI_MCAST_VPN, SAFI_PLACEMENT_MSPW, SAFI_MCAST_VPLS, SAFI_SFC, SAFI_TUNNEL, SAFI_VPLS, SAFI_MDT, SAFI_4OVER6, SAFI_6OVER4, SAFI_L1VPN_DISCOVERY, SAFI_EVPNS, SAFI_LS, SAFI_LS_VPN, SAFI_SR_TE_POLICY, SAFI_SD_WAN_CAPABILITIES, SAFI_ROUTING_POLICY, SAFI_CLASSFUL_TRANSPORT, SAFI_TUNNELED_FLOWSPEC, SAFI_MCAST_TREE, SAFI_DPS, SAFI_LS_SPF, SAFI_CAR, SAFI_VPN_CAR, SAFI_MUP, SAFI_MPLS_VPN, SAFI_MULTICAST_VPNS, SAFI_ROUTE_TARGET, SAFI_FLOWSPEC, SAFI_L3VPN_FLOWSPEC, SAFI_VPN_DISCOVERY}
 
 var _SAFINameToValueMap = map[string]SAFI{
-	_SAFIName_0[0:7]:          SAFI_UNICAST,
-	_SAFILowerName_0[0:7]:     SAFI_UNICAST,
-	_SAFIName_0[7:16]:         SAFI_MULTICAST,
-	_SAFILowerName_0[7:16]:    SAFI_MULTICAST,
+	_SAFIName_0[0:7]:          SAFI_INVALID,
+	_SAFILowerName_0[0:7]:     SAFI_INVALID,
+	_SAFIName_0[7:14]:         SAFI_UNICAST,
+	_SAFILowerName_0[7:14]:    SAFI_UNICAST,
+	_SAFIName_0[14:23]:        SAFI_MULTICAST,
+	_SAFILowerName_0[14:23]:   SAFI_MULTICAST,
 	_SAFIName_1[0:4]:          SAFI_MPLS,
 	_SAFILowerName_1[0:4]:     SAFI_MPLS,
 	_SAFIName_1[4:13]:         SAFI_MCAST_VPN,
@@ -179,7 +181,8 @@ var _SAFINameToValueMap = map[string]SAFI{
 
 var _SAFINames = []string{
 	_SAFIName_0[0:7],
-	_SAFIName_0[7:16],
+	_SAFIName_0[7:14],
+	_SAFIName_0[14:23],
 	_SAFIName_1[0:4],
 	_SAFIName_1[4:13],
 	_SAFIName_1[13:27],

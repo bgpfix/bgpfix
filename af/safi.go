@@ -4,6 +4,7 @@ package af
 type SAFI uint8
 
 const (
+	SAFI_INVALID             SAFI = 0
 	SAFI_UNICAST             SAFI = 1
 	SAFI_MULTICAST           SAFI = 2
 	SAFI_MPLS                SAFI = 4

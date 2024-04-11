@@ -20,10 +20,10 @@ type Speaker struct {
 	ctx    context.Context
 	cancel context.CancelCauseFunc
 
-	pipe *pipe.Pipe // attached BGP pipe
-	in   *pipe.Proc // input for our messages
-	up   *pipe.Line // TX line
-	down *pipe.Line // RX line
+	pipe *pipe.Pipe  // attached BGP pipe
+	in   *pipe.Input // input for our messages
+	up   *pipe.Line  // TX line
+	down *pipe.Line  // RX line
 
 	Options Options     // options; do not modify after Attach()
 	opened  atomic.Bool // true iff OPEN already sent
@@ -41,7 +41,7 @@ func NewSpeaker(ctx context.Context) *Speaker {
 // Must not be called more than once.
 func (s *Speaker) Attach(p *pipe.Pipe, dst msg.Dir) error {
 	s.pipe = p
-	s.in = p.AddProc(dst)
+	s.in = p.AddInput(dst)
 	s.up = p.LineFor(dst)
 	s.down = p.LineFor(dst.Flip())
 
@@ -64,19 +64,19 @@ func (s *Speaker) Attach(p *pipe.Pipe, dst msg.Dir) error {
 }
 
 // onStart sends our OPEN message, if the speaker is not passive.
-func (s *Speaker) onStart(ev *pipe.Event) {
+func (s *Speaker) onStart(ev *pipe.Event) bool {
 	if !s.Options.Passive {
 		s.sendOpen(nil)
 	}
-	ev.Handler.Drop() // unregister the handler
+	return false // unregister the handler
 }
 
 // onEstablished starts periodic KEEPALIVE sender
-func (s *Speaker) onEstablished(ev *pipe.Event) {
+func (s *Speaker) onEstablished(ev *pipe.Event) bool {
 	// load last OPENs
 	up, down := s.up.Open.Load(), s.down.Open.Load()
 	if up == nil || down == nil {
-		return // what?!
+		return false // what?!
 	}
 
 	// start keepaliver with common hold time
@@ -85,10 +85,10 @@ func (s *Speaker) onEstablished(ev *pipe.Event) {
 		go s.keepaliver(int64(ht))
 	}
 
-	ev.Handler.Drop() // unregister the handler
+	return false // unregister the handler
 }
 
-func (s *Speaker) onOpen(m *msg.Msg) {
+func (s *Speaker) onOpen(m *msg.Msg) bool {
 	// TODO: validate received OPEN - drop if wrong caps / other params
 
 	// send our OPEN (nop if we did that already)
@@ -96,6 +96,8 @@ func (s *Speaker) onOpen(m *msg.Msg) {
 
 	// confirm the received OPEN is OK
 	s.sendKeepalive()
+
+	return true
 }
 
 func (s *Speaker) sendOpen(ro *msg.Open) {

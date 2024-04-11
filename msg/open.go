@@ -85,6 +85,7 @@ func (o *Open) Parse() error {
 		o.ParamsExt = ext
 	}
 
+	o.Msg.Upper = OPEN
 	return nil
 }
 
@@ -215,7 +216,9 @@ func (o *Open) Marshal() error {
 	}
 	buf = append(buf, o.Params...)
 
+	// done
 	msg.Type = OPEN
+	msg.Upper = OPEN
 	msg.buf = buf
 	msg.Data = buf
 	msg.ref = false

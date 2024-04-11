@@ -67,13 +67,15 @@ func main() {
 	p.Wait()
 }
 
-func print(m *msg.Msg) {
+func print(m *msg.Msg) bool {
 	os.Stdout.Write(m.GetJSON())
+	return true
 }
 
-func event(ev *pipe.Event) {
+func event(ev *pipe.Event) bool {
 	switch ev.Type {
 	case pipe.EVENT_ESTABLISHED:
 		fmt.Printf("session established, capabilities: %s\n", ev.Pipe.Caps.String())
 	}
+	return true
 }

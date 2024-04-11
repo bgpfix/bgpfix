@@ -45,6 +45,26 @@ const (
 	ISIS_ET Type = 33
 )
 
+// IsET returns true iff t is of Extended Timestamp type
+func (t Type) IsET() bool {
+	switch t {
+	case BGP4MP_ET, OSPF3_ET, ISIS_ET:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsBGP returns true iff t is of BGP4MP type
+func (t Type) IsBGP4() bool {
+	switch t {
+	case BGP4MP, BGP4MP_ET:
+		return true
+	default:
+		return false
+	}
+}
+
 // MRT message subtype, see https://www.iana.org/assignments/mrt/mrt.xhtml
 type Sub uint16
 
@@ -64,76 +84,89 @@ var (
 
 // NewMrt returns new empty message
 func NewMrt() *Mrt {
-	m := new(Mrt)
-	m.Bgp4.Init(m)
-	return m
+	mrt := new(Mrt)
+	mrt.Bgp4.Init(mrt)
+	return mrt
 }
 
 // Reset clears the message
-func (m *Mrt) Reset() *Mrt {
-	m.ref = false
-	if cap(m.buf) < 1024*1024 {
-		m.buf = m.buf[:0] // NB: re-use iff < 1MiB
+func (mrt *Mrt) Reset() *Mrt {
+	mrt.ref = false
+	if cap(mrt.buf) < 1024*1024 {
+		mrt.buf = mrt.buf[:0] // NB: re-use iff < 1MiB
 	} else {
-		m.buf = nil
+		mrt.buf = nil
 	}
 
-	m.Time = time.Time{}
-	m.Type = 0
-	m.Sub = 0
-	m.Data = nil
+	mrt.Time = time.Time{}
+	mrt.Type = 0
+	mrt.Sub = 0
+	mrt.Data = nil
 
-	switch m.Upper {
+	switch mrt.Upper {
 	case BGP4MP, BGP4MP_ET:
-		m.Bgp4.Reset()
+		mrt.Bgp4.Reset()
 	}
-	m.Upper = INVALID
+	mrt.Upper = INVALID
 
-	return m
+	return mrt
 }
 
 // Length returns total MRT message length, including header
-func (m *Mrt) Length() int {
-	if m.Data == nil {
+func (mrt *Mrt) Length() int {
+	switch {
+	case mrt.Data == nil:
 		return 0
-	} else {
-		return len(m.Data) + HEADLEN
+	case mrt.Type.IsET():
+		return len(mrt.Data) + HEADLEN + 4
+	default:
+		return len(mrt.Data) + HEADLEN
 	}
 }
 
-// CopyData copies the referenced data iff needed and makes msg the owner
-func (m *Mrt) CopyData() *Mrt {
-	if !m.ref {
-		return m // already owned
+// Use selects the upper layer of given type for active use.
+// Drop mrt.Data, but does not touch the upper layer at all.
+// Use Reset() on mrt or the selected layer if needed.
+func (mrt *Mrt) Use(typ Type) *Mrt {
+	mrt.Data = nil
+	mrt.Type = typ
+	mrt.Upper = typ
+	return mrt
+}
+
+// CopyData copies the referenced data iff needed and makes mrt the owner
+func (mrt *Mrt) CopyData() *Mrt {
+	if !mrt.ref {
+		return mrt // already owned
 	} else {
-		m.ref = false // tag as owned
+		mrt.ref = false // tag as owned
 	}
 
 	// special case: nothing to do
-	if m.Data == nil {
-		return m
+	if mrt.Data == nil {
+		return mrt
 	}
 
 	switch {
-	case m.Data == nil: // no data
-		return m
-	case len(m.Data) == 0: // data empty
-		if m.buf == nil {
-			m.buf = make([]byte, 0)
+	case mrt.Data == nil: // no data
+		return mrt
+	case len(mrt.Data) == 0: // data empty
+		if mrt.buf == nil {
+			mrt.buf = make([]byte, 0)
 		} else {
-			m.buf = m.buf[:0]
+			mrt.buf = mrt.buf[:0]
 		}
 	default: // copy data
-		m.buf = append(m.buf[:0], m.Data...)
+		mrt.buf = append(mrt.buf[:0], mrt.Data...)
 	}
 
-	m.Data = m.buf
-	return m
+	mrt.Data = mrt.buf
+	return mrt
 }
 
 // FromBytes parses the MRT message in raw. Does not copy.
 // Returns the number of parsed bytes from raw.
-func (m *Mrt) FromBytes(raw []byte) (off int, err error) {
+func (mrt *Mrt) FromBytes(raw []byte) (off int, err error) {
 	// enough bytes for header?
 	if len(raw) < HEADLEN {
 		return off, io.ErrUnexpectedEOF
@@ -153,51 +186,48 @@ func (m *Mrt) FromBytes(raw []byte) (off int, err error) {
 		return off, io.ErrUnexpectedEOF
 	}
 
-	// write to m
-	m.Time = time.Unix(int64(ts), 0).UTC()
-	m.Type = Type(typ)
-	m.Sub = Sub(sub)
-	m.Data = nil
-	m.ref = false
+	// write to mrt
+	mrt.Time = time.Unix(int64(ts), 0).UTC()
+	mrt.Type = Type(typ)
+	mrt.Sub = Sub(sub)
+	mrt.Data = nil
+	mrt.ref = false
 	off += l
 
 	// extended timestamp?
-	switch m.Type {
-	case BGP4MP_ET, ISIS_ET, OSPF3_ET:
+	if mrt.Type.IsET() {
 		if l < 4 {
 			return off, ErrShort
 		}
 		us := msb.Uint32(data[0:4])
-		m.Time = m.Time.Add(time.Microsecond * time.Duration(us))
+		mrt.Time = mrt.Time.Add(time.Microsecond * time.Duration(us))
 		data = data[4:]
 		l -= 4
 	}
 
-	// write data
-	if l > 0 {
-		m.ref = true
-		m.Data = data[:l]
-	} else {
-		m.ref = false
-		m.Data = nil
-	}
+	// reference data
+	mrt.ref = true
+	mrt.Data = data[:l]
+
+	// needs fresh Parse()
+	mrt.Upper = INVALID
 
 	// done!
 	return off, nil
 }
 
-// Parse parses m.Data into the upper layer iff needed.
-func (m *Mrt) Parse() error {
-	if m.Upper != INVALID {
+// Parse parses mrt.Data into the upper layer iff needed.
+func (mrt *Mrt) Parse() error {
+	if mrt.Upper != INVALID {
 		return nil // assume already done
-	} else if m.Data == nil {
+	} else if mrt.Data == nil {
 		return ErrNoData
 	}
 
 	var err error
-	switch m.Type {
+	switch mrt.Type {
 	case BGP4MP, BGP4MP_ET:
-		bgp4 := &m.Bgp4
+		bgp4 := &mrt.Bgp4
 		err = bgp4.Parse()
 		if err != nil {
 			break
@@ -207,54 +237,89 @@ func (m *Mrt) Parse() error {
 	}
 
 	if err == nil {
-		m.Upper = m.Type
+		mrt.Upper = mrt.Type
 	}
 
 	return err
 }
 
-// WriteTo writes the MRT message to w, implementing io.WriterTo
-func (m *Mrt) WriteTo(w io.Writer) (n int64, err error) {
+// Marshal marshals the upper layer to mrt.Data iff possible and needed.
+func (mrt *Mrt) Marshal() error {
+	if mrt.Data != nil {
+		return nil // not needed
+	}
+
+	var err error
+	switch mrt.Upper {
+	case INVALID:
+		return ErrNoUpper // not possible
+	case BGP4MP, BGP4MP_ET:
+		b := &mrt.Bgp4
+		err = b.Marshal()
+	default:
+		err = ErrType
+	}
+
+	return err
+}
+
+// WriteTo writes raw MRT mrt.Data message to w, implementing io.WriterTo.
+// Call mrt.Marshal() first if needed.
+func (mrt *Mrt) WriteTo(w io.Writer) (n int64, err error) {
+	// has data?
+	if mrt.Data == nil {
+		return 0, ErrNoData
+	}
+
 	// data length ok?
-	if int64(len(m.Data)) > MAXLEN {
+	l := mrt.Length()
+	if l < HEADLEN || l > MAXLEN {
 		return n, ErrLength
 	}
 
 	// write the timestamp
-	k, err := msb.WriteUint32(w, uint32(m.Time.Unix()))
+	time_us := mrt.Time.UnixMicro()
+	k, err := msb.WriteUint32(w, uint32(time_us/1e9))
 	n += int64(k)
 	if err != nil {
 		return n, err
 	}
 
 	// write type
-	k, err = msb.WriteUint16(w, uint16(m.Type))
+	k, err = msb.WriteUint16(w, uint16(mrt.Type))
 	n += int64(k)
 	if err != nil {
 		return n, err
 	}
 
 	// write subtype
-	k, err = msb.WriteUint16(w, uint16(m.Sub))
+	k, err = msb.WriteUint16(w, uint16(mrt.Sub))
 	n += int64(k)
 	if err != nil {
 		return n, err
 	}
 
 	// write the length
-	k, err = msb.WriteUint32(w, uint32(len(m.Data)))
+	k, err = msb.WriteUint32(w, uint32(l-HEADLEN))
 	n += int64(k)
 	if err != nil {
 		return n, err
 	}
 
-	// write data?
-	if len(m.Data) > 0 {
-		k, err = w.Write(m.Data)
+	// extended timestamp?
+	if mrt.Type.IsET() {
+		k, err = msb.WriteUint32(w, uint32(time_us%1e9))
 		n += int64(k)
 		if err != nil {
 			return n, err
 		}
+	}
+
+	// write data
+	k, err = w.Write(mrt.Data)
+	n += int64(k)
+	if err != nil {
+		return n, err
 	}
 
 	// done

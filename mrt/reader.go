@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
@@ -22,8 +21,8 @@ type Reader struct {
 	ctx    context.Context
 	cancel context.CancelCauseFunc
 
-	pipe *pipe.Pipe // target pipe
-	in   *pipe.Proc // target input
+	pipe *pipe.Pipe  // target pipe
+	in   *pipe.Input // target input
 
 	Stats   ReaderStats   // our stats
 	Options ReaderOptions // options; do not modify after Attach()
@@ -55,7 +54,7 @@ func NewReader(ctx context.Context) *Reader {
 func (br *Reader) Attach(p *pipe.Pipe, dst msg.Dir) error {
 	opts := &br.Options
 	br.pipe = p
-	br.in = p.AddProc(dst)
+	br.in = p.AddInput(dst)
 
 	if opts.Logger != nil {
 		br.Logger = opts.Logger
@@ -74,7 +73,6 @@ func (br *Reader) Write(src []byte) (n int, err error) {
 		p     = br.pipe
 		in    = br.in
 		mrt   = br.mrt
-		bgp4  = mrt.Bgp4
 		stats = &br.Stats
 	)
 
@@ -103,7 +101,7 @@ func (br *Reader) Write(src []byte) (n int, err error) {
 	// process until raw is empty
 	for len(raw) > 0 {
 		// parse as raw MRT message
-		off, perr := mrt.Reset().FromBytes(raw)
+		off, perr := mrt.FromBytes(raw)
 		switch perr {
 		case nil:
 			stats.Parsed++
@@ -118,45 +116,31 @@ func (br *Reader) Write(src []byte) (n int, err error) {
 			} else {
 				raw = nil // no idea, throw out
 			}
-			return n, fmt.Errorf("MRT: %w", perr)
+			return n, fmt.Errorf("MRT bytes: %w", perr)
 		}
 
-		// parse as MRT-BGP4MP
-		perr = bgp4.Parse()
-		switch perr {
+		// parse as BGP4MP
+		switch err := mrt.Parse(); err {
 		case nil:
 			stats.ParsedBgp++ // success
 		case ErrType, ErrSub:
 			stats.ParsedSkip++
 			continue
 		default:
-			return n, fmt.Errorf("BGP4MP: %w", perr)
+			stats.Garbled++
+			return n, fmt.Errorf("MRT parse: %w", err)
 		}
 
-		// parse as a raw BGP message
+		// write to BGP msg
 		m := p.GetMsg()
-		off, perr = m.FromBytes(bgp4.Data)
-		switch {
-		case perr != nil:
+		if err := mrt.Bgp4.ToMsg(m, !br.Options.NoTags); err != nil {
 			p.PutMsg(m)
-			return n, fmt.Errorf("BGP: %w", perr)
-		case off != len(bgp4.Data):
-			p.PutMsg(m)
-			return n, fmt.Errorf("BGP: %w", ErrLength)
+			return n, fmt.Errorf("BGP: %w", err)
 		}
 
-		// use MRT / BGP4MP metadata?
-		if !br.Options.NoTime {
-			m.Time = mrt.Time
-		}
-		if !br.Options.NoTags {
-			mx := pipe.MsgContext(m)
-			mx.SetTag("PEER_AS", strconv.FormatUint(uint64(bgp4.PeerAS), 10))
-			mx.SetTag("PEER_IP", bgp4.PeerIP.String())
-			mx.SetTag("LOCAL_AS", strconv.FormatUint(uint64(bgp4.LocalAS), 10))
-			mx.SetTag("LOCAL_IP", bgp4.LocalIP.String())
-			mx.SetTag("INTERFACE", strconv.FormatUint(uint64(bgp4.Iface), 10))
-		}
+		// unlink from mrt
+		m.CopyData()
+		mrt.Reset()
 
 		// sail!
 		if err := in.WriteMsg(m); err != nil {

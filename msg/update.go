@@ -86,6 +86,7 @@ func (u *Update) Parse() error {
 	}
 
 	u.RawAttrs = ats
+	u.Msg.Upper = UPDATE
 	return nil
 }
 
@@ -197,6 +198,7 @@ func (u *Update) Marshal(cps caps.Caps) error {
 
 	// done
 	msg.Type = UPDATE
+	msg.Upper = UPDATE
 	msg.buf = buf
 	msg.Data = buf
 	msg.ref = false

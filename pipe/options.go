@@ -27,7 +27,7 @@ type Options struct {
 
 	Callbacks []*Callback // message callbacks
 	Handlers  []*Handler  // event handlers
-	Procs     []*Proc     // input processors
+	Inputs    []*Input    // input processors
 }
 
 // Callback represents a function to call for matching BGP messages
@@ -64,10 +64,12 @@ type Handler struct {
 }
 
 // CallbackFunc processes message m.
-type CallbackFunc func(m *msg.Msg)
+// Return false to drop the message.
+type CallbackFunc func(m *msg.Msg) (keep_message bool)
 
 // HandlerFunc handles event ev.
-type HandlerFunc func(ev *Event)
+// Return false to unregister the handler (all types).
+type HandlerFunc func(ev *Event) (keep_handler bool)
 
 // AddCallbacks adds a callback function using tpl as its template (if present).
 // It returns the added Callback, which can be further configured.
@@ -266,34 +268,34 @@ func (o *Options) OnParseError(hdf HandlerFunc) *Handler {
 	return o.OnEvent(hdf, EVENT_PARSE)
 }
 
-// AddProc adds input processor for given pipe direction, with optional details in tpl.
-func (o *Options) AddProc(dir msg.Dir, tpl ...*Proc) *Proc {
-	var pi Proc
+// AddInput adds input processor for given pipe direction, with optional details in tpl.
+func (o *Options) AddInput(dir msg.Dir, tpl ...*Input) *Input {
+	var in Input
 
-	// deep copy the tpl?
+	// copy the tpl?
 	if len(tpl) > 0 {
-		pi = *tpl[0]
+		in = *tpl[0]
 	}
 
 	// override the name?
-	if len(pi.Name) == 0 {
+	if len(in.Name) == 0 {
 		if pc, _, _, ok := runtime.Caller(1); ok {
-			pi.Name = runtime.FuncForPC(pc).Name()
+			in.Name = runtime.FuncForPC(pc).Name()
 		}
 	}
 
 	// input
-	if pi.In == nil {
-		pi.In = make(chan *msg.Msg, 10)
+	if in.In == nil {
+		in.In = make(chan *msg.Msg, 10)
 	}
 
 	// dir
 	if dir == msg.DIR_L {
-		pi.Dir = msg.DIR_L
+		in.Dir = msg.DIR_L
 	} else {
-		pi.Dir = msg.DIR_R
+		in.Dir = msg.DIR_R
 	}
 
-	o.Procs = append(o.Procs, &pi)
-	return &pi
+	o.Inputs = append(o.Inputs, &in)
+	return &in
 }
