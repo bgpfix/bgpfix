@@ -7,14 +7,15 @@ import (
 
 // Context tracks message processing in a Pipe, stored in Msg.Value.
 type Context struct {
-	Pipe     *Pipe     // pipe processing the message
-	Input    *Input    // input processing the message (message source)
-	Callback *Callback // currently running callback
+	Pipe     *Pipe       // pipe processing the message
+	Input    *Input      // input processing the message (message source)
+	Callback *Callback   // currently running callback
+	cbs      []*Callback // all callbacks scheduled to run
 
-	Action Action // requested message actions
+	// exported to JSON
 
-	cbs  []*Callback       // callbacks scheduled to run
-	tags map[string]string // simple Tag-Value store
+	Action Action            // requested message actions
+	tags   map[string]string // message tags (essentially a Key-Value store)
 }
 
 // MsgContext returns message Context inside m, creating one if needed.
@@ -34,7 +35,7 @@ func HasContext(m *msg.Msg) bool {
 	return ok
 }
 
-// MsgTags returns message Tags inside m, creating them if needed
+// MsgTags returns message Tags inside m, creating them first if needed
 func MsgTags(m *msg.Msg) map[string]string {
 	mx := MsgContext(m)
 	return mx.Tags()
@@ -60,7 +61,7 @@ func (mx *Context) Reset() {
 	clear(mx.tags)
 }
 
-// Tags returns a generic string Tag-Value store.
+// Tags returns message Tags inside mx, creating them first if needed
 func (mx *Context) Tags() map[string]string {
 	if mx == nil {
 		return nil
@@ -102,17 +103,52 @@ func (mx *Context) SetTag(tag string, val string) {
 	mx.tags[tag] = val
 }
 
-// TODO
-func (mx *Context) ToJSON(dst []byte) []byte {
-	return json.Byte(dst, byte(mx.Action))
+// DropTags drops all message tags
+func (mx *Context) DropTags() {
+	mx.tags = nil
 }
 
-// TODO
-func (mx *Context) FromJSON(src []byte) error {
-	val, err := json.UnByte(src)
-	if err != nil {
-		return err
+// ToJSON marshals Context to JSON
+func (mx *Context) ToJSON(dst []byte) []byte {
+	if mx.Action == 0 && len(mx.tags) == 0 {
+		return append(dst, `null`...)
 	}
-	mx.Action = Action(val)
-	return nil
+
+	dst = append(dst, '{')
+	first := len(dst)
+
+	if mx.Action != 0 {
+		dst = append(dst, `"ACTION":`...)
+		dst = mx.Action.ToJSON(dst)
+	}
+
+	for key, val := range mx.tags {
+		if key == "ACTION" {
+			continue
+		}
+		if len(dst) == first {
+			dst = append(dst, `"`...)
+		} else {
+			dst = append(dst, `,"`...)
+		}
+		dst = json.Ascii(dst, json.B(key))
+		dst = append(dst, `":"`...)
+		dst = json.Ascii(dst, json.B(val))
+		dst = append(dst, '"')
+	}
+
+	return append(dst, '}')
+}
+
+// FromJSON unmarshals Context from JSON
+func (mx *Context) FromJSON(src []byte) error {
+	return json.ObjectEach(src, func(key string, val []byte, typ json.Type) error {
+		// special case: message action
+		if key == "ACTION" {
+			return mx.Action.FromJSON(val)
+		} else {
+			mx.SetTag(key, string(val))
+			return nil
+		}
+	})
 }

@@ -524,7 +524,7 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 			}
 
 		case 6: // value
-			if msg.Value != nil && typ != json.NULL {
+			if msg.Value != nil && len(val) > 0 {
 				err = msg.Value.FromJSON(val)
 			}
 		}

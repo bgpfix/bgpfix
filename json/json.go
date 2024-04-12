@@ -193,7 +193,12 @@ func UnPrefixes(src []byte, dst []netip.Prefix) ([]netip.Prefix, error) {
 
 // S returns string from byte slice, in an unsafe way
 func S(buf []byte) string {
-	return *(*string)(unsafe.Pointer(&buf))
+	return unsafe.String(&buf[0], len(buf))
+}
+
+// B returns byte slice from string, in an unsafe way
+func B(str string) []byte {
+	return unsafe.Slice(unsafe.StringData(str), len(str))
 }
 
 // Q removes "double quotes" in buf, if present
@@ -210,7 +215,7 @@ func SQ(buf []byte) string {
 	if l := len(buf); l > 1 && buf[0] == '"' && buf[l-1] == '"' {
 		buf = buf[1 : l-1]
 	}
-	return *(*string)(unsafe.Pointer(&buf))
+	return unsafe.String(&buf[0], len(buf))
 }
 
 // ArrayEach calls cb for each *non-nil* value in the src array.

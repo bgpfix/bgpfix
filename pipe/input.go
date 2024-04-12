@@ -112,8 +112,9 @@ func (in *Input) attach(p *Pipe, l *Line) {
 // prepare prepares metadata and context of m for processing in this Input.
 // The message type must already be set.
 func (in *Input) prepare(m *msg.Msg) *Context {
-	// already mine?
 	mx := MsgContext(m)
+
+	// already mine?
 	if mx.Input == in {
 		return mx
 	} else {
@@ -155,7 +156,6 @@ input:
 	for m := range in.In {
 		// prepare the message iff needed
 		mx := in.prepare(m)
-		mx.Action.Clear() // clears all except for BORROW
 
 		// run the callbacks
 		for len(mx.cbs) > 0 {

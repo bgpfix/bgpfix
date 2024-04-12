@@ -133,12 +133,9 @@ func (b4 *Bgp4) ToMsg(m *msg.Msg, set_tags bool) error {
 
 // Parse parses b4.Mrt as BGP4MP message, referencing data.
 func (b4 *Bgp4) Parse() error {
-	// check type
+	// check MRT type
 	mrt := b4.Mrt
-	switch mrt.Type {
-	case BGP4MP:
-	case BGP4MP_ET:
-	default:
+	if !mrt.Type.IsBGP4() {
 		return ErrType
 	}
 
