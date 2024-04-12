@@ -1,6 +1,7 @@
 package mrt
 
 import (
+	"bytes"
 	"fmt"
 	"net/netip"
 	"strconv"
@@ -52,8 +53,22 @@ func (b4 *Bgp4) Reset() {
 	b4.Data = nil
 }
 
-// FromMsg writes b4 and b4.Mrt from m, referencing m.Data.
+// FromMsg copies BGP message m into BGP4MP message b4.
+// m must already be marshaled.
 func (b4 *Bgp4) FromMsg(m *msg.Msg) error {
+	// m has Data?
+	if m.Data == nil {
+		return ErrNoData
+	}
+
+	// marshal m to b4.Data
+	var bb bytes.Buffer
+	_, err := m.WriteTo(&bb)
+	if err != nil {
+		return err
+	}
+	b4.Data = bb.Bytes()
+
 	// update parent Mrt
 	mrt := b4.Mrt
 	mrt.Time = m.Time
@@ -61,12 +76,6 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg) error {
 	mrt.Upper = BGP4MP_ET
 	mrt.Sub = BGP4_MESSAGE_AS4
 	mrt.Data = nil
-
-	// reference m.Data in b4
-	if m.Data == nil {
-		return ErrNoData
-	}
-	b4.Data = m.Data
 
 	// m has Context with relevant tags?
 	if pipe.HasTags(m) {
@@ -102,10 +111,11 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg) error {
 			}
 		}
 	}
+
 	return nil
 }
 
-// ToMsg writes MRT-BGP4MP message b4 to BGP message m, referencing data.
+// ToMsg reads MRT-BGP4MP message b4 into BGP message m, referencing data.
 func (b4 *Bgp4) ToMsg(m *msg.Msg, set_tags bool) error {
 	off, err := m.FromBytes(b4.Data)
 	switch {
@@ -121,11 +131,21 @@ func (b4 *Bgp4) ToMsg(m *msg.Msg, set_tags bool) error {
 	// copy BGP4MP metadata?
 	if set_tags {
 		tags := pipe.MsgTags(m)
-		tags["PEER_AS"] = strconv.FormatUint(uint64(b4.PeerAS), 10)
-		tags["PEER_IP"] = b4.PeerIP.String()
-		tags["LOCAL_AS"] = strconv.FormatUint(uint64(b4.LocalAS), 10)
-		tags["LOCAL_IP"] = b4.LocalIP.String()
-		tags["INTERFACE"] = strconv.FormatUint(uint64(b4.Interface), 10)
+		if b4.PeerAS != 0 {
+			tags["PEER_AS"] = strconv.FormatUint(uint64(b4.PeerAS), 10)
+		}
+		if !b4.PeerIP.IsUnspecified() {
+			tags["PEER_IP"] = b4.PeerIP.String()
+		}
+		if b4.LocalAS != 0 {
+			tags["LOCAL_AS"] = strconv.FormatUint(uint64(b4.LocalAS), 10)
+		}
+		if !b4.LocalIP.IsUnspecified() {
+			tags["LOCAL_IP"] = b4.LocalIP.String()
+		}
+		if b4.Interface != 0 {
+			tags["INTERFACE"] = strconv.FormatUint(uint64(b4.Interface), 10)
+		}
 	}
 
 	return nil
@@ -195,11 +215,6 @@ func (b4 *Bgp4) Parse() error {
 // Marshal marshals b4 to b4.Mrt.Data.
 // Type and Sub must already be set in b4.Mrt parent.
 func (b4 *Bgp4) Marshal() error {
-	// has valid Data?
-	if b4.Data == nil {
-		return ErrNoData
-	}
-
 	// check type
 	mrt := b4.Mrt
 	switch mrt.Type {

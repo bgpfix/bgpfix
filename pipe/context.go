@@ -110,10 +110,6 @@ func (mx *Context) DropTags() {
 
 // ToJSON marshals Context to JSON
 func (mx *Context) ToJSON(dst []byte) []byte {
-	if mx.Action == 0 && len(mx.tags) == 0 {
-		return append(dst, `null`...)
-	}
-
 	dst = append(dst, '{')
 	first := len(dst)
 
