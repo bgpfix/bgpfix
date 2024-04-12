@@ -3,6 +3,7 @@ package pipe
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"time"
@@ -47,15 +48,17 @@ type Event struct {
 	Error error    `json:"err"`   // optional error related to the event
 	Value any      `json:"value"` // optional value, type-specific
 
-	done chan struct{} // closed when all handlers are done
+	Handler *Handler      // currently running handler (may be nil)
+	Action  Action        // optional event action (zero means none)
+	done    chan struct{} // closed when all handlers are done
 }
 
-// String returns the event Type, or "(nil)" if ev is nil
+// String returns event type and seq number as string
 func (ev *Event) String() string {
 	if ev == nil {
-		return "(nil)"
+		return "nil"
 	} else {
-		return ev.Type
+		return fmt.Sprintf("E%d:%s", ev.Seq, ev.Type)
 	}
 }
 
@@ -106,7 +109,7 @@ func (p *Pipe) attachEvent() {
 // Event announces a new event type et to the pipe, with optional arguments.
 // The first msg.Dir argument is used as ev.Dir.
 // The first *msg.Msg is used as ev.Msg and borrowed (add ACTION_BORROW).
-// All error arguments are joined together into single ev.Error.
+// All error arguments are joined together into a single ev.Error.
 // The remaining arguments are used as ev.Val.
 func (p *Pipe) Event(et string, args ...any) *Event {
 	ev := &Event{
@@ -202,6 +205,7 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 
 	var (
 		seq uint64
+		hs  []*Handler      // handlers to run for given event
 		whs = p.events["*"] // wildcard handlers - for any event type
 	)
 
@@ -215,36 +219,31 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 			ev.Time = time.Now().UTC()
 		}
 
-		// call handlers for ev.Type
-		hs := p.events[ev.Type]
-		for _, h := range hs {
-			if h == nil || h.Func == nil {
-				continue // dropped [2]
-			}
-			if h.Enabled != nil && !h.Enabled.Load() {
-				continue // disabled
-			}
-			if h.Dir != 0 && h.Dir != ev.Dir {
-				continue // different direction
-			}
-			if !h.Func(ev) {
-				h.Func = nil // drop [2]
-			}
-		}
+		// prepare the handlers
+		hs = append(hs[:0], p.events[ev.Type]...)
+		hs = append(hs, whs...)
 
-		// call wildcard handlers
-		for _, h := range whs {
-			if h == nil || h.Func == nil {
-				continue // dropped [3]
-			}
-			if h.Enabled != nil && !h.Enabled.Load() {
+		// call handlers
+		for _, h := range hs {
+			// skip handler?
+			if h == nil || h.Dropped {
+				continue // dropped
+			} else if h.Dir != 0 && h.Dir != ev.Dir {
+				continue // different direction
+			} else if h.Enabled != nil && !h.Enabled.Load() {
 				continue // disabled
 			}
-			if h.Dir != 0 && h.Dir != ev.Dir {
-				continue // different direction
-			}
+
+			// run the handler, block until done
+			ev.Handler = h
 			if !h.Func(ev) {
-				h.Func = nil // drop [3]
+				h.Drop()
+			}
+			ev.Handler = nil
+
+			// what's next?
+			if ev.Action&(ACTION_DROP|ACTION_ACCEPT) != 0 {
+				break // skip other handlers
 			}
 		}
 

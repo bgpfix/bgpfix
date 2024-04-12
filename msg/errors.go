@@ -12,6 +12,8 @@ var (
 	ErrShort       = errors.New("too short")
 	ErrLong        = errors.New("too long")
 
+	ErrNoData    = errors.New("no message data")
+	ErrNoUpper   = errors.New("no upper layer")
 	ErrMarker    = errors.New("marker not found")
 	ErrVersion   = errors.New("invalid version")
 	ErrParams    = errors.New("invalid parameters")

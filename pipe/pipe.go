@@ -58,7 +58,7 @@ func NewPipe(ctx context.Context) *Pipe {
 	p.R = &Line{
 		Pipe: p,
 		Dir:  msg.DIR_R,
-		Proc: Proc{
+		Input: Input{
 			In: make(chan *msg.Msg, 10),
 		},
 		Out: make(chan *msg.Msg, 10),
@@ -67,7 +67,7 @@ func NewPipe(ctx context.Context) *Pipe {
 	p.L = &Line{
 		Pipe: p,
 		Dir:  msg.DIR_L,
-		Proc: Proc{
+		Input: Input{
 			In: make(chan *msg.Msg, 10),
 		},
 		Out: make(chan *msg.Msg, 10),
@@ -125,7 +125,7 @@ func (p *Pipe) checkEstablished(ev *Event) bool {
 		return true // strange, but keep trying
 	}
 
-	// find out common caps
+	// find out common caps?
 	if p.Options.Caps {
 		// collect common caps into common
 		var common caps.Caps
@@ -149,15 +149,14 @@ func (p *Pipe) checkEstablished(ev *Event) bool {
 		p.Caps.SetFrom(common)
 	}
 
-	// announce the session is established
+	// announce that the session is established
 	p.Event(EVENT_ESTABLISHED, max(rstamp, lstamp))
 
 	// no more calls to this callback
 	return false
 }
 
-// Start starts given number of r/t message handlers in background,
-// by default r/t = 1/1 (single-threaded, strictly ordered processing).
+// Start starts the Pipe in background and returns.
 func (p *Pipe) Start() {
 	if p.started.Swap(true) || p.stopped.Load() {
 		return // already started or stopped
@@ -192,9 +191,9 @@ func (p *Pipe) Start() {
 	p.wgstart.Done()
 }
 
-// Stop stops all handlers and blocks till handlers finish.
+// Stop stops all inputs and blocks till they finish processing.
 // Pipe must not be used again past this point.
-// Closes all input channels, which should eventually close all output channels,
+// Closes all inputs, which should eventually close all outputs,
 // possibly after this function returns.
 func (p *Pipe) Stop() {
 	if p.stopped.Swap(true) || !p.started.Load() {
@@ -243,7 +242,9 @@ func (p *Pipe) GetMsg() (m *msg.Msg) {
 	if m, ok := p.msgpool.Get().(*msg.Msg); ok {
 		return m
 	} else {
-		return msg.NewMsg()
+		m = msg.NewMsg() // allocate
+		MsgContext(m)    // add context
+		return m
 	}
 }
 
@@ -254,18 +255,14 @@ func (p *Pipe) PutMsg(m *msg.Msg) {
 		return
 	}
 
-	// has context?
-	if mx, ok := m.Value.(*Context); ok {
-		// do not re-use?
-		if mx.Action.Is(ACTION_BORROW) {
-			return
-		}
-
-		// clear context, leave mem for re-use
-		mx.Reset()
+	// do not re-use?
+	mx := MsgContext(m)
+	if mx.Action.Is(ACTION_BORROW) {
+		return
 	}
 
-	// re-use
+	// re-cycle
+	mx.Reset()
 	m.Reset()
 	p.msgpool.Put(m)
 }

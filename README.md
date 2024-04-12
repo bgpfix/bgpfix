@@ -2,11 +2,11 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/bgpfix/bgpfix.svg)](https://pkg.go.dev/github.com/bgpfix/bgpfix)
 
-**WORK IN PROGRESS PREVIEW 03/2024**
+**WORK IN PROGRESS PREVIEW 04/2024**
 
 A generic-purpose, high-performance Golang library for [bridging the gaps in BGP](https://twitter.com/ACM_IMC2021/status/1445725066403196928).
 
-See the [bgpipe](https://github.com/bgpfix/bgpipe) BGP reverse proxy for a CLI tool.
+For a CLI tool, see the [bgpipe](https://github.com/bgpfix/bgpipe) BGP reverse proxy.
 
 BGPFix can "fix" or "extend" BGP sessions in-flight, possibly adding new features or protection layers to proprietary BGP speakers (think big router vendors). The vision is it will allow for implementing:
  * bidirectional BGP session to JSON translation, replacing [exabgp](https://github.com/Exa-Networks/exabgp/) for some use-cases,
@@ -107,14 +107,15 @@ func main() {
 	p.Wait()
 }
 
-func print(m *msg.Msg) {
-	fmt.Printf("%s\n", m.GetJSON())
+func print(m *msg.Msg) bool {
+	os.Stdout.Write(m.GetJSON())
+	return true
 }
 
 func event(ev *pipe.Event) bool {
 	switch ev.Type {
 	case pipe.EVENT_ESTABLISHED:
-		fmt.Printf("session established, capabilities: %s\n", ev.Pipe.Caps.ToJSON(nil))
+		fmt.Printf("session established, capabilities: %s\n", ev.Pipe.Caps.String())
 	}
 	return true
 }

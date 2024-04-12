@@ -49,7 +49,7 @@ func (o *Open) Reset() {
 	o.Caps.Reset()
 }
 
-// Parse parses msg.Data as BGP OPEN
+// Parse parses o.Msg.Data as BGP OPEN
 func (o *Open) Parse() error {
 	buf := o.Msg.Data
 	if len(buf) < OPEN_MINLEN {
@@ -85,6 +85,7 @@ func (o *Open) Parse() error {
 		o.ParamsExt = ext
 	}
 
+	o.Msg.Upper = OPEN
 	return nil
 }
 
@@ -189,7 +190,7 @@ func (o *Open) GetASN() int {
 	}
 }
 
-// Marshal marshals o to o.Msg and returns it
+// Marshal marshals o to o.Msg.Data.
 func (o *Open) Marshal() error {
 	// check params length
 	switch plen := len(o.Params); {
@@ -215,6 +216,9 @@ func (o *Open) Marshal() error {
 	}
 	buf = append(buf, o.Params...)
 
+	// done
+	msg.Type = OPEN
+	msg.Upper = OPEN
 	msg.buf = buf
 	msg.Data = buf
 	msg.ref = false

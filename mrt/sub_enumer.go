@@ -8,15 +8,15 @@ import (
 )
 
 const (
-	_SubName_0      = "BGP4MP_STATE_CHANGEBGP4MP_MESSAGE"
-	_SubLowerName_0 = "bgp4mp_state_changebgp4mp_message"
-	_SubName_1      = "BGP4MP_MESSAGE_AS4BGP4MP_STATE_CHANGE_AS4BGP4MP_MESSAGE_LOCALBGP4MP_MESSAGE_AS4_LOCALBGP4MP_MESSAGE_ADDPATHBGP4MP_MESSAGE_AS4_ADDPATHBGP4MP_MESSAGE_LOCAL_ADDPATHBGP4MP_MESSAGE_AS4_LOCAL_ADDPATH"
-	_SubLowerName_1 = "bgp4mp_message_as4bgp4mp_state_change_as4bgp4mp_message_localbgp4mp_message_as4_localbgp4mp_message_addpathbgp4mp_message_as4_addpathbgp4mp_message_local_addpathbgp4mp_message_as4_local_addpath"
+	_SubName_0      = "BGP4_STATE_CHANGEBGP4_MESSAGE"
+	_SubLowerName_0 = "bgp4_state_changebgp4_message"
+	_SubName_1      = "BGP4_MESSAGE_AS4BGP4_STATE_CHANGE_AS4BGP4_MESSAGE_LOCALBGP4_MESSAGE_AS4_LOCALBGP4_MESSAGE_ADDPATHBGP4_MESSAGE_AS4_ADDPATHBGP4_MESSAGE_LOCAL_ADDPATHBGP4_MESSAGE_AS4_LOCAL_ADDPATH"
+	_SubLowerName_1 = "bgp4_message_as4bgp4_state_change_as4bgp4_message_localbgp4_message_as4_localbgp4_message_addpathbgp4_message_as4_addpathbgp4_message_local_addpathbgp4_message_as4_local_addpath"
 )
 
 var (
-	_SubIndex_0 = [...]uint8{0, 19, 33}
-	_SubIndex_1 = [...]uint8{0, 18, 41, 61, 85, 107, 133, 161, 193}
+	_SubIndex_0 = [...]uint8{0, 17, 29}
+	_SubIndex_1 = [...]uint8{0, 16, 37, 55, 77, 97, 121, 147, 177}
 )
 
 func (i Sub) String() string {
@@ -35,54 +35,54 @@ func (i Sub) String() string {
 // Re-run the stringer command to generate them again.
 func _SubNoOp() {
 	var x [1]struct{}
-	_ = x[BGP4MP_STATE_CHANGE-(0)]
-	_ = x[BGP4MP_MESSAGE-(1)]
-	_ = x[BGP4MP_MESSAGE_AS4-(4)]
-	_ = x[BGP4MP_STATE_CHANGE_AS4-(5)]
-	_ = x[BGP4MP_MESSAGE_LOCAL-(6)]
-	_ = x[BGP4MP_MESSAGE_AS4_LOCAL-(7)]
-	_ = x[BGP4MP_MESSAGE_ADDPATH-(8)]
-	_ = x[BGP4MP_MESSAGE_AS4_ADDPATH-(9)]
-	_ = x[BGP4MP_MESSAGE_LOCAL_ADDPATH-(10)]
-	_ = x[BGP4MP_MESSAGE_AS4_LOCAL_ADDPATH-(11)]
+	_ = x[BGP4_STATE_CHANGE-(0)]
+	_ = x[BGP4_MESSAGE-(1)]
+	_ = x[BGP4_MESSAGE_AS4-(4)]
+	_ = x[BGP4_STATE_CHANGE_AS4-(5)]
+	_ = x[BGP4_MESSAGE_LOCAL-(6)]
+	_ = x[BGP4_MESSAGE_AS4_LOCAL-(7)]
+	_ = x[BGP4_MESSAGE_ADDPATH-(8)]
+	_ = x[BGP4_MESSAGE_AS4_ADDPATH-(9)]
+	_ = x[BGP4_MESSAGE_LOCAL_ADDPATH-(10)]
+	_ = x[BGP4_MESSAGE_AS4_LOCAL_ADDPATH-(11)]
 }
 
-var _SubValues = []Sub{BGP4MP_STATE_CHANGE, BGP4MP_MESSAGE, BGP4MP_MESSAGE_AS4, BGP4MP_STATE_CHANGE_AS4, BGP4MP_MESSAGE_LOCAL, BGP4MP_MESSAGE_AS4_LOCAL, BGP4MP_MESSAGE_ADDPATH, BGP4MP_MESSAGE_AS4_ADDPATH, BGP4MP_MESSAGE_LOCAL_ADDPATH, BGP4MP_MESSAGE_AS4_LOCAL_ADDPATH}
+var _SubValues = []Sub{BGP4_STATE_CHANGE, BGP4_MESSAGE, BGP4_MESSAGE_AS4, BGP4_STATE_CHANGE_AS4, BGP4_MESSAGE_LOCAL, BGP4_MESSAGE_AS4_LOCAL, BGP4_MESSAGE_ADDPATH, BGP4_MESSAGE_AS4_ADDPATH, BGP4_MESSAGE_LOCAL_ADDPATH, BGP4_MESSAGE_AS4_LOCAL_ADDPATH}
 
 var _SubNameToValueMap = map[string]Sub{
-	_SubName_0[0:19]:         BGP4MP_STATE_CHANGE,
-	_SubLowerName_0[0:19]:    BGP4MP_STATE_CHANGE,
-	_SubName_0[19:33]:        BGP4MP_MESSAGE,
-	_SubLowerName_0[19:33]:   BGP4MP_MESSAGE,
-	_SubName_1[0:18]:         BGP4MP_MESSAGE_AS4,
-	_SubLowerName_1[0:18]:    BGP4MP_MESSAGE_AS4,
-	_SubName_1[18:41]:        BGP4MP_STATE_CHANGE_AS4,
-	_SubLowerName_1[18:41]:   BGP4MP_STATE_CHANGE_AS4,
-	_SubName_1[41:61]:        BGP4MP_MESSAGE_LOCAL,
-	_SubLowerName_1[41:61]:   BGP4MP_MESSAGE_LOCAL,
-	_SubName_1[61:85]:        BGP4MP_MESSAGE_AS4_LOCAL,
-	_SubLowerName_1[61:85]:   BGP4MP_MESSAGE_AS4_LOCAL,
-	_SubName_1[85:107]:       BGP4MP_MESSAGE_ADDPATH,
-	_SubLowerName_1[85:107]:  BGP4MP_MESSAGE_ADDPATH,
-	_SubName_1[107:133]:      BGP4MP_MESSAGE_AS4_ADDPATH,
-	_SubLowerName_1[107:133]: BGP4MP_MESSAGE_AS4_ADDPATH,
-	_SubName_1[133:161]:      BGP4MP_MESSAGE_LOCAL_ADDPATH,
-	_SubLowerName_1[133:161]: BGP4MP_MESSAGE_LOCAL_ADDPATH,
-	_SubName_1[161:193]:      BGP4MP_MESSAGE_AS4_LOCAL_ADDPATH,
-	_SubLowerName_1[161:193]: BGP4MP_MESSAGE_AS4_LOCAL_ADDPATH,
+	_SubName_0[0:17]:         BGP4_STATE_CHANGE,
+	_SubLowerName_0[0:17]:    BGP4_STATE_CHANGE,
+	_SubName_0[17:29]:        BGP4_MESSAGE,
+	_SubLowerName_0[17:29]:   BGP4_MESSAGE,
+	_SubName_1[0:16]:         BGP4_MESSAGE_AS4,
+	_SubLowerName_1[0:16]:    BGP4_MESSAGE_AS4,
+	_SubName_1[16:37]:        BGP4_STATE_CHANGE_AS4,
+	_SubLowerName_1[16:37]:   BGP4_STATE_CHANGE_AS4,
+	_SubName_1[37:55]:        BGP4_MESSAGE_LOCAL,
+	_SubLowerName_1[37:55]:   BGP4_MESSAGE_LOCAL,
+	_SubName_1[55:77]:        BGP4_MESSAGE_AS4_LOCAL,
+	_SubLowerName_1[55:77]:   BGP4_MESSAGE_AS4_LOCAL,
+	_SubName_1[77:97]:        BGP4_MESSAGE_ADDPATH,
+	_SubLowerName_1[77:97]:   BGP4_MESSAGE_ADDPATH,
+	_SubName_1[97:121]:       BGP4_MESSAGE_AS4_ADDPATH,
+	_SubLowerName_1[97:121]:  BGP4_MESSAGE_AS4_ADDPATH,
+	_SubName_1[121:147]:      BGP4_MESSAGE_LOCAL_ADDPATH,
+	_SubLowerName_1[121:147]: BGP4_MESSAGE_LOCAL_ADDPATH,
+	_SubName_1[147:177]:      BGP4_MESSAGE_AS4_LOCAL_ADDPATH,
+	_SubLowerName_1[147:177]: BGP4_MESSAGE_AS4_LOCAL_ADDPATH,
 }
 
 var _SubNames = []string{
-	_SubName_0[0:19],
-	_SubName_0[19:33],
-	_SubName_1[0:18],
-	_SubName_1[18:41],
-	_SubName_1[41:61],
-	_SubName_1[61:85],
-	_SubName_1[85:107],
-	_SubName_1[107:133],
-	_SubName_1[133:161],
-	_SubName_1[161:193],
+	_SubName_0[0:17],
+	_SubName_0[17:29],
+	_SubName_1[0:16],
+	_SubName_1[16:37],
+	_SubName_1[37:55],
+	_SubName_1[55:77],
+	_SubName_1[77:97],
+	_SubName_1[97:121],
+	_SubName_1[121:147],
+	_SubName_1[147:177],
 }
 
 // SubString retrieves an enum value from the enum constants string name.

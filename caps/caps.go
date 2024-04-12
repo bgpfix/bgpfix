@@ -150,6 +150,10 @@ func (cps *Caps) Each(cb func(i int, cc Code, cap Cap)) {
 	}
 }
 
+func (cps *Caps) String() string {
+	return string(cps.ToJSON(nil))
+}
+
 func (cps *Caps) MarshalJSON() (dst []byte, err error) {
 	return cps.ToJSON(nil), nil
 }

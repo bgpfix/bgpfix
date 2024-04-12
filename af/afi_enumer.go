@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	_AFIName_0      = "IPV4IPV6"
-	_AFILowerName_0 = "ipv4ipv6"
+	_AFIName_0      = "INVALIDIPV4IPV6"
+	_AFILowerName_0 = "invalidipv4ipv6"
 	_AFIName_1      = "L2VPNMPLS_SECTIONMPLS_LSPMPLS_PSEUDOWIREMT_IPV4MT_IPV6SFC"
 	_AFILowerName_1 = "l2vpnmpls_sectionmpls_lspmpls_pseudowiremt_ipv4mt_ipv6sfc"
 	_AFIName_2      = "LS"
@@ -19,7 +19,7 @@ const (
 )
 
 var (
-	_AFIIndex_0 = [...]uint8{0, 4, 8}
+	_AFIIndex_0 = [...]uint8{0, 7, 11, 15}
 	_AFIIndex_1 = [...]uint8{0, 5, 17, 25, 40, 47, 54, 57}
 	_AFIIndex_2 = [...]uint8{0, 2}
 	_AFIIndex_3 = [...]uint8{0, 14, 29}
@@ -27,8 +27,7 @@ var (
 
 func (i AFI) String() string {
 	switch {
-	case 1 <= i && i <= 2:
-		i -= 1
+	case 0 <= i && i <= 2:
 		return _AFIName_0[_AFIIndex_0[i]:_AFIIndex_0[i+1]]
 	case 25 <= i && i <= 31:
 		i -= 25
@@ -47,6 +46,7 @@ func (i AFI) String() string {
 // Re-run the stringer command to generate them again.
 func _AFINoOp() {
 	var x [1]struct{}
+	_ = x[AFI_INVALID-(0)]
 	_ = x[AFI_IPV4-(1)]
 	_ = x[AFI_IPV6-(2)]
 	_ = x[AFI_L2VPN-(25)]
@@ -61,13 +61,15 @@ func _AFINoOp() {
 	_ = x[AFI_MPLS_NAMESPACES-(16399)]
 }
 
-var _AFIValues = []AFI{AFI_IPV4, AFI_IPV6, AFI_L2VPN, AFI_MPLS_SECTION, AFI_MPLS_LSP, AFI_MPLS_PSEUDOWIRE, AFI_MT_IPV4, AFI_MT_IPV6, AFI_SFC, AFI_LS, AFI_ROUTING_POLICY, AFI_MPLS_NAMESPACES}
+var _AFIValues = []AFI{AFI_INVALID, AFI_IPV4, AFI_IPV6, AFI_L2VPN, AFI_MPLS_SECTION, AFI_MPLS_LSP, AFI_MPLS_PSEUDOWIRE, AFI_MT_IPV4, AFI_MT_IPV6, AFI_SFC, AFI_LS, AFI_ROUTING_POLICY, AFI_MPLS_NAMESPACES}
 
 var _AFINameToValueMap = map[string]AFI{
-	_AFIName_0[0:4]:        AFI_IPV4,
-	_AFILowerName_0[0:4]:   AFI_IPV4,
-	_AFIName_0[4:8]:        AFI_IPV6,
-	_AFILowerName_0[4:8]:   AFI_IPV6,
+	_AFIName_0[0:7]:        AFI_INVALID,
+	_AFILowerName_0[0:7]:   AFI_INVALID,
+	_AFIName_0[7:11]:       AFI_IPV4,
+	_AFILowerName_0[7:11]:  AFI_IPV4,
+	_AFIName_0[11:15]:      AFI_IPV6,
+	_AFILowerName_0[11:15]: AFI_IPV6,
 	_AFIName_1[0:5]:        AFI_L2VPN,
 	_AFILowerName_1[0:5]:   AFI_L2VPN,
 	_AFIName_1[5:17]:       AFI_MPLS_SECTION,
@@ -91,8 +93,9 @@ var _AFINameToValueMap = map[string]AFI{
 }
 
 var _AFINames = []string{
-	_AFIName_0[0:4],
-	_AFIName_0[4:8],
+	_AFIName_0[0:7],
+	_AFIName_0[7:11],
+	_AFIName_0[11:15],
 	_AFIName_1[0:5],
 	_AFIName_1[5:17],
 	_AFIName_1[17:25],

@@ -1,35 +1,23 @@
 package mrt
 
 import (
-	"compress/bzip2"
-	"compress/gzip"
-	"context"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
-	"github.com/rs/zerolog"
 )
 
 // Reader reads MRT-BGP4MP messages into a pipe.Input.
 type Reader struct {
-	*zerolog.Logger
-
-	ctx    context.Context
-	cancel context.CancelCauseFunc
-
-	pipe *pipe.Pipe // target pipe
-	in   *pipe.Proc // target input
-
-	Stats   ReaderStats   // our stats
-	Options ReaderOptions // options; do not modify after Attach()
+	pipe *pipe.Pipe  // target pipe
+	in   *pipe.Input // target input
 
 	ibuf []byte // input buffer
-	mrt  Mrt    // raw MRT message
-	bm   BgpMsg // MRT-BGP message
+	mrt  *Mrt   // raw MRT message
+
+	NoTags bool        // ignore message tags?
+	Stats  ReaderStats // our stats
 }
 
 // BGP reader statistics
@@ -42,45 +30,28 @@ type ReaderStats struct {
 }
 
 // NewReader returns a new Reader.
-func NewReader(ctx context.Context) *Reader {
-	br := &Reader{}
-	br.ctx, br.cancel = context.WithCancelCause(ctx)
-	br.Options = DefaultReaderOptions
-	return br
-}
-
-// Attach attaches the speaker to given upstream pipe direction.
-// Must not be called more than once.
-func (br *Reader) Attach(p *pipe.Pipe, dst msg.Dir) error {
-	opts := &br.Options
-	br.pipe = p
-	br.in = p.AddProc(dst)
-
-	if opts.Logger != nil {
-		br.Logger = opts.Logger
-	} else {
-		l := zerolog.Nop()
-		br.Logger = &l
+func NewReader(p *pipe.Pipe, input *pipe.Input) *Reader {
+	return &Reader{
+		pipe: p,
+		in:   input,
+		mrt:  NewMrt(),
 	}
-
-	return nil
 }
 
 // Write implements io.Writer and reads all MRT-BGP4MP messages from src
 // into br.in. Must not be used concurrently.
 func (br *Reader) Write(src []byte) (n int, err error) {
+	return br.WriteFunc(src, nil)
+}
+
+// WriteFunc is the same as Write(), but takes an optional callback function
+// to be called just before the message is accepted for processing. If the callback
+// returns false, the message is silently dropped instead.
+func (br *Reader) WriteFunc(src []byte, cb pipe.CallbackFunc) (n int, err error) {
 	var (
 		p     = br.pipe
-		in    = br.in
-		mrt   = &br.mrt
-		bm    = &br.bm
 		stats = &br.Stats
 	)
-
-	// context check
-	if br.ctx.Err() != nil {
-		return 0, context.Cause(br.ctx)
-	}
 
 	// append src and switch to inbuf if needed
 	n = len(src) // NB: always return n=len(src)
@@ -102,7 +73,8 @@ func (br *Reader) Write(src []byte) (n int, err error) {
 	// process until raw is empty
 	for len(raw) > 0 {
 		// parse as raw MRT message
-		off, perr := mrt.Reset().Parse(raw)
+		mrt := br.mrt.Reset()
+		off, perr := mrt.FromBytes(raw)
 		switch perr {
 		case nil:
 			stats.Parsed++
@@ -120,64 +92,69 @@ func (br *Reader) Write(src []byte) (n int, err error) {
 			return n, fmt.Errorf("MRT: %w", perr)
 		}
 
-		// parse as MRT-BGP4MP
-		perr = bm.Reset().Parse(mrt)
-		switch perr {
+		// parse as BGP4MP
+		switch err := mrt.Parse(); err {
 		case nil:
 			stats.ParsedBgp++ // success
 		case ErrType, ErrSub:
 			stats.ParsedSkip++
 			continue
 		default:
-			return n, fmt.Errorf("BGP4MP: %w", perr)
+			stats.Garbled++
+			return n, fmt.Errorf("BGP4MP: %w", err)
 		}
 
-		// parse as a raw BGP message
+		// write to BGP msg
 		m := p.GetMsg()
-		off, perr = m.FromBytes(bm.Data)
-		switch {
-		case perr != nil:
+		if err := mrt.Bgp4.ToMsg(m, !br.NoTags); err != nil {
 			p.PutMsg(m)
-			return n, fmt.Errorf("BGP: %w", perr)
-		case off != len(bm.Data):
+			return n, err
+		}
+
+		// prepare m
+		if cb != nil && !cb(m) {
 			p.PutMsg(m)
-			return n, fmt.Errorf("BGP: %w", ErrLength)
+			continue // silent skip
 		}
 
 		// sail!
-		m.Time = mrt.Time // use MRT time
-		if err := in.WriteMsg(m); err != nil {
+		m.CopyData()
+		if err := br.in.WriteMsg(m); err != nil {
 			return n, fmt.Errorf("pipe: %w", err)
 		}
+		mrt.Reset()
 	}
 
 	// exactly n bytes consumed and processed, no error
 	return n, nil
 }
 
-// ReadFromPath opens and reads fpath into br, uncompressing if needed.
-func (br *Reader) ReadFromPath(fpath string) (n int64, err error) {
-	fh, err := os.Open(fpath)
+// FromBytes parses the first MRT-BGP4MP message in buf, and references it in m.
+// Does not buffer or copy buf. Can be used concurrently. mrt may be nil
+func (br *Reader) FromBytes(buf []byte, m *msg.Msg, mrt *Mrt) (n int, err error) {
+	// intermediate buffer
+	if mrt == nil {
+		mrt = NewMrt()
+	} else {
+		mrt.Reset()
+	}
+
+	// parse as raw MRT message
+	n, err = mrt.FromBytes(buf)
 	if err != nil {
-		return 0, err
+		return n, fmt.Errorf("MRT: %w", err)
 	}
-	defer fh.Close()
 
-	// transparent uncompress?
-	var rd io.Reader
-	switch filepath.Ext(fpath) {
-	case ".bz2":
-		rd = bzip2.NewReader(fh)
-	case ".gz":
-		rd, err = gzip.NewReader(fh)
-		if err != nil {
-			return 0, err
-		}
+	// parse as MRT-BGP4MP
+	b4 := &mrt.Bgp4
+	switch err := b4.Parse(); err {
+	case nil:
+		break // success
+	case ErrSub:
+		return n, ErrSub
 	default:
-		rd = fh
+		return n, fmt.Errorf("BGP4MP: %w", err)
 	}
 
-	// copy all from MRT to pipe, in 10MiB steps
-	buf := make([]byte, 10*1024*1024)
-	return io.CopyBuffer(br, rd, buf)
+	return n, b4.ToMsg(m, !br.NoTags)
 }

@@ -19,9 +19,8 @@ import (
 type Msg struct {
 	// internal
 
-	ref   bool   // true iff Data references memory we don't own
-	buf   []byte // internal buffer
-	dirty bool   // if true, no sync between Upper vs. Data and Json // TODO: use Data = nil and Upper = INVALID instead
+	ref bool   // true iff Data references memory we don't own
+	buf []byte // internal buffer
 
 	// optional metadata
 
@@ -36,9 +35,9 @@ type Msg struct {
 
 	// upper layer
 
-	Upper  Type   // which of the upper layer is valid?
-	Open   Open   // parsed BGP OPEN message
-	Update Update // parsed BGP UPDATE message
+	Upper  Type   // which of the upper layers is valid?
+	Open   Open   // BGP OPEN message
+	Update Update // BGP UPDATE message
 
 	// for optional use beyond this pkg, eg. to store pipe.Context
 
@@ -110,7 +109,8 @@ const (
 var (
 	msb = binary.Msb
 
-	bgp_marker = [...]byte{
+	// https://datatracker.ietf.org/doc/html/rfc4271#autoid-9
+	BgpMarker = []byte{
 		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 	}
@@ -126,13 +126,12 @@ func NewMsg() *Msg {
 
 // Reset clears the message
 func (msg *Msg) Reset() *Msg {
-	switch msg.Upper {
-	case OPEN:
-		msg.Open.Reset()
-	case UPDATE:
-		msg.Update.Reset()
-	}
+	msg.Dir = 0
+	msg.Seq = 0
+	msg.Time = time.Time{}
+	msg.Type = 0
 
+	msg.Data = nil
 	msg.ref = false
 	if cap(msg.buf) < 1024*1024 {
 		msg.buf = msg.buf[:0] // NB: re-use iff < 1MiB
@@ -140,15 +139,13 @@ func (msg *Msg) Reset() *Msg {
 		msg.buf = nil
 	}
 
-	msg.Dir = 0
-	msg.Seq = 0
-	msg.Time = time.Time{}
-
-	msg.Type = 0
-	msg.Data = nil
-
+	switch msg.Upper {
+	case OPEN:
+		msg.Open.Reset()
+	case UPDATE:
+		msg.Update.Reset()
+	}
 	msg.Upper = INVALID
-	msg.dirty = false
 
 	if cap(msg.json) < 1024*1024 {
 		msg.json = msg.json[:0] // NB: re-use iff < 1MiB
@@ -159,47 +156,64 @@ func (msg *Msg) Reset() *Msg {
 	return msg
 }
 
-// Length returns total BGP message length, including header
+// Length returns total BGP message length, including the header.
+// Call msg.Marshal() first if needed. Returns 0 on error.
 func (msg *Msg) Length() int {
-	return len(msg.Data) + HEADLEN
+	if msg.Data == nil {
+		return 0
+	} else {
+		return len(msg.Data) + HEADLEN
+	}
 }
 
-// Up prepares to make use of and modify the upper layer of given type.
-// Does not reset the upper layer struct, though.
-func (msg *Msg) Up(typ Type) *Msg {
+// Use selects the upper layer of given type for active use.
+// Calls msg.Modified(), but does not reset the selected upper layer.
+// Use Reset() on msg or the selected layer if needed.
+func (msg *Msg) Use(typ Type) *Msg {
 	msg.Type = typ
 	msg.Upper = typ
-	msg.dirty = true
+	msg.Modified()
 	return msg
 }
 
-// Dirty must be called after the upper layer was modified, so that we know
-// both Data and json must have lost sync vs. upper layer
-func (msg *Msg) Dirty() {
-	msg.dirty = true
+// Modified ditches msg.Data and its internal JSON representation,
+// making the upper layer the only source of information about msg.
+//
+// Modified must be called when the upper layer is modified, to signal that
+// both msg.Data and JSON representation must be regenerated when needed.
+func (msg *Msg) Modified() {
+	msg.Data = nil
 	msg.json = msg.json[:0]
 }
 
-// Own copies the referenced data bytes iff needed, making msg the owner of msg.Data.
-func (msg *Msg) Own() *Msg {
+// CopyData makes msg the owner of msg.Data, copying referenced external data iff needed.
+func (msg *Msg) CopyData() *Msg {
 	if !msg.ref {
 		return msg // already owned
 	} else {
 		msg.ref = false // tag as owned
 	}
 
-	// copy re-using our internal buffer
-	if msg.Data != nil {
+	switch {
+	case msg.Data == nil: // no data
+		return msg
+	case len(msg.Data) == 0: // data empty
+		if msg.buf == nil {
+			msg.buf = make([]byte, 0)
+		} else {
+			msg.buf = msg.buf[:0]
+		}
+	default: // copy data
 		msg.buf = append(msg.buf[:0], msg.Data...)
-		msg.Data = msg.buf
 	}
 
+	msg.Data = msg.buf
 	return msg
 }
 
-// FromBytes reads one BGP message from buf, referencing buf memory internally.
-// It does not copy, use Own() to make an internal copy of buf afterwards, if you need it.
-// Returns the number of read bytes from buf (can be less than len(buf)).
+// FromBytes reads one BGP message from buf, referencing buf data inside msg.Data.
+// If needed, call CopyData(), DropData() or Reset() later to remove the reference.
+// Returns the number of bytes read from buf, which can be less than len(buf).
 func (msg *Msg) FromBytes(buf []byte) (off int, err error) {
 	// enough data for marker + length + type?
 	if len(buf) < HEADLEN {
@@ -208,10 +222,10 @@ func (msg *Msg) FromBytes(buf []byte) (off int, err error) {
 	data := buf
 
 	// find marker
-	if !bytes.HasPrefix(data, bgp_marker[:]) {
+	if !bytes.HasPrefix(data, BgpMarker) {
 		return off, ErrMarker
 	}
-	off = len(bgp_marker)
+	off = len(BgpMarker)
 	data = buf[off:]
 
 	// read type and length
@@ -228,25 +242,26 @@ func (msg *Msg) FromBytes(buf []byte) (off int, err error) {
 		return off, io.ErrUnexpectedEOF
 	}
 
-	// reference data, if needed
-	if dlen > 0 {
-		msg.ref = true
-		msg.Data = data[:dlen]
-	} else {
-		msg.ref = false
-		msg.Data = nil
-	}
+	// reference data
+	msg.ref = true
+	msg.Data = data[:dlen]
+
+	// needs fresh Parse() and GetJSON() results
+	msg.Upper = INVALID
+	msg.json = msg.json[:0]
 
 	// done!
-	msg.dirty = true
 	return off + dlen, nil
 }
 
-// Parse parses Data into the upper layers iff needed.
-// caps can infuence the upper layer decoders.
-func (msg *Msg) Parse(caps caps.Caps) error {
+// Parse parses msg.Data into the upper layer iff needed.
+// Capabilities in caps can infuence the upper layer decoders.
+// Does not reference data in msg.Data.
+func (msg *Msg) Parse(cps caps.Caps) error {
 	if msg.Upper != INVALID {
 		return nil // assume already done
+	} else if msg.Data == nil {
+		return ErrNoData
 	}
 
 	var err error
@@ -264,35 +279,36 @@ func (msg *Msg) Parse(caps caps.Caps) error {
 		if err != nil {
 			break
 		}
-		err = u.ParseAttrs(caps)
+		err = u.ParseAttrs(cps)
 	case KEEPALIVE:
 		if len(msg.Data) != 0 {
 			err = ErrLength
 		}
 	case NOTIFY, REFRESH:
-		// err = ErrNotImpl // TODO
+		// err = ErrTODO // TODO
 	default:
 		err = ErrType
 	}
 
 	if err == nil {
 		msg.Upper = msg.Type
-		msg.dirty = false
 		msg.json = msg.json[:0]
 	}
 
 	return err
 }
 
-// MarshalUpper marshals the upper layer to msg.Data iff possible and needed.
+// Marshal marshals the upper layer to msg.Data iff possible and needed.
 // caps can influence the upper layer encoders.
-func (msg *Msg) MarshalUpper(caps caps.Caps) error {
-	if !msg.dirty || msg.Upper == INVALID {
-		return nil // not needed or not possible
+func (msg *Msg) Marshal(cps caps.Caps) error {
+	if msg.Data != nil {
+		return nil // not needed
 	}
 
 	var err error
-	switch msg.Type {
+	switch msg.Upper {
+	case INVALID:
+		return ErrNoUpper // not possible
 	case OPEN:
 		o := &msg.Open
 		err = o.MarshalCaps()
@@ -302,37 +318,45 @@ func (msg *Msg) MarshalUpper(caps caps.Caps) error {
 		err = o.Marshal()
 	case UPDATE:
 		u := &msg.Update
-		err = u.MarshalAttrs(caps)
+		err = u.MarshalAttrs(cps)
 		if err != nil {
 			break
 		}
-		err = u.Marshal(caps)
+		err = u.Marshal(cps)
 	case KEEPALIVE:
-		msg.Data = nil
+		if msg.buf == nil {
+			msg.buf = make([]byte, 0)
+		} else {
+			msg.buf = msg.buf[:0]
+		}
+		msg.Type = KEEPALIVE
+		msg.Data = msg.buf
 		msg.ref = false
 	default:
 		err = ErrType
 	}
 
-	if err == nil {
-		msg.dirty = false
-	}
-
 	return err
 }
 
-// WriteTo marshals the BGP message to w, implementing io.WriterTo
+// WriteTo writes raw BGP msg.Data to w, implementing io.WriterTo.
+// Call msg.Marshal() first if needed.
 func (msg *Msg) WriteTo(w io.Writer) (n int64, err error) {
 	var m int
 
+	// has data?
+	if msg.Data == nil {
+		return 0, ErrNoData
+	}
+
 	// data length ok?
 	l := msg.Length()
-	if l > MAXLEN {
+	if l < HEADLEN || l > MAXLEN {
 		return 0, ErrLength
 	}
 
 	// write the marker
-	m, err = w.Write(bgp_marker[:])
+	m, err = w.Write(BgpMarker)
 	if err != nil {
 		return
 	}
@@ -352,28 +376,28 @@ func (msg *Msg) WriteTo(w io.Writer) (n int64, err error) {
 	}
 	n += int64(m)
 
-	// write data?
-	if len(msg.Data) > 0 {
-		m, err = w.Write(msg.Data)
-		if err != nil {
-			return
-		}
-		n += int64(m)
+	// write data
+	m, err = w.Write(msg.Data)
+	if err != nil {
+		return
 	}
+	n += int64(m)
 
 	// done
 	return
 }
 
-// String dumps msg to JSON
+// String dumps msg to JSON string, without the trailing newline
 func (msg *Msg) String() string {
-	return string(msg.GetJSON())
+	j := msg.GetJSON()
+	return string(j[:len(j)-1])
 }
 
-// GetJSON returns JSON representation of msg using an internal buffer space in msg
+// GetJSON returns JSON representation of msg + "\n" directly from an internal buffer.
+// The result is always non-nil and non-empty. Copy the result if you need to keep it.
 func (msg *Msg) GetJSON() []byte {
-	// internal still good?
-	if !msg.dirty && len(msg.json) > 0 {
+	// still good?
+	if msg.Upper != INVALID && len(msg.json) > 0 {
 		return msg.json
 	}
 
@@ -393,7 +417,7 @@ func (msg *Msg) GetJSON() []byte {
 	dst = append(dst, `",`...)
 
 	// [3] length (w/out the header)
-	if msg.dirty && msg.Type != KEEPALIVE {
+	if msg.Data == nil && msg.Type != KEEPALIVE {
 		dst = append(dst, `-1`...)
 	} else {
 		dst = strconv.AppendUint(dst, uint64(len(msg.Data)), 10)
@@ -413,9 +437,9 @@ func (msg *Msg) GetJSON() []byte {
 	case KEEPALIVE:
 		dst = append(dst, json.Null...)
 	case NOTIFY:
-		dst = append(dst, `"`...)
-		dst = append(dst, msg.Data[2:]...) // FIXME
-		dst = append(dst, `"`...)
+		dst = append(dst, '"')
+		dst = json.Ascii(dst, msg.Data[2:]) // FIXME
+		dst = append(dst, '"')
 	default:
 		dst = json.Hex(dst, msg.Data)
 	}
@@ -429,29 +453,26 @@ func (msg *Msg) GetJSON() []byte {
 	}
 
 	// done!
-	msg.json = append(dst, ']')
+	msg.json = append(dst, "]\n"...)
 	return msg.json
 }
 
-// ToJSON appends JSON representation of msg to dst (may be nil to allocate)
+// ToJSON appends JSON representation of msg + "\n" to dst (may be nil to allocate)
 func (msg *Msg) ToJSON(dst []byte) []byte {
 	return append(dst[:0], msg.GetJSON()...)
 }
 
-// WriteJSON writes JSON representation of msg to w
-func (msg *Msg) WriteJSON(w io.Writer) (n int, err error) {
-	return w.Write(msg.GetJSON())
-}
-
 // FromJSON reads msg JSON representation from src into Upper
 func (msg *Msg) FromJSON(src []byte) (reterr error) {
-	// internal still good?
-	if !msg.dirty && len(src) == len(msg.json) && string(msg.json) == string(src) {
-		return nil
-	} else {
-		msg.dirty = true // will modify Upper
+	// internal json still valid?
+	if l := len(msg.json) - 1; l > 0 && msg.Upper != INVALID {
+		src = bytes.TrimSpace(src)
+		if len(src) == l && string(src) == string(msg.json[:l]) {
+			return nil // yay! we're done
+		}
 	}
 
+	msg.Modified() // will modify Upper
 	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) (err error) {
 		switch key {
 		case 0: // dst TODO: better
@@ -482,7 +503,7 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 				msg.Type = Type(v)
 			}
 			if msg.Type != INVALID {
-				msg.Up(msg.Type)
+				msg.Use(msg.Type)
 			}
 
 		case 5: // upper layer
@@ -503,7 +524,7 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 			}
 
 		case 6: // value
-			if msg.Value != nil && typ != json.NULL {
+			if msg.Value != nil && len(val) > 0 {
 				err = msg.Value.FromJSON(val)
 			}
 		}

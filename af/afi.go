@@ -4,6 +4,7 @@ package af
 type AFI uint16
 
 const (
+	AFI_INVALID         AFI = 0
 	AFI_IPV4            AFI = 1
 	AFI_IPV6            AFI = 2
 	AFI_L2VPN           AFI = 25

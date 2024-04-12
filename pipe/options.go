@@ -1,6 +1,7 @@
 package pipe
 
 import (
+	"fmt"
 	"reflect"
 	"runtime"
 	"sync"
@@ -26,7 +27,7 @@ type Options struct {
 
 	Callbacks []*Callback // message callbacks
 	Handlers  []*Handler  // event handlers
-	Procs     []*Proc     // input processors
+	Inputs    []*Input    // input processors
 }
 
 // Callback represents a function to call for matching BGP messages
@@ -35,6 +36,7 @@ type Callback struct {
 	Name    string       // optional name
 	Order   int          // the lower the order, the sooner callback is run
 	Enabled *atomic.Bool // if non-nil, disables the callback unless true
+	Dropped bool         // if true, permanently drops (unregisters) the callback
 
 	Pre  bool // run before non-pre callbacks?
 	Raw  bool // if true, do not parse the message (which may already be parsed, but for other reasons)
@@ -51,6 +53,7 @@ type Handler struct {
 	Name    string       // optional name
 	Order   int          // the lower the order, the sooner handler is run
 	Enabled *atomic.Bool // if non-nil, disables the handler unless true
+	Dropped bool         // if true, permanently drops (unregisters) the handler
 
 	Pre  bool // run before non-pre handlers?
 	Post bool // run after non-post handlers?
@@ -61,11 +64,12 @@ type Handler struct {
 }
 
 // CallbackFunc processes message m.
-type CallbackFunc func(m *msg.Msg)
+// Return false to drop the message.
+type CallbackFunc func(m *msg.Msg) (keep_message bool)
 
 // HandlerFunc handles event ev.
-// If returns false, unregisters the parent Handler (for all Types).
-type HandlerFunc func(ev *Event) (keep_event bool)
+// Return false to unregister the handler (all types).
+type HandlerFunc func(ev *Event) (keep_handler bool)
 
 // AddCallbacks adds a callback function using tpl as its template (if present).
 // It returns the added Callback, which can be further configured.
@@ -91,6 +95,38 @@ func (o *Options) AddCallback(cbf CallbackFunc, tpl ...*Callback) *Callback {
 
 	o.Callbacks = append(o.Callbacks, &cb)
 	return &cb
+}
+
+// Enable sets cb.Enabled to true and returns true. If cb.Enabled is nil, returns false.
+func (cb *Callback) Enable() bool {
+	if cb == nil || cb.Enabled == nil {
+		return false
+	} else {
+		cb.Enabled.Store(true)
+		return true
+	}
+}
+
+// Disable sets cb.Enabled to false and returns true. If cb.Enabled is nil, returns false.
+func (cb *Callback) Disable() bool {
+	if cb == nil || cb.Enabled == nil {
+		return false
+	} else {
+		cb.Enabled.Store(false)
+		return true
+	}
+}
+
+// Drop drops the callback, permanently unregistering it from running
+func (cb *Callback) Drop() {
+	if cb != nil {
+		cb.Dropped = true
+	}
+}
+
+// String returns callback name and id as string
+func (cb *Callback) String() string {
+	return fmt.Sprintf("C%d:%s", cb.Id, cb.Name)
 }
 
 // OnMsg adds a callback for all messages of given types (or all types if not specified).
@@ -153,6 +189,38 @@ func (o *Options) AddHandler(hdf HandlerFunc, tpl ...*Handler) *Handler {
 	return &h
 }
 
+// String returns handler name and id as string
+func (h *Handler) String() string {
+	return fmt.Sprintf("H%d:%s", h.Id, h.Name)
+}
+
+// Enable sets h.Enabled to true and returns true. If h.Enabled is nil, returns false.
+func (h *Handler) Enable() bool {
+	if h == nil || h.Enabled == nil {
+		return false
+	} else {
+		h.Enabled.Store(true)
+		return true
+	}
+}
+
+// Disable sets h.Enabled to false and returns true. If h.Enabled is nil, returns false.
+func (h *Handler) Disable() bool {
+	if h == nil || h.Enabled == nil {
+		return false
+	} else {
+		h.Enabled.Store(false)
+		return true
+	}
+}
+
+// Drop drops the handler, permanently unregistering it from running
+func (h *Handler) Drop() {
+	if h != nil {
+		h.Dropped = true
+	}
+}
+
 // OnEvent request hdf to be called for given event types.
 // If no types provided, it requests to call hdf on *every* event.
 func (o *Options) OnEvent(hdf HandlerFunc, types ...string) *Handler {
@@ -200,34 +268,34 @@ func (o *Options) OnParseError(hdf HandlerFunc) *Handler {
 	return o.OnEvent(hdf, EVENT_PARSE)
 }
 
-// AddProc adds input processor for given pipe direction, with optional details in tpl.
-func (o *Options) AddProc(dir msg.Dir, tpl ...*Proc) *Proc {
-	var pi Proc
+// AddInput adds input processor for given pipe direction, with optional details in tpl.
+func (o *Options) AddInput(dir msg.Dir, tpl ...*Input) *Input {
+	var in Input
 
-	// deep copy the tpl?
+	// copy the tpl?
 	if len(tpl) > 0 {
-		pi = *tpl[0]
+		in = *tpl[0]
 	}
 
 	// override the name?
-	if len(pi.Name) == 0 {
+	if len(in.Name) == 0 {
 		if pc, _, _, ok := runtime.Caller(1); ok {
-			pi.Name = runtime.FuncForPC(pc).Name()
+			in.Name = runtime.FuncForPC(pc).Name()
 		}
 	}
 
 	// input
-	if pi.In == nil {
-		pi.In = make(chan *msg.Msg, 10)
+	if in.In == nil {
+		in.In = make(chan *msg.Msg, 10)
 	}
 
 	// dir
 	if dir == msg.DIR_L {
-		pi.Dir = msg.DIR_L
+		in.Dir = msg.DIR_L
 	} else {
-		pi.Dir = msg.DIR_R
+		in.Dir = msg.DIR_R
 	}
 
-	o.Procs = append(o.Procs, &pi)
-	return &pi
+	o.Inputs = append(o.Inputs, &in)
+	return &in
 }

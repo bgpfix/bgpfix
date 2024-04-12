@@ -8,9 +8,9 @@ import (
 	"github.com/bgpfix/bgpfix/msg"
 )
 
-// Proc processes incoming BGP messages through Callbacks
-// and (optionally) writes the output to attached Line.
-type Proc struct {
+// Input processes incoming BGP messages through Callbacks
+// and (optionally) writes the result to attached Line.
+type Input struct {
 	Pipe *Pipe // attached to this Pipe (nil before pipe start)
 	Line *Line // attached to this Line (nil before pipe start)
 
@@ -30,19 +30,12 @@ type Proc struct {
 	// FilterValue specifies the value for CallbackFilter
 	FilterValue any
 
-	// statistics
-	Stats struct {
-		Parsed  uint64
-		Short   uint64
-		Garbled uint64
-	}
-
 	ibuf []byte          // input buffer
 	cbs  [16][]*Callback // callbacks for given message type
 	done chan struct{}   // closed when the input is done processing
 }
 
-func (in *Proc) attach(p *Pipe, l *Line) {
+func (in *Input) attach(p *Pipe, l *Line) {
 	in.Pipe = p
 	in.Line = l
 	in.Dir = l.Dir
@@ -116,19 +109,18 @@ func (in *Proc) attach(p *Pipe, l *Line) {
 	}
 }
 
-// prepare prepares metadata and context of m for processing in this Proc.
+// prepare prepares metadata and context of m for processing in this Input.
 // The message type must already be set.
-func (in *Proc) prepare(m *msg.Msg) *Context {
+func (in *Input) prepare(m *msg.Msg) *Context {
 	mx := MsgContext(m)
 
-	// already prepared?
+	// already mine?
 	if mx.Input == in {
 		return mx
+	} else {
+		mx.Pipe = in.Pipe
+		mx.Input = in
 	}
-
-	// nope, own it
-	mx.Pipe = in.Pipe
-	mx.Input = in
 
 	// message metadata
 	m.Dir = in.Dir
@@ -151,7 +143,7 @@ func (in *Proc) prepare(m *msg.Msg) *Context {
 	return mx
 }
 
-func (in *Proc) process() {
+func (in *Input) process() {
 	var (
 		p      = in.Pipe
 		l      = in.Line
@@ -162,19 +154,22 @@ func (in *Proc) process() {
 
 input:
 	for m := range in.In {
-		// get context, clear actions except for BORROW
+		// prepare the message iff needed
 		mx := in.prepare(m)
-		mx.Action.Clear()
 
 		// run the callbacks
 		for len(mx.cbs) > 0 {
-			// eat first callback
+			// eat the head
 			cb := mx.cbs[0]
 			mx.cbs = mx.cbs[1:]
 
-			// disabled?
-			if cb.Enabled != nil && !cb.Enabled.Load() {
-				continue
+			// skip callback?
+			if cb.Dropped {
+				continue // dropped
+			} else if cb.Id != 0 && mx.Input.Id == cb.Id {
+				continue // skip own messages
+			} else if cb.Enabled != nil && !cb.Enabled.Load() {
+				continue // disabled
 			}
 
 			// need to parse first?
@@ -185,16 +180,19 @@ input:
 				}
 			}
 
-			// run and wait
+			// run the callback, block until done
 			mx.Callback = cb
-			cb.Func(m)
+			if !cb.Func(m) {
+				mx.Action.Drop()
+			}
 			mx.Callback = nil
 
 			// what's next?
-			if mx.Action.Is(ACTION_DROP) {
+			if mx.Action.IsDrop() {
 				p.PutMsg(m)
 				continue input // next message
-			} else if mx.Action.Is(ACTION_ACCEPT) {
+			}
+			if mx.Action.IsAccept() {
 				break // take it as-is
 			}
 		}
@@ -230,38 +228,24 @@ input:
 		// output closed?
 		if closed {
 			p.PutMsg(m) // drop on the floor
-		} else if l.WriteOut(m) != nil {
+		} else if l.WriteOutput(m) != nil {
 			closed = true // start dropping from now on
 		}
 	}
 }
 
 // Close safely closes the .In channel, which should eventually stop the Input
-func (in *Proc) Close() {
+func (in *Input) Close() {
 	defer func() { recover() }()
 	close(in.In)
 }
 
 // Wait blocks until the input is done processing the messages
-func (in *Proc) Wait() {
+func (in *Input) Wait() {
 	<-in.done
 }
 
-// WriteMsg safely sends m to pi.In, avoiding a panic if pi.In is closed.
-// It assigns a sequence number and timestamp before writing to the channel.
-func (in *Proc) WriteMsg(m *msg.Msg) (write_error error) {
-	in.prepare(m)
-	defer func() {
-		if recover() != nil {
-			write_error = ErrInClosed
-			in.Pipe.PutMsg(m)
-		}
-	}()
-	in.In <- m
-	return nil
-}
-
-// Write implements io.Writer and reads all BGP messages from src into pi.In.
+// Write implements io.Writer and reads all BGP messages from src into in.In.
 // Copies bytes from src. Consumes what it can, buffers the remainder if needed.
 // Returns n equal to len(src). May block if pi.In is full.
 //
@@ -269,22 +253,27 @@ func (in *Proc) WriteMsg(m *msg.Msg) (write_error error) {
 // until it returns a nil err.
 //
 // Must not be used concurrently.
-func (in *Proc) Write(src []byte) (n int, err error) {
+func (in *Input) Write(src []byte) (int, error) {
+	return in.WriteFunc(src, nil)
+}
+
+// WriteFunc is the same as Input.Write(), but takes an optional callback function
+// to be called just before the message is accepted for processing. If the callback
+// returns false, the message is silently dropped instead.
+func (in *Input) WriteFunc(src []byte, cb CallbackFunc) (int, error) {
 	var (
 		p   = in.Pipe
-		ss  = &in.Stats
 		now = time.Now().UTC()
 	)
 
 	// append src and switch to inbuf if needed
-	n = len(src) // NB: always return n=len(src)
 	raw := src
 	if len(in.ibuf) > 0 {
 		in.ibuf = append(in.ibuf, raw...)
 		raw = in.ibuf // [1]
 	}
 
-	// on return, leave the remainder at the start of d.inbuf?
+	// check raw on return: leave the remainder at the start of d.inbuf?
 	defer func() {
 		if len(raw) == 0 {
 			in.ibuf = in.ibuf[:0]
@@ -295,38 +284,57 @@ func (in *Proc) Write(src []byte) (n int, err error) {
 
 	// process until raw is empty
 	for len(raw) > 0 {
-		// grab memory, parse raw, take mem reference
+		// grab memory and parse raw[:off]
 		m := p.GetMsg()
-		off, perr := m.FromBytes(raw)
-
-		// success?
-		switch perr {
+		off, err := m.FromBytes(raw)
+		switch err {
 		case nil:
-			ss.Parsed++
 			raw = raw[off:]
 		case io.ErrUnexpectedEOF: // need more data
-			ss.Short++
-			return n, nil // defer will buffer raw
+			p.PutMsg(m)
+			return len(src), nil // defer will buffer raw
 		default: // parse error, try to skip the garbled data
-			ss.Garbled++
+			p.PutMsg(m)
 			if off > 0 {
 				raw = raw[off:] // buffer the remainder for re-try
 			} else {
 				raw = nil // no idea, throw out
 			}
-			return n, perr
+			return len(src), err
 		}
 
 		// prepare m
 		m.Time = now
-		m.Own()
+		if cb != nil && !cb(m) {
+			p.PutMsg(m)
+			continue
+		}
 
 		// send
+		m.CopyData()
 		if err := in.WriteMsg(m); err != nil {
-			return n, err
+			return len(src), err
 		}
 	}
 
 	// exactly len(src) bytes consumed and processed, no error
-	return n, nil
+	return len(src), nil
+}
+
+// WriteMsg safely sends m to in.In, avoiding a panic if it is closed.
+// It assigns a sequence number and timestamp before writing to the channel.
+func (in *Input) WriteMsg(m *msg.Msg) (write_error error) {
+	// block the caller while we prepare the message
+	in.prepare(m)
+
+	// safe write to in.In
+	defer func() {
+		if recover() != nil {
+			write_error = ErrInClosed
+			in.Pipe.PutMsg(m)
+		}
+	}()
+	in.In <- m
+
+	return nil
 }
