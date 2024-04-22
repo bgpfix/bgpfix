@@ -62,9 +62,9 @@ type Dir byte
 
 //go:generate go run github.com/dmarkham/enumer -type Dir -trimprefix DIR_
 const (
-	DIR_LR Dir = 0 // no particular direction (ie. both L and R)
-	DIR_L  Dir = 1 // L direction: "left" or "local"
-	DIR_R  Dir = 2 // R direction: "right" or "remote"
+	DIR_LR Dir = 0b00 // no particular direction (ie. both L and R)
+	DIR_L  Dir = 0b01 // L direction: "left" or "local"
+	DIR_R  Dir = 0b10 // R direction: "right" or "remote"
 )
 
 // Flip returns the opposite direction
@@ -156,9 +156,9 @@ func (msg *Msg) Reset() *Msg {
 	return msg
 }
 
-// Length returns total BGP message length, including the header.
+// Len returns total BGP message length, including the header.
 // Call msg.Marshal() first if needed. Returns 0 on error.
-func (msg *Msg) Length() int {
+func (msg *Msg) Len() int {
 	if msg.Data == nil {
 		return 0
 	} else {
@@ -350,7 +350,7 @@ func (msg *Msg) WriteTo(w io.Writer) (n int64, err error) {
 	}
 
 	// data length ok?
-	l := msg.Length()
+	l := msg.Len()
 	if l < HEADLEN || l > MAXLEN {
 		return 0, ErrLength
 	}

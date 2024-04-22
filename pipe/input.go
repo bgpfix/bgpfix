@@ -5,6 +5,8 @@ import (
 	"slices"
 	"time"
 
+	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/attrs"
 	"github.com/bgpfix/bgpfix/msg"
 )
 
@@ -209,19 +211,41 @@ input:
 			if t > oldt && l.LastOpen.CompareAndSwap(oldt, t) {
 				mx.Action.Add(ACTION_BORROW)
 				l.Open.Store(&m.Open)
-				p.Event(EVENT_OPEN, m.Dir, t, oldt)
+				p.Event(EVENT_OPEN, m.Dir, oldt)
 			}
 
 		case msg.KEEPALIVE:
 			oldt := l.LastAlive.Load()
 			if t > oldt && l.LastAlive.CompareAndSwap(oldt, t) {
-				p.Event(EVENT_ALIVE, m.Dir, t, oldt)
+				p.Event(EVENT_ALIVE, m.Dir, oldt)
 			}
 
 		case msg.UPDATE:
 			oldt := l.LastUpdate.Load()
 			if t > oldt && l.LastUpdate.CompareAndSwap(oldt, t) {
-				p.Event(EVENT_UPDATE, m.Dir, t, oldt)
+				p.Event(EVENT_UPDATE, m.Dir, oldt)
+			}
+
+			// an End-of-RIB marker?
+			if m.Len() < 32 && m.Parse(p.Caps) == nil {
+				var afi af.AF
+				ats := m.Update.Attrs
+
+				// get Address Family
+				if m.Len() == msg.UPDATE_MINLEN {
+					afi = af.New(af.AFI_IPV4, af.SAFI_UNICAST)
+				} else if ats.Len() != 1 {
+					break // must have 1 attribute
+				} else if unreach, ok := ats.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); !ok {
+					break // must ATTR_MP_UNREACH
+				} else {
+					afi = unreach.AF
+				}
+
+				// seen for the first time?
+				if _, loaded := l.EoR.LoadOrStore(afi, t); !loaded {
+					p.Event(EVENT_EOR, m.Dir, afi.Afi(), afi.Safi())
+				}
 			}
 		}
 

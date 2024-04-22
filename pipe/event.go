@@ -33,6 +33,9 @@ var (
 
 	// session established (OPEN+KEEPALIVE made it to both sides)
 	EVENT_ESTABLISHED = "bgpfix/pipe.ESTABLISHED"
+
+	// End-of-RIB for new AF made it to ouput in given direction
+	EVENT_EOR = "bgpfix/pipe.EOR_AF"
 )
 
 // Event represents an arbitrary event for a BGP pipe.
