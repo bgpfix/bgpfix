@@ -6,16 +6,16 @@
 
 A generic-purpose, high-performance Golang library for [bridging the gaps in BGP](https://twitter.com/ACM_IMC2021/status/1445725066403196928).
 
-For a CLI tool, see the [bgpipe](https://github.com/bgpfix/bgpipe) BGP reverse proxy.
+For a CLI tool, see the [bgpipe](https://github.com/bgpfix/bgpipe) BGP reverse proxy and firewall.
 
-BGPFix can "fix" or "extend" BGP sessions in-flight, possibly adding new features or protection layers to proprietary BGP speakers (think big router vendors). The vision is it will allow for implementing:
+BGPFix can "fix" or "extend" BGP sessions *in-flight*, possibly adding new features or protection layers to proprietary BGP speakers (think big router vendors). The vision is to allow implementing:
  * bidirectional BGP session to JSON translation, replacing [exabgp](https://github.com/Exa-Networks/exabgp/) for some use-cases,
  * transparent BGP proxy, optionally rewriting the messages in-flight,
  * streaming MRT files to BGP routers, adding the necessary OPEN negotiation beforehand,
- * Flowspec firewalls using [Linux Netfilter](https://netfilter.org/),
+ * Flowspec data plane firewalls using [Linux Netfilter](https://netfilter.org/),
  * passive inspection (and storage) of ongoing BGP sessions, like in [tcpdump](https://www.tcpdump.org/),
  * cool new BGP extensions for legacy speakers, eg. [RPKI](https://en.wikipedia.org/wiki/Resource_Public_Key_Infrastructure) and [ASPA](https://www.manrs.org/2023/02/unpacking-the-first-route-leak-prevented-by-aspa/) validation, [Only To Customer (OTC)](https://www.manrs.org/2023/04/there-is-still-hope-for-bgp-route-leak-prevention/) attribute, or even [BGPSec](https://en.wikipedia.org/wiki/BGPsec),
- * protecting from [grave flaws in BGP error handling](https://blog.benjojo.co.uk/post/bgp-path-attributes-grave-error-handling) (and possibly other flaws found using [recent BGP fuzzing projects](https://github.com/Forescout/bgp_boofuzzer))
+ * protecting from [grave flaws in BGP error handling](https://blog.benjojo.co.uk/post/bgp-path-attributes-grave-error-handling), and possibly other flaws found using [BGP fuzzing projects](https://github.com/Forescout/bgp_boofuzzer)
  * academic research ideas, eg. [Pretty Good BGP](https://www.cs.princeton.edu/~jrex/papers/pgbgp.pdf) or protection against [distributed prefix de-aggregation attacks](https://arxiv.org/abs/2210.10676).
 
 If you're interested in bgpfix, you might also want to see:
