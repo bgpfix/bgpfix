@@ -35,7 +35,10 @@ var (
 	EVENT_ESTABLISHED = "bgpfix/pipe.ESTABLISHED"
 
 	// End-of-RIB for new AF made it to ouput in given direction
-	EVENT_EOR = "bgpfix/pipe.EOR_AF"
+	EVENT_EOR_AF = "bgpfix/pipe.EOR_AF"
+
+	// End-of-RIB for all AFs in Caps made it to ouput in given direction
+	EVENT_EOR = "bgpfix/pipe.EOR"
 )
 
 // Event represents an arbitrary event for a BGP pipe.

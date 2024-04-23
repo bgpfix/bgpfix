@@ -2,11 +2,13 @@ package pipe
 
 import (
 	"io"
+	"maps"
 	"slices"
 	"time"
 
 	"github.com/bgpfix/bgpfix/af"
 	"github.com/bgpfix/bgpfix/attrs"
+	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/msg"
 )
 
@@ -147,11 +149,11 @@ func (in *Input) prepare(m *msg.Msg) *Context {
 
 func (in *Input) process() {
 	var (
-		p      = in.Pipe
-		l      = in.Line
-		closed bool
+		p        = in.Pipe
+		l        = in.Line
+		closed   bool
+		eor_todo map[af.AF]bool
 	)
-
 	defer close(in.done)
 
 input:
@@ -228,23 +230,41 @@ input:
 
 			// an End-of-RIB marker?
 			if m.Len() < 32 && m.Parse(p.Caps) == nil {
-				var afi af.AF
-				ats := m.Update.Attrs
-
 				// get Address Family
-				if m.Len() == msg.UPDATE_MINLEN {
-					afi = af.New(af.AFI_IPV4, af.SAFI_UNICAST)
-				} else if ats.Len() != 1 {
+				afi := af.AF_IPV4_UNICAST
+				if m.Len() == msg.HEADLEN+msg.UPDATE_MINLEN {
+					// must be IPv4 unicast
+				} else if a := m.Update.Attrs; a.Len() != 1 {
 					break // must have 1 attribute
-				} else if unreach, ok := ats.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); !ok {
+				} else if unreach, ok := a.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); !ok {
 					break // must ATTR_MP_UNREACH
 				} else {
 					afi = unreach.AF
 				}
 
-				// seen for the first time?
-				if _, loaded := l.EoR.LoadOrStore(afi, t); !loaded {
-					p.Event(EVENT_EOR, m.Dir, afi.Afi(), afi.Safi())
+				// already seen?
+				if _, loaded := l.EoR.LoadOrStore(afi, t); loaded {
+					break
+				} else { // it's new, announce
+					p.Event(EVENT_EOR_AF, m.Dir, afi.Afi(), afi.Safi())
+				}
+
+				// tick afi off our todo list
+				if eor_todo == nil {
+					eor_todo = make(map[af.AF]bool)
+					if c, ok := p.Caps.Get(caps.CAP_MP).(*caps.MP); ok {
+						maps.Copy(eor_todo, c.Proto)
+					} else {
+						eor_todo[af.AF_IPV4_UNICAST] = true
+					}
+				} else if len(eor_todo) == 0 {
+					break // already seen all required AFs
+				}
+
+				// satisfies all AFs in p.Caps?
+				delete(eor_todo, afi)
+				if len(eor_todo) == 0 {
+					p.Event(EVENT_EOR, m.Dir)
 				}
 			}
 		}
