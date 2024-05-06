@@ -3,21 +3,21 @@ package msg
 import (
 	"fmt"
 	"math"
-	"net/netip"
 
 	"github.com/bgpfix/bgpfix/af"
 	"github.com/bgpfix/bgpfix/attrs"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
+	"github.com/bgpfix/bgpfix/nlri"
 )
 
 // Update represents a BGP UPDATE message
 type Update struct {
 	Msg *Msg // parent BGP message
 
-	Reach    []netip.Prefix // reachable IPv4 unicast
-	Unreach  []netip.Prefix // unreachable IPv4 unicast
-	RawAttrs []byte         // raw attributes
+	Reach    []nlri.NLRI // reachable IPv4 unicast
+	Unreach  []nlri.NLRI // unreachable IPv4 unicast
+	RawAttrs []byte      // raw attributes
 
 	Attrs attrs.Attrs // parsed attributes
 	af    af.AF       // AFI/SAFI from MP-BGP
@@ -42,7 +42,7 @@ func (u *Update) Reset() {
 }
 
 // Parse parses msg.Data as BGP UPDATE
-func (u *Update) Parse() error {
+func (u *Update) Parse(cps caps.Caps) error {
 	buf := u.Msg.Data
 	if len(buf) < UPDATE_MINLEN {
 		return ErrShort
@@ -70,16 +70,17 @@ func (u *Update) Parse() error {
 
 	announced := buf
 
+	shouldReceiveAddPath := caps.HasReceiveAddPath(cps, af.AFI_IPV4, af.SAFI_UNICAST)
 	var err error
 	if len(announced) > 0 {
-		u.Reach, err = attrs.ReadPrefixes(u.Reach, announced, false)
+		u.Reach, err = attrs.ReadPrefixes(u.Reach, announced, false, shouldReceiveAddPath)
 		if err != nil {
 			return err
 		}
 	}
 
 	if len(withdrawn) > 0 {
-		u.Unreach, err = attrs.ReadPrefixes(u.Unreach, withdrawn, false)
+		u.Unreach, err = attrs.ReadPrefixes(u.Unreach, withdrawn, false, shouldReceiveAddPath)
 		if err != nil {
 			return err
 		}
@@ -174,12 +175,12 @@ func (u *Update) MarshalAttrs(cps caps.Caps) error {
 
 // Marshal marshals u to u.Msg.Data.
 func (u *Update) Marshal(cps caps.Caps) error {
+	shouldSendAddPath := caps.HasSendAddPath(cps, af.AFI_IPV4, af.SAFI_UNICAST)
 	msg := u.Msg
 	buf := msg.buf[:0]
-
 	// withdrawn routes
 	buf = append(buf, 0, 0) // length (tbd [1])
-	buf = attrs.WritePrefixes(buf, u.Unreach)
+	buf = attrs.WritePrefixes(buf, u.Unreach, shouldSendAddPath)
 	if l := len(buf) - 2; l > math.MaxUint16 {
 		return fmt.Errorf("Marshal: too long Withdrawn Routes: %w (%d)", ErrLength, l)
 	} else if l > 0 {
@@ -194,7 +195,7 @@ func (u *Update) Marshal(cps caps.Caps) error {
 	buf = append(buf, u.RawAttrs...)
 
 	// NLRI
-	buf = attrs.WritePrefixes(buf, u.Reach)
+	buf = attrs.WritePrefixes(buf, u.Reach, shouldSendAddPath)
 
 	// done
 	msg.Type = UPDATE

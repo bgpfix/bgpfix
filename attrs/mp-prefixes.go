@@ -6,6 +6,7 @@ import (
 	"github.com/bgpfix/bgpfix/af"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
+	"github.com/bgpfix/bgpfix/nlri"
 )
 
 // MPPrefixes represents ATTR_MP for the generic RFC4760 IP prefix encoding
@@ -14,7 +15,7 @@ type MPPrefixes struct {
 
 	NextHop   netip.Addr // only for ATTR_MP_REACH
 	LinkLocal netip.Addr // only for IPv6 NextHop, if given
-	Prefixes  []netip.Prefix
+	Prefixes  []nlri.NLRI
 }
 
 func NewMPPrefixes(mp *MP) MPValue {
@@ -52,8 +53,14 @@ func (a *MPPrefixes) Unmarshal(cps caps.Caps) error {
 			a.NextHop = addr
 		}
 	}
+	
 
-	a.Prefixes, err = ReadPrefixes(a.Prefixes, a.Data, afi == af.AFI_IPV6)
+	a.Prefixes, err = ReadPrefixes(
+		a.Prefixes,
+		a.Data,
+		afi == af.AFI_IPV6,
+		caps.HasReceiveAddPath(cps, a.Afi(), a.Safi()),
+	)
 	return err
 }
 
@@ -69,7 +76,11 @@ func (a *MPPrefixes) Marshal(cps caps.Caps) {
 	a.NH = nh
 
 	// prefixes
-	a.Data = WritePrefixes(a.Data[:0], a.Prefixes)
+	a.Data = WritePrefixes(
+		a.Data[:0],
+		a.Prefixes,
+		caps.HasSendAddPath(cps, a.Afi(), a.Safi()),
+	)
 }
 
 func (a *MPPrefixes) ToJSON(dst []byte) []byte {

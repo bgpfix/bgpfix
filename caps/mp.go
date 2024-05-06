@@ -20,7 +20,6 @@ func (c *MP) Unmarshal(buf []byte, caps Caps) error {
 	if len(buf) != 4 {
 		return ErrLength
 	}
-
 	// ignore buf[2]
 	af := af.NewASBytes(buf[:4])
 	c.Add(af.Afi(), af.Safi())
@@ -60,6 +59,7 @@ func (c *MP) Intersect(cap2 Cap) Cap {
 	dst := &MP{
 		Proto: make(map[af.AF]bool),
 	}
+
 	for as, val := range c.Proto {
 		if val && c2.Proto[as] {
 			dst.Proto[as] = true

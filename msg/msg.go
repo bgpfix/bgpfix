@@ -275,7 +275,7 @@ func (msg *Msg) Parse(cps caps.Caps) error {
 		err = o.ParseCaps()
 	case UPDATE:
 		u := &msg.Update
-		err = u.Parse()
+		err = u.Parse(cps)
 		if err != nil {
 			break
 		}

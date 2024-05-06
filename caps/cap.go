@@ -67,6 +67,7 @@ var NewFuncs = map[Code]NewFunc{
 	CAP_AS4:              NewAS4,
 	CAP_EXTENDED_NEXTHOP: NewExtNH,
 	CAP_FQDN:             NewFqdn,
+	CAP_ADDPATH:          NewAddPath,
 }
 
 // NewCap returns a new Cap instance for given code cc

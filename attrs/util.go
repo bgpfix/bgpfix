@@ -2,6 +2,8 @@ package attrs
 
 import (
 	"net/netip"
+
+	"github.com/bgpfix/bgpfix/nlri"
 )
 
 // ParseNH is best-effort parser for Next Hop value in buf
@@ -26,11 +28,17 @@ func ParseNH(buf []byte) (addr, ll netip.Addr, ok bool) {
 }
 
 // ReadPrefixes reads IP prefixes from buf into dst
-func ReadPrefixes(dst []netip.Prefix, buf []byte, ipv6 bool) ([]netip.Prefix, error) {
+func ReadPrefixes(dst []nlri.NLRI, buf []byte, ipv6 bool, addPath bool) ([]nlri.NLRI, error) {
 	var tmp [16]byte
 	var pfx netip.Prefix
 	var err error
 	for len(buf) > 0 {
+		var pathID uint32
+		// parse PathID first
+		if addPath {
+			pathID = msb.Uint32(buf[0:4])
+			buf = buf[4:]
+		}
 		l := int(buf[0])
 		buf = buf[1:]
 
@@ -62,7 +70,7 @@ func ReadPrefixes(dst []netip.Prefix, buf []byte, ipv6 bool) ([]netip.Prefix, er
 			return dst, err
 		}
 
-		dst = append(dst, pfx)
+		dst = append(dst, nlri.NLRI{PathID: pathID, Prefix: pfx})
 		buf = buf[b:]
 	}
 
@@ -81,9 +89,12 @@ func WritePrefix(dst []byte, p netip.Prefix) []byte {
 }
 
 // WritePrefixes writes prefixes in src to dst
-func WritePrefixes(dst []byte, src []netip.Prefix) []byte {
+func WritePrefixes(dst []byte, src []nlri.NLRI, addPath bool) []byte {
 	for _, p := range src {
-		dst = WritePrefix(dst, p)
+		if addPath {
+			dst = msb.AppendUint32(dst, p.PathID)
+		}
+		dst = WritePrefix(dst, p.Prefix)
 	}
 	return dst
 }
