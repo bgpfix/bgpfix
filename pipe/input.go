@@ -2,9 +2,13 @@ package pipe
 
 import (
 	"io"
+	"maps"
 	"slices"
 	"time"
 
+	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/attrs"
+	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/msg"
 )
 
@@ -145,11 +149,11 @@ func (in *Input) prepare(m *msg.Msg) *Context {
 
 func (in *Input) process() {
 	var (
-		p      = in.Pipe
-		l      = in.Line
-		closed bool
+		p        = in.Pipe
+		l        = in.Line
+		closed   bool
+		eor_todo map[af.AF]bool
 	)
-
 	defer close(in.done)
 
 input:
@@ -209,19 +213,59 @@ input:
 			if t > oldt && l.LastOpen.CompareAndSwap(oldt, t) {
 				mx.Action.Add(ACTION_BORROW)
 				l.Open.Store(&m.Open)
-				p.Event(EVENT_OPEN, m.Dir, t, oldt)
+				p.Event(EVENT_OPEN, m.Dir, oldt)
 			}
 
 		case msg.KEEPALIVE:
 			oldt := l.LastAlive.Load()
 			if t > oldt && l.LastAlive.CompareAndSwap(oldt, t) {
-				p.Event(EVENT_ALIVE, m.Dir, t, oldt)
+				p.Event(EVENT_ALIVE, m.Dir, oldt)
 			}
 
 		case msg.UPDATE:
 			oldt := l.LastUpdate.Load()
 			if t > oldt && l.LastUpdate.CompareAndSwap(oldt, t) {
-				p.Event(EVENT_UPDATE, m.Dir, t, oldt)
+				p.Event(EVENT_UPDATE, m.Dir, oldt)
+			}
+
+			// an End-of-RIB marker?
+			if m.Len() < 32 && m.Parse(p.Caps) == nil {
+				// get Address Family
+				afi := af.AF_IPV4_UNICAST
+				if m.Len() == msg.HEADLEN+msg.UPDATE_MINLEN {
+					// must be IPv4 unicast
+				} else if a := m.Update.Attrs; a.Len() != 1 {
+					break // must have 1 attribute
+				} else if unreach, ok := a.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); !ok {
+					break // must ATTR_MP_UNREACH
+				} else {
+					afi = unreach.AF
+				}
+
+				// already seen?
+				if _, loaded := l.EoR.LoadOrStore(afi, t); loaded {
+					break
+				} else { // it's new, announce
+					p.Event(EVENT_EOR_AF, m.Dir, afi.Afi(), afi.Safi())
+				}
+
+				// tick afi off our todo list
+				if eor_todo == nil {
+					eor_todo = make(map[af.AF]bool)
+					if c, ok := p.Caps.Get(caps.CAP_MP).(*caps.MP); ok {
+						maps.Copy(eor_todo, c.Proto)
+					} else {
+						eor_todo[af.AF_IPV4_UNICAST] = true
+					}
+				} else if len(eor_todo) == 0 {
+					break // already seen all required AFs
+				}
+
+				// satisfies all AFs in p.Caps?
+				delete(eor_todo, afi)
+				if len(eor_todo) == 0 {
+					p.Event(EVENT_EOR, m.Dir)
+				}
 			}
 		}
 

@@ -149,7 +149,7 @@ func (ats *Attrs) MarshalJSON() ([]byte, error) {
 
 func (ats *Attrs) ToJSON(dst []byte) []byte {
 	if !ats.Valid() {
-		return append(dst, "null"...)
+		return append(dst, "{}"...)
 	}
 
 	dst = append(dst, '{')

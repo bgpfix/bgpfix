@@ -147,6 +147,7 @@ func (p *Pipe) checkEstablished(ev *Event) bool {
 		// overwrite p.Caps
 		p.Caps.Clear()
 		p.Caps.SetFrom(common)
+		p.Info().Bytes("caps", p.Caps.ToJSON(nil)).Msg("negotiated session capabilities")
 	}
 
 	// announce that the session is established

@@ -78,7 +78,7 @@ func TestMsg_Parse(t *testing.T) {
 				buf.Reset()
 				n, err := msg.WriteTo(&buf)
 				assert.NoError(err, "write error")
-				assert.EqualValues(msg.Length(), n, "wrote different number of bytes")
+				assert.EqualValues(msg.Len(), n, "wrote different number of bytes")
 				assert.Equal(tt.raw[:n], buf.Bytes(), "wrote different message")
 			}
 		})

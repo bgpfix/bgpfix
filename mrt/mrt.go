@@ -112,8 +112,8 @@ func (mrt *Mrt) Reset() *Mrt {
 	return mrt
 }
 
-// Length returns total MRT message length, including header
-func (mrt *Mrt) Length() int {
+// Len returns total MRT message length, including header
+func (mrt *Mrt) Len() int {
 	switch {
 	case mrt.Data == nil:
 		return 0
@@ -272,7 +272,7 @@ func (mrt *Mrt) WriteTo(w io.Writer) (n int64, err error) {
 	}
 
 	// data length ok?
-	l := mrt.Length()
+	l := mrt.Len()
 	if l < HEADLEN || l > MAXLEN {
 		return n, ErrLength
 	}

@@ -5,7 +5,9 @@ import (
 	"io"
 	"sync/atomic"
 
+	"github.com/bgpfix/bgpfix/af"
 	"github.com/bgpfix/bgpfix/msg"
+	"github.com/puzpuzpuz/xsync/v3"
 )
 
 // Line implements one direction of a Pipe: possibly several input processors
@@ -32,6 +34,9 @@ type Line struct {
 	// the OPEN message that updated LastOpen
 	Open atomic.Pointer[msg.Open]
 
+	// UNIX timestamp (seconds) of the first EoR for given AF
+	EoR *xsync.MapOf[af.AF, int64]
+
 	inputs []*Input      // all input processors, [0] is the default .Input
 	seq    atomic.Int64  // last seq number assigned
 	obuf   bytes.Buffer  // output buffer
@@ -42,6 +47,7 @@ type Line struct {
 func (l *Line) attach() {
 	p := l.Pipe
 	l.done = make(chan struct{})
+	l.EoR = xsync.NewMapOf[af.AF, int64]()
 
 	// the default input
 	l.Input.attach(p, l)

@@ -13,6 +13,14 @@ var msb = binary.Msb
 // AF represents AFI+SAFI af afi(16) + 0(8) + safi(8)
 type AF uint32
 
+// common AFI + SAFI combinations
+var (
+	AF_IPV4_UNICAST   = New(AFI_IPV4, SAFI_UNICAST)
+	AF_IPV4_MULTICAST = New(AFI_IPV4, SAFI_MULTICAST)
+	AF_IPV6_UNICAST   = New(AFI_IPV6, SAFI_UNICAST)
+	AF_IPv6_MULTICAST = New(AFI_IPV6, SAFI_MULTICAST)
+)
+
 // New returns AS for given Afi and Safi
 func New(afi AFI, safi SAFI) AF {
 	return AF(uint32(afi)<<16 | uint32(safi))
