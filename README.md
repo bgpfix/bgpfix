@@ -2,8 +2,6 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/bgpfix/bgpfix.svg)](https://pkg.go.dev/github.com/bgpfix/bgpfix)
 
-**WORK IN PROGRESS PREVIEW 04/2024**
-
 A generic-purpose, high-performance Golang library for [bridging the gaps in BGP](https://twitter.com/ACM_IMC2021/status/1445725066403196928).
 
 For a CLI tool, see the [bgpipe](https://github.com/bgpfix/bgpipe) BGP reverse proxy and firewall.
@@ -125,7 +123,8 @@ func event(ev *pipe.Event) bool {
 
 bgpfix has full, bidirectional BGP to JSON translation support.
 
-For example, below we connect to the Flowspec version of the great [BGP Blackholing project](https://lukasz.bromirski.net/bgp-fs-blackholing/) by [@LukaszBromirski](https://twitter.com/LukaszBromirski):
+For example, below we connect to the Flowspec version of the great [BGP Blackholing project](https://lukasz.bromirski.net/bgp-fs-blackholing/) by [@LukaszBromirski](https://twitter.com/LukaszBromirski). Note that the JSON schema might have changed a bit in the meantime:
+
 ```
 pjf@pjf:~/bgp2json$ ./bgp2json -active -asn 65055 85.232.240.180:179 | jq .
 [
