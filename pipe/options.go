@@ -126,7 +126,7 @@ func (cb *Callback) Drop() {
 
 // String returns callback name and id as string
 func (cb *Callback) String() string {
-	return fmt.Sprintf("C%d:%s", cb.Id, cb.Name)
+	return fmt.Sprintf("CB%d:%s", cb.Id, cb.Name)
 }
 
 // OnMsg adds a callback for all messages of given types (or all types if not specified).
@@ -191,7 +191,7 @@ func (o *Options) AddHandler(hdf HandlerFunc, tpl ...*Handler) *Handler {
 
 // String returns handler name and id as string
 func (h *Handler) String() string {
-	return fmt.Sprintf("H%d:%s", h.Id, h.Name)
+	return fmt.Sprintf("EV%d:%s", h.Id, h.Name)
 }
 
 // Enable sets h.Enabled to true and returns true. If h.Enabled is nil, returns false.
