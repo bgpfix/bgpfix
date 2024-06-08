@@ -234,7 +234,7 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 			// skip handler?
 			if h == nil || h.Dropped {
 				continue // dropped
-			} else if h.Dir != 0 && h.Dir != ev.Dir {
+			} else if h.Dir&ev.Dir == 0 {
 				continue // different direction
 			} else if h.Enabled != nil && !h.Enabled.Load() {
 				continue // disabled

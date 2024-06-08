@@ -9,13 +9,14 @@ import (
 
 const _DirName = "LRLR"
 
-var _DirIndex = [...]uint8{0, 2, 3, 4}
+var _DirIndex = [...]uint8{0, 1, 2, 4}
 
 const _DirLowerName = "lrlr"
 
 func (i Dir) String() string {
+	i -= 1
 	if i >= Dir(len(_DirIndex)-1) {
-		return fmt.Sprintf("Dir(%d)", i)
+		return fmt.Sprintf("Dir(%d)", i+1)
 	}
 	return _DirName[_DirIndex[i]:_DirIndex[i+1]]
 }
@@ -24,26 +25,26 @@ func (i Dir) String() string {
 // Re-run the stringer command to generate them again.
 func _DirNoOp() {
 	var x [1]struct{}
-	_ = x[DIR_LR-(0)]
 	_ = x[DIR_L-(1)]
 	_ = x[DIR_R-(2)]
+	_ = x[DIR_LR-(3)]
 }
 
-var _DirValues = []Dir{DIR_LR, DIR_L, DIR_R}
+var _DirValues = []Dir{DIR_L, DIR_R, DIR_LR}
 
 var _DirNameToValueMap = map[string]Dir{
-	_DirName[0:2]:      DIR_LR,
-	_DirLowerName[0:2]: DIR_LR,
-	_DirName[2:3]:      DIR_L,
-	_DirLowerName[2:3]: DIR_L,
-	_DirName[3:4]:      DIR_R,
-	_DirLowerName[3:4]: DIR_R,
+	_DirName[0:1]:      DIR_L,
+	_DirLowerName[0:1]: DIR_L,
+	_DirName[1:2]:      DIR_R,
+	_DirLowerName[1:2]: DIR_R,
+	_DirName[2:4]:      DIR_LR,
+	_DirLowerName[2:4]: DIR_LR,
 }
 
 var _DirNames = []string{
-	_DirName[0:2],
-	_DirName[2:3],
-	_DirName[3:4],
+	_DirName[0:1],
+	_DirName[1:2],
+	_DirName[2:4],
 }
 
 // DirString retrieves an enum value from the enum constants string name.
