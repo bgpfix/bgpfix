@@ -6,7 +6,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bgpfix/bgpfix/af"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
@@ -141,13 +140,14 @@ func (s *Speaker) sendOpen(ro *msg.Open) {
 	// FIXME: add real capabilities
 	o.Caps.Use(caps.CAP_EXTENDED_MESSAGE)
 	o.Caps.Use(caps.CAP_ROUTE_REFRESH)
-	if mp, ok := o.Caps.Use(caps.CAP_MP).(*caps.MP); ok {
-		mp.Add(af.AFI_IPV4, af.SAFI_UNICAST)
-		mp.Add(af.AFI_IPV4, af.SAFI_FLOWSPEC)
+	// don't add more MP capablities that we set
+	// if mp, ok := o.Caps.Use(caps.CAP_MP).(*caps.MP); ok {
+	// mp.Add(af.AFI_IPV4, af.SAFI_UNICAST)
+	// mp.Add(af.AFI_IPV4, af.SAFI_FLOWSPEC)
 
-		mp.Add(af.AFI_IPV6, af.SAFI_UNICAST)
-		mp.Add(af.AFI_IPV6, af.SAFI_FLOWSPEC)
-	}
+	// mp.Add(af.AFI_IPV6, af.SAFI_UNICAST)
+	// mp.Add(af.AFI_IPV6, af.SAFI_FLOWSPEC)
+	// }
 
 	// queue for sending
 	s.in.WriteMsg(o.Msg)
