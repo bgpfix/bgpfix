@@ -2,6 +2,10 @@ package attrs
 
 import (
 	"net/netip"
+
+	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/nlri"
 )
 
 // ParseNH is best-effort parser for Next Hop value in buf
@@ -25,12 +29,29 @@ func ParseNH(buf []byte) (addr, ll netip.Addr, ok bool) {
 	return
 }
 
-// ReadPrefixes reads IP prefixes from buf into dst
-func ReadPrefixes(dst []netip.Prefix, buf []byte, ipv6 bool) ([]netip.Prefix, error) {
-	var tmp [16]byte
-	var pfx netip.Prefix
-	var err error
+// ReadPrefixes reads IP prefixes from src into dst
+func ReadPrefixes(dst []nlri.NLRI, src []byte, as af.AF, cps caps.Caps) ([]nlri.NLRI, error) {
+	var (
+		tmp     [16]byte
+		ipv6    = as.IsAfi(af.AFI_IPV6)
+		addpath = cps.AddPathReceive(as)
+	)
+
+	buf := src
 	for len(buf) > 0 {
+		var p nlri.NLRI
+
+		// parse ADD_PATH Path Identifier?
+		if addpath {
+			if len(buf) < 5 {
+				return dst, ErrLength
+			}
+			id := msb.Uint32(buf[0:4])
+			p.PathId = &id
+			buf = buf[4:]
+		}
+
+		// prefix length in bits
 		l := int(buf[0])
 		buf = buf[1:]
 
@@ -46,23 +67,24 @@ func ReadPrefixes(dst []netip.Prefix, buf []byte, ipv6 bool) ([]netip.Prefix, er
 		copy(tmp[:], buf[:b])
 
 		// zero the rest, try to parse
+		var err error
 		if ipv6 {
 			for i := b; i < 16; i++ {
 				tmp[i] = 0
 			}
-			pfx, err = netip.AddrFrom16(tmp).Prefix(l)
+			p.Prefix, err = netip.AddrFrom16(tmp).Prefix(l)
 		} else {
 			for i := b; i < 4; i++ {
 				tmp[i] = 0
 			}
-			pfx, err = netip.AddrFrom4([4]byte(tmp[:])).Prefix(l)
+			p.Prefix, err = netip.AddrFrom4([4]byte(tmp[:])).Prefix(l)
 		}
-
 		if err != nil {
 			return dst, err
 		}
 
-		dst = append(dst, pfx)
+		// take it
+		dst = append(dst, p)
 		buf = buf[b:]
 	}
 
@@ -81,9 +103,23 @@ func WritePrefix(dst []byte, p netip.Prefix) []byte {
 }
 
 // WritePrefixes writes prefixes in src to dst
-func WritePrefixes(dst []byte, src []netip.Prefix) []byte {
+func WritePrefixes(dst []byte, src []nlri.NLRI, as af.AF, cps caps.Caps) []byte {
+	var (
+		ipv6    = as.IsAfi(af.AFI_IPV6)
+		addpath = cps.IsAddPathSend(as)
+	)
 	for _, p := range src {
-		dst = WritePrefix(dst, p)
+		if p.Addr().Is6() != ipv6 {
+			continue
+		}
+		if addpath {
+			if p.PathId != nil {
+				dst = msb.AppendUint32(dst, *p.PathId)
+			} else {
+				dst = msb.AppendUint32(dst, 0)
+			}
+		}
+		dst = WritePrefix(dst, p.Prefix)
 	}
 	return dst
 }

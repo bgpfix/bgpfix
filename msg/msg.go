@@ -62,9 +62,9 @@ type Dir byte
 
 //go:generate go run github.com/dmarkham/enumer -type Dir -trimprefix DIR_
 const (
-	DIR_LR Dir = 0b00 // no particular direction (ie. both L and R)
 	DIR_L  Dir = 0b01 // L direction: "left" or "local"
 	DIR_R  Dir = 0b10 // R direction: "right" or "remote"
+	DIR_LR Dir = 0b11 // LR direction: both "right" and "left"
 )
 
 // Flip returns the opposite direction
@@ -275,7 +275,7 @@ func (msg *Msg) Parse(cps caps.Caps) error {
 		err = o.ParseCaps()
 	case UPDATE:
 		u := &msg.Update
-		err = u.Parse()
+		err = u.Parse(cps)
 		if err != nil {
 			break
 		}

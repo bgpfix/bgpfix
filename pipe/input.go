@@ -54,7 +54,7 @@ func (in *Input) attach(p *Pipe, l *Line) {
 		}
 
 		// direction match?
-		if cb.Dir != 0 && cb.Dir != l.Dir {
+		if cb.Dir&l.Dir == 0 {
 			continue
 		}
 

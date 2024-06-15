@@ -25,6 +25,7 @@ var msb = binary.Msb
 // so you should overwrite a particular CapCode if you need to modify a Cap
 // stored here in a thread-safe way.
 type Caps struct {
+	// the database of capabilities, initially nil
 	db *xsync.MapOf[Code, Cap]
 }
 

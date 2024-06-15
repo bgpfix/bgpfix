@@ -294,6 +294,7 @@ RFCs:
  * [RFC5668 4-Octet AS Specific BGP Extended Community](https://datatracker.ietf.org/doc/html/rfc5668)
  * [RFC6793 BGP Support for Four-Octet Autonomous System (AS) Number Space](https://datatracker.ietf.org/doc/html/rfc6793)
  * [RFC6396 Multi-Threaded Routing Toolkit (MRT) Routing Information Export Format](https://datatracker.ietf.org/doc/html/rfc6396)
+ * [RFC7911 Advertisement of Multiple Paths in BGP](https://datatracker.ietf.org/doc/html/rfc7911)
  * [RFC8092 BGP Large Communities Attribute](https://datatracker.ietf.org/doc/html/rfc8092)
  * [RFC8654 Extended Message Support for BGP](https://datatracker.ietf.org/doc/html/rfc8654)
  * [RFC8950 Advertising IPv4 Network Layer Reachability Information (NLRI) with an IPv6 Next Hop](https://datatracker.ietf.org/doc/html/rfc8950)

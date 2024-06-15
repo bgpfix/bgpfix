@@ -1,7 +1,7 @@
 package caps
 
 import (
-	"sort"
+	"slices"
 
 	"github.com/bgpfix/bgpfix/af"
 	"github.com/bgpfix/bgpfix/json"
@@ -22,26 +22,26 @@ func (c *ExtNH) Unmarshal(buf []byte, caps Caps) error {
 			return ErrLength
 		}
 
-		asf := af.NewASBytes(buf[0:4])
+		asf := af.NewAFBytes(buf[0:4])
 		nhf := af.NewAFIBytes(buf[4:6])
 		buf = buf[6:]
 
-		c.Add(asf.Afi(), asf.Safi(), nhf)
+		c.Add(asf, nhf)
 	}
 
 	return nil
 }
 
-func (c *ExtNH) Add(afi af.AFI, safi af.SAFI, nhf af.AFI) {
-	c.Proto[af.NewAFV(afi, safi, uint32(nhf))] = true
+func (c *ExtNH) Add(as af.AF, nhf af.AFI) {
+	c.Proto[as.AddVal(uint32(nhf))] = true
 }
 
-func (c *ExtNH) Has(afi af.AFI, safi af.SAFI, nhf af.AFI) bool {
-	return c.Proto[af.NewAFV(afi, safi, uint32(nhf))]
+func (c *ExtNH) Has(as af.AF, nhf af.AFI) bool {
+	return c.Proto[as.AddVal(uint32(nhf))]
 }
 
-func (c *ExtNH) Drop(afi af.AFI, safi af.SAFI, nhf af.AFI) {
-	delete(c.Proto, af.NewAFV(afi, safi, uint32(nhf)))
+func (c *ExtNH) Drop(as af.AF, nhf af.AFI) {
+	delete(c.Proto, as.AddVal(uint32(nhf)))
 }
 
 func (c *ExtNH) Sorted() (dst []af.AFV) {
@@ -50,9 +50,7 @@ func (c *ExtNH) Sorted() (dst []af.AFV) {
 			dst = append(dst, asv)
 		}
 	}
-	sort.Slice(dst, func(i, j int) bool {
-		return dst[i] < dst[j]
-	})
+	slices.Sort(dst)
 	return
 }
 
@@ -98,19 +96,24 @@ func (c *ExtNH) Marshal(dst []byte) []byte {
 
 func (c *ExtNH) ToJSON(dst []byte) []byte {
 	dst = append(dst, '[')
-	for i, asv := range c.Sorted() {
+	for i, afv := range c.Sorted() {
 		if i > 0 {
 			dst = append(dst, `,`...)
 		}
-		dst = asv.ToJSONAfi(dst)
+		afi2 := af.AFI(afv.Val())
+		dst = afv.ToJSON(dst, afi2.String())
 	}
 	return append(dst, ']')
 }
 
 func (c *ExtNH) FromJSON(src []byte) (err error) {
-	var asv af.AFV
 	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
-		if err := asv.FromJSONAfi(val); err != nil {
+		var asv af.AFV
+		err := asv.FromJSON(val, func(s string) (uint32, error) {
+			afi2, err := af.AFIString(s)
+			return uint32(afi2), err
+		})
+		if err != nil {
 			return err
 		}
 		c.Proto[asv] = true

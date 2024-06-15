@@ -165,32 +165,6 @@ func Ascii(dst, src []byte) []byte {
 	return dst
 }
 
-func Prefixes(dst []byte, src []netip.Prefix) []byte {
-	dst = append(dst, '[')
-	for i := range src {
-		if i > 0 {
-			dst = append(dst, `,"`...)
-		} else {
-			dst = append(dst, '"')
-		}
-		dst = src[i].AppendTo(dst)
-		dst = append(dst, '"')
-	}
-	return append(dst, ']')
-}
-
-func UnPrefixes(src []byte, dst []netip.Prefix) ([]netip.Prefix, error) {
-	err := ArrayEach(src, func(key int, buf []byte, typ Type) error {
-		p, err := netip.ParsePrefix(S(buf))
-		if err != nil {
-			return err
-		}
-		dst = append(dst, p)
-		return nil
-	})
-	return dst, err
-}
-
 // S returns string from byte slice, in an unsafe way
 func S(buf []byte) string {
 	return unsafe.String(&buf[0], len(buf))
