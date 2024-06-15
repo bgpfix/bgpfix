@@ -10,24 +10,24 @@ import (
 
 var msb = binary.Msb
 
-// AF represents AFI+SAFI af afi(16) + 0(8) + safi(8)
+// AF represents AFI+SAFI as afi(16) + 0(8) + safi(8)
 type AF uint32
 
 // common AFI + SAFI combinations
 var (
-	AF_IPV4_UNICAST   = New(AFI_IPV4, SAFI_UNICAST)
-	AF_IPV4_MULTICAST = New(AFI_IPV4, SAFI_MULTICAST)
-	AF_IPV6_UNICAST   = New(AFI_IPV6, SAFI_UNICAST)
-	AF_IPv6_MULTICAST = New(AFI_IPV6, SAFI_MULTICAST)
+	AF_IPV4_UNICAST   = NewAF(AFI_IPV4, SAFI_UNICAST)
+	AF_IPV4_MULTICAST = NewAF(AFI_IPV4, SAFI_MULTICAST)
+	AF_IPV6_UNICAST   = NewAF(AFI_IPV6, SAFI_UNICAST)
+	AF_IPv6_MULTICAST = NewAF(AFI_IPV6, SAFI_MULTICAST)
 )
 
-// New returns AS for given Afi and Safi
-func New(afi AFI, safi SAFI) AF {
+// NewAF returns AF for given Afi and Safi
+func NewAF(afi AFI, safi SAFI) AF {
 	return AF(uint32(afi)<<16 | uint32(safi))
 }
 
-// NewASBytes reads AS from wire representation in buf
-func NewASBytes(buf []byte) AF {
+// NewAFBytes reads AF from wire representation in buf
+func NewAFBytes(buf []byte) AF {
 	if len(buf) == 4 {
 		return AF(uint32(msb.Uint16(buf[0:2]))<<16 | uint32(buf[3]))
 	} else if len(buf) == 3 {
@@ -47,8 +47,20 @@ func (af AF) Afi() AFI {
 	return AFI(af >> 16)
 }
 
+func (af AF) IsAfi(afi AFI) bool {
+	return af.Afi() == afi
+}
+
 func (af AF) Safi() SAFI {
 	return SAFI(af)
+}
+
+func (af AF) IsSafi(safi SAFI) bool {
+	return af.Safi() == safi
+}
+
+func (af AF) AddVal(val uint32) AFV {
+	return NewAFV(af.Afi(), af.Safi(), val)
 }
 
 func (af AF) ToJSON(dst []byte) []byte {
@@ -70,7 +82,7 @@ func (af AF) ToJSONKey(dst []byte, key string) []byte {
 func (af *AF) FromJSON(src []byte) error {
 	s1, s2, ok := strings.Cut(json.SQ(src), "/")
 	if !ok {
-		return ErrValue
+		return json.ErrValue
 	}
 
 	afi, err := AFIString(s1)
@@ -83,6 +95,6 @@ func (af *AF) FromJSON(src []byte) error {
 		return err
 	}
 
-	*af = New(afi, safi)
+	*af = NewAF(afi, safi)
 	return nil
 }

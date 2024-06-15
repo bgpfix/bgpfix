@@ -1,6 +1,7 @@
 package af
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/bgpfix/bgpfix/json"
@@ -13,36 +14,50 @@ func NewAFV(afi AFI, safi SAFI, val uint32) AFV {
 	return AFV(uint64(afi)<<48 | uint64(safi)<<32 | uint64(val))
 }
 
-func (asv AFV) Afi() AFI {
-	return AFI(asv >> 48)
+func (afv AFV) Afi() AFI {
+	return AFI(afv >> 48)
 }
 
-func (asv AFV) Safi() SAFI {
-	return SAFI(asv >> 32)
+func (afv AFV) Safi() SAFI {
+	return SAFI(afv >> 32)
 }
 
-func (asv AFV) Val() uint32 {
-	return uint32(asv)
+func (afv AFV) Val() uint32 {
+	return uint32(afv)
 }
 
-// ToJSONAfi interprets Val as an AFI
-func (afv AFV) ToJSONAfi(dst []byte) []byte {
+func (afv AFV) DropVal() AF {
+	return NewAF(afv.Afi(), afv.Safi())
+}
+
+// Marshal4 marshals AFV as 4 bytes: afi(16) + safi(8) + val(8)
+func (afv AFV) Marshal4(dst []byte) []byte {
+	dst = msb.AppendUint16(dst, uint16(afv.Afi()))
+	dst = append(dst, byte(afv.Safi()))
+	return append(dst, byte(afv.Val()))
+}
+
+// ToJSON marshals afv to JSON, optionally using vs for VAL if non-empty.
+func (afv AFV) ToJSON(dst []byte, vs string) []byte {
 	dst = append(dst, '"')
 	dst = append(dst, afv.Afi().String()...)
 	dst = append(dst, '/')
 	dst = append(dst, afv.Safi().String()...)
 	dst = append(dst, '/')
-	afi2 := AFI(afv.Val())
-	dst = append(dst, afi2.String()...)
+	if vs == "" {
+		dst = strconv.AppendUint(dst, uint64(afv.Val()), 10)
+	} else {
+		dst = append(dst, vs...)
+	}
 	dst = append(dst, '"')
 	return dst
 }
 
-// FromJSONAfi interprets Val as an AFI
-func (afv *AFV) FromJSONAfi(src []byte) error {
+// FromJSON unmarshals afv from JSON, optionally using vs for parsing VAL if non-nil.
+func (afv *AFV) FromJSON(src []byte, vs func(string) (uint32, error)) error {
 	d := strings.Split(json.SQ(src), "/")
 	if len(d) != 3 {
-		return ErrValue
+		return json.ErrValue
 	}
 
 	afi, err := AFIString(d[0])
@@ -55,11 +70,19 @@ func (afv *AFV) FromJSONAfi(src []byte) error {
 		return err
 	}
 
-	afi2, err := AFIString(d[2])
-	if err != nil {
-		return err
+	if vs == nil {
+		val, err := strconv.ParseUint(d[2], 10, 32)
+		if err != nil {
+			return err
+		}
+		*afv = NewAFV(afi, safi, uint32(val))
+	} else {
+		val, err := vs(d[2])
+		if err != nil {
+			return err
+		}
+		*afv = NewAFV(afi, safi, val)
 	}
 
-	*afv = NewAFV(afi, safi, uint32(afi2))
 	return nil
 }

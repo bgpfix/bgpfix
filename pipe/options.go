@@ -23,7 +23,7 @@ type Options struct {
 	Logger  *zerolog.Logger // if nil logging is disabled
 	MsgPool *sync.Pool      // optional pool for msg.Msg
 
-	Caps bool // overwrite pipe.Caps using OPEN messages?
+	Caps bool // overwrite pipe.Caps with the capabilities negotiated in OPEN messages?
 
 	Callbacks []*Callback // message callbacks
 	Handlers  []*Handler  // event handlers

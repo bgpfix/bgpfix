@@ -24,8 +24,7 @@ func NewMPPrefixes(mp *MP) MPValue {
 
 func (a *MPPrefixes) Unmarshal(cps caps.Caps) error {
 	var (
-		afi  = a.Afi()
-		safi = a.Safi()
+		isv6 = a.IsAfi(af.AFI_IPV6)
 		err  error
 	)
 
@@ -36,13 +35,13 @@ func (a *MPPrefixes) Unmarshal(cps caps.Caps) error {
 			return ErrLength
 		}
 
-		if afi == af.AFI_IPV6 {
+		if isv6 {
 			a.NextHop = addr
 			a.LinkLocal = ll
 		} else if addr.Is6() {
 			// IPv6 nexthop for AFI=1 reachable prefixes?
 			enh, ok := cps.Get(caps.CAP_EXTENDED_NEXTHOP).(*caps.ExtNH)
-			if !ok || !enh.Has(afi, safi, af.AFI_IPV6) {
+			if !ok || !enh.Has(a.AF, af.AFI_IPV6) {
 				return ErrValue
 			}
 
@@ -53,14 +52,8 @@ func (a *MPPrefixes) Unmarshal(cps caps.Caps) error {
 			a.NextHop = addr
 		}
 	}
-	
 
-	a.Prefixes, err = ReadPrefixes(
-		a.Prefixes,
-		a.Data,
-		afi == af.AFI_IPV6,
-		caps.HasReceiveAddPath(cps, a.Afi(), a.Safi()),
-	)
+	a.Prefixes, err = ReadPrefixes(a.Prefixes, a.Data, a.AF, cps)
 	return err
 }
 
@@ -76,11 +69,7 @@ func (a *MPPrefixes) Marshal(cps caps.Caps) {
 	a.NH = nh
 
 	// prefixes
-	a.Data = WritePrefixes(
-		a.Data[:0],
-		a.Prefixes,
-		caps.HasSendAddPath(cps, a.Afi(), a.Safi()),
-	)
+	a.Data = WritePrefixes(a.Data[:0], a.Prefixes, a.AF, cps)
 }
 
 func (a *MPPrefixes) ToJSON(dst []byte) []byte {
@@ -95,7 +84,7 @@ func (a *MPPrefixes) ToJSON(dst []byte) []byte {
 	}
 
 	dst = append(dst, `"prefixes":`...)
-	return json.Prefixes(dst, a.Prefixes)
+	return nlri.ToJSON(dst, a.Prefixes)
 }
 
 func (a *MPPrefixes) FromJSON(src []byte) error {
@@ -110,7 +99,7 @@ func (a *MPPrefixes) FromJSON(src []byte) error {
 				a.LinkLocal, err = netip.ParseAddr(json.S(val))
 			}
 		case "prefixes":
-			a.Prefixes, err = json.UnPrefixes(val, a.Prefixes)
+			a.Prefixes, err = nlri.FromJSON(val, a.Prefixes)
 		}
 		return err
 	})

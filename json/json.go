@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"unsafe"
 
-	"github.com/bgpfix/bgpfix/nlri"
 	jsp "github.com/buger/jsonparser"
 )
 
@@ -164,36 +163,6 @@ func Ascii(dst, src []byte) []byte {
 		}
 	}
 	return dst
-}
-
-func Prefixes(dst []byte, src []nlri.NLRI) []byte {
-	dst = append(dst, '[')
-	for i := range src {
-		if i > 0 {
-			dst = append(dst, `,"`...)
-		} else {
-			dst = append(dst, '"')
-		}
-		if src[i].PathID > 0 {
-			dst = strconv.AppendUint(dst, uint64(src[i].PathID), 10)
-			dst = append(dst, ':')
-		}
-		dst = src[i].Prefix.AppendTo(dst)
-		dst = append(dst, '"')
-	}
-	return append(dst, ']')
-}
-
-func UnPrefixes(src []byte, dst []nlri.NLRI) ([]nlri.NLRI, error) {
-	err := ArrayEach(src, func(key int, buf []byte, typ Type) error {
-		p, err := netip.ParsePrefix(S(buf))
-		if err != nil {
-			return err
-		}
-		dst = append(dst, nlri.NLRI{Prefix: p})
-		return nil
-	})
-	return dst, err
 }
 
 // S returns string from byte slice, in an unsafe way

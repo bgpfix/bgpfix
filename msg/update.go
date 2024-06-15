@@ -48,6 +48,7 @@ func (u *Update) Parse(cps caps.Caps) error {
 		return ErrShort
 	}
 
+	// withdrawn routes - prepare
 	var withdrawn []byte
 	l := msb.Uint16(buf[0:2])
 	buf = buf[2:]
@@ -58,6 +59,7 @@ func (u *Update) Parse(cps caps.Caps) error {
 		buf = buf[l:]
 	}
 
+	// attributes
 	var ats []byte
 	l = msb.Uint16(buf[0:2])
 	buf = buf[2:]
@@ -68,24 +70,25 @@ func (u *Update) Parse(cps caps.Caps) error {
 		buf = buf[l:]
 	}
 
-	announced := buf
-
-	shouldReceiveAddPath := caps.HasReceiveAddPath(cps, af.AFI_IPV4, af.SAFI_UNICAST)
-	var err error
-	if len(announced) > 0 {
-		u.Reach, err = attrs.ReadPrefixes(u.Reach, announced, false, shouldReceiveAddPath)
+	// announced routes
+	if len(buf) > 0 {
+		var err error
+		u.Reach, err = attrs.ReadPrefixes(u.Reach, buf, af.AF_IPV4_UNICAST, cps)
 		if err != nil {
 			return err
 		}
 	}
 
+	// witdrawn routes
 	if len(withdrawn) > 0 {
-		u.Unreach, err = attrs.ReadPrefixes(u.Unreach, withdrawn, false, shouldReceiveAddPath)
+		var err error
+		u.Unreach, err = attrs.ReadPrefixes(u.Unreach, withdrawn, af.AF_IPV4_UNICAST, cps)
 		if err != nil {
 			return err
 		}
 	}
 
+	// take it
 	u.RawAttrs = ats
 	u.Msg.Upper = UPDATE
 	return nil
@@ -152,7 +155,7 @@ func (u *Update) AF() af.AF {
 		} else if unreach, ok := u.Attrs.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); ok {
 			u.af = unreach.AF
 		} else {
-			u.af = af.New(af.AFI_IPV4, af.SAFI_UNICAST)
+			u.af = af.NewAF(af.AFI_IPV4, af.SAFI_UNICAST)
 		}
 	}
 
@@ -175,12 +178,12 @@ func (u *Update) MarshalAttrs(cps caps.Caps) error {
 
 // Marshal marshals u to u.Msg.Data.
 func (u *Update) Marshal(cps caps.Caps) error {
-	shouldSendAddPath := caps.HasSendAddPath(cps, af.AFI_IPV4, af.SAFI_UNICAST)
 	msg := u.Msg
 	buf := msg.buf[:0]
+
 	// withdrawn routes
 	buf = append(buf, 0, 0) // length (tbd [1])
-	buf = attrs.WritePrefixes(buf, u.Unreach, shouldSendAddPath)
+	buf = attrs.WritePrefixes(buf, u.Unreach, af.AF_IPV4_UNICAST, cps)
 	if l := len(buf) - 2; l > math.MaxUint16 {
 		return fmt.Errorf("Marshal: too long Withdrawn Routes: %w (%d)", ErrLength, l)
 	} else if l > 0 {
@@ -194,8 +197,8 @@ func (u *Update) Marshal(cps caps.Caps) error {
 	buf = msb.AppendUint16(buf, uint16(len(u.RawAttrs)))
 	buf = append(buf, u.RawAttrs...)
 
-	// NLRI
-	buf = attrs.WritePrefixes(buf, u.Reach, shouldSendAddPath)
+	// announced routes
+	buf = attrs.WritePrefixes(buf, u.Reach, af.AF_IPV4_UNICAST, cps)
 
 	// done
 	msg.Type = UPDATE
@@ -217,7 +220,7 @@ func (u *Update) ToJSON(dst []byte) []byte {
 
 	if len(u.Reach) > 0 {
 		dst = append(dst, `"reach":`...)
-		dst = json.Prefixes(dst, u.Reach)
+		dst = nlri.ToJSON(dst, u.Reach)
 	}
 
 	if len(u.Unreach) > 0 {
@@ -225,7 +228,7 @@ func (u *Update) ToJSON(dst []byte) []byte {
 			dst = append(dst, ',')
 		}
 		dst = append(dst, `"unreach":`...)
-		dst = json.Prefixes(dst, u.Unreach)
+		dst = nlri.ToJSON(dst, u.Unreach)
 	}
 
 	if len(u.Reach) > 0 || len(u.Unreach) > 0 {
@@ -248,9 +251,9 @@ func (u *Update) FromJSON(src []byte) error {
 	return json.ObjectEach(src, func(key string, val []byte, typ json.Type) (err error) {
 		switch key {
 		case "reach":
-			u.Reach, err = json.UnPrefixes(val, u.Reach[:0])
+			u.Reach, err = nlri.FromJSON(val, u.Reach[:0])
 		case "unreach":
-			u.Unreach, err = json.UnPrefixes(val, u.Unreach[:0])
+			u.Unreach, err = nlri.FromJSON(val, u.Unreach[:0])
 		case "attrs":
 			if typ == json.STRING {
 				u.RawAttrs, err = json.UnHex(val, u.RawAttrs[:0])

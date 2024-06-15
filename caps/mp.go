@@ -21,21 +21,21 @@ func (c *MP) Unmarshal(buf []byte, caps Caps) error {
 		return ErrLength
 	}
 	// ignore buf[2]
-	af := af.NewASBytes(buf[:4])
+	af := af.NewAFBytes(buf[:4])
 	c.Add(af.Afi(), af.Safi())
 	return nil
 }
 
 func (c *MP) Add(afi af.AFI, safi af.SAFI) {
-	c.Proto[af.New(afi, safi)] = true
+	c.Proto[af.NewAF(afi, safi)] = true
 }
 
 func (c *MP) Has(afi af.AFI, safi af.SAFI) bool {
-	return c.Proto[af.New(afi, safi)]
+	return c.Proto[af.NewAF(afi, safi)]
 }
 
 func (c *MP) Drop(afi af.AFI, safi af.SAFI) {
-	delete(c.Proto, af.New(afi, safi))
+	delete(c.Proto, af.NewAF(afi, safi))
 }
 
 func (c *MP) Sorted() (dst []af.AF) {
