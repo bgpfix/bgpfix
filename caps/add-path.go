@@ -74,11 +74,8 @@ func (cps Caps) AddPathSend(as af.AF) bool {
 
 // AddPathReceive returns true iff cps has ADD_PATH enabled in the Receive direction
 func (cps Caps) AddPathReceive(as af.AF) bool {
-	if ap, ok := cps.Get(CAP_ADDPATH).(*AddPath); ok {
-		return ap.Has(as, ADDPATH_RECEIVE)
-	} else {
-		return cps.BestEffortGet(CAP_ADDPATH) == 2 // already tried and it worked
-	}
+	ap, ok := cps.Get(CAP_ADDPATH).(*AddPath)
+	return ok && ap.Has(as, ADDPATH_RECEIVE)
 }
 
 // Drop drops ADD_PATH for AFI+SAFI pair in as, whatever the Send/Receive is.

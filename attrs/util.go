@@ -30,15 +30,13 @@ func ParseNH(buf []byte) (addr, ll netip.Addr, ok bool) {
 }
 
 // ReadPrefixes reads IP prefixes from src into dst
-func ReadPrefixes(dst []nlri.NLRI, src []byte, as af.AF, cps caps.Caps) (result []nlri.NLRI, err error) {
+func ReadPrefixes(dst []nlri.NLRI, src []byte, as af.AF, cps caps.Caps) ([]nlri.NLRI, error) {
 	var (
-		tmp        [16]byte
-		ipv6       = as.IsAfi(af.AFI_IPV6)
-		addpath    = cps.AddPathReceive(as)
-		besteffort = cps.BestEffortGet(caps.CAP_ADDPATH)
+		tmp     [16]byte
+		ipv6    = as.IsAfi(af.AFI_IPV6)
+		addpath = cps.AddPathReceive(as)
 	)
 
-retry:
 	buf := src
 	for len(buf) > 0 {
 		var p nlri.NLRI
@@ -46,8 +44,7 @@ retry:
 		// parse ADD_PATH Path Identifier?
 		if addpath {
 			if len(buf) < 5 {
-				err = ErrLength
-				break
+				return dst, ErrLength
 			}
 			id := msb.Uint32(buf[0:4])
 			p.PathId = &id
@@ -63,14 +60,14 @@ retry:
 			b++
 		}
 		if b > len(buf) {
-			err = ErrLength
-			break
+			return dst, ErrLength
 		}
 
 		// copy what's defined
 		copy(tmp[:], buf[:b])
 
 		// zero the rest, try to parse
+		var err error
 		if ipv6 {
 			for i := b; i < 16; i++ {
 				tmp[i] = 0
@@ -83,7 +80,7 @@ retry:
 			p.Prefix, err = netip.AddrFrom4([4]byte(tmp[:])).Prefix(l)
 		}
 		if err != nil {
-			break
+			return dst, err
 		}
 
 		// take it
@@ -91,29 +88,7 @@ retry:
 		buf = buf[b:]
 	}
 
-	// parse error?
-	if err != nil {
-		// no ADD_PATH but we can best-effort retry?
-		if !addpath && besteffort > 0 {
-			err = nil
-			addpath = true
-			besteffort = 3
-			goto retry
-		}
-
-		// nope, it's dead end
-		if besteffort > 0 {
-			cps.BestEffortSet(caps.CAP_ADDPATH, -1) // tried and didn't work
-		}
-		return dst, err
-	}
-
-	// ADD_PATH success after our best-effort retry?
-	if addpath && besteffort == 3 {
-		cps.BestEffortSet(caps.CAP_ADDPATH, 2) // tried and worked
-	}
-
-	return dst, err
+	return dst, nil
 }
 
 // WritePrefix writes prefix p to dst
@@ -131,7 +106,7 @@ func WritePrefix(dst []byte, p netip.Prefix) []byte {
 func WritePrefixes(dst []byte, src []nlri.NLRI, as af.AF, cps caps.Caps) []byte {
 	var (
 		ipv6    = as.IsAfi(af.AFI_IPV6)
-		addpath = cps.AddPathSend(as)
+		addpath = cps.IsAddPathSend(as)
 	)
 	for _, p := range src {
 		if p.Addr().Is6() != ipv6 {

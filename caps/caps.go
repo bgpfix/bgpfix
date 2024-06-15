@@ -27,10 +27,6 @@ var msb = binary.Msb
 type Caps struct {
 	// the database of capabilities, initially nil
 	db *xsync.MapOf[Code, Cap]
-
-	// used for best-effort features, initially nil.
-	// -1=failed, 0=disabled, 1=enabled, 2=worked.
-	be *xsync.MapOf[Code, int]
 }
 
 // Init initializes Caps and makes it fully thread-safe after return.
@@ -39,40 +35,6 @@ func (cps *Caps) Init() {
 	if cps.db == nil {
 		cps.db = xsync.NewMapOf[Code, Cap]()
 	}
-	if cps.be == nil {
-		cps.be = xsync.NewMapOf[Code, int]()
-	}
-}
-
-// BestEffortEnable enables best-effort parsing for capability cc (if supported & possible),
-// for instance if we missed capability negotiation (think MRT update files).
-func (cps *Caps) BestEffortEnable(cc Code) bool {
-	cps.Init()
-	val, _ := cps.be.Compute(cc, func(oldValue int, loaded bool) (newValue int, delete bool) {
-		if oldValue > 0 {
-			return oldValue, false
-		} else {
-			return 1, false
-		}
-	})
-	return val > 0
-}
-
-// BestEffortGet returns the best-effort parsing setting for capability cc:
-// -1=failed, 0=disabled, 1=enabled, 2=worked.
-func (cps *Caps) BestEffortGet(cc Code) int {
-	if cps.Valid() {
-		val, _ := cps.be.Load(cc)
-		return val
-	}
-	return 0
-}
-
-// BestEffortSet sets the best-effort parsing setting for capability cc:
-// -1=failed, 0=disabled, 1=enabled, 2=worked.
-func (cps *Caps) BestEffortSet(cc Code, val int) {
-	cps.Init()
-	cps.be.Store(cc, val)
 }
 
 // Valid returns true iff Caps has already been initialized
