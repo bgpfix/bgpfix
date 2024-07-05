@@ -66,14 +66,14 @@ func (c *AddPath) Has(as af.AF, dir AddPathDir) bool {
 	return c != nil && c.Proto[as]&dir != 0
 }
 
-// AddPathSend returns true iff cps has ADD_PATH enabled in the Send direction
-func (cps Caps) AddPathSend(as af.AF) bool {
+// AddPathHasSend returns true iff cps has ADD_PATH enabled in the Send direction
+func (cps *Caps) AddPathHasSend(as af.AF) bool {
 	ap, ok := cps.Get(CAP_ADDPATH).(*AddPath)
 	return ok && ap.Has(as, ADDPATH_SEND)
 }
 
-// AddPathReceive returns true iff cps has ADD_PATH enabled in the Receive direction
-func (cps Caps) AddPathReceive(as af.AF) bool {
+// AddPathHasReceive returns true iff cps has ADD_PATH enabled in the Receive direction
+func (cps *Caps) AddPathHasReceive(as af.AF) bool {
 	ap, ok := cps.Get(CAP_ADDPATH).(*AddPath)
 	return ok && ap.Has(as, ADDPATH_RECEIVE)
 }

@@ -34,7 +34,7 @@ func ReadPrefixes(dst []nlri.NLRI, src []byte, as af.AF, cps caps.Caps) ([]nlri.
 	var (
 		tmp     [16]byte
 		ipv6    = as.IsAfi(af.AFI_IPV6)
-		addpath = cps.AddPathReceive(as)
+		addpath = cps.AddPathHasReceive(as)
 	)
 
 	buf := src
@@ -106,7 +106,7 @@ func WritePrefix(dst []byte, p netip.Prefix) []byte {
 func WritePrefixes(dst []byte, src []nlri.NLRI, as af.AF, cps caps.Caps) []byte {
 	var (
 		ipv6    = as.IsAfi(af.AFI_IPV6)
-		addpath = cps.IsAddPathSend(as)
+		addpath = cps.AddPathHasSend(as)
 	)
 	for _, p := range src {
 		if p.Addr().Is6() != ipv6 {
