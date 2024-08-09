@@ -73,7 +73,7 @@ func (u *Update) Parse(cps caps.Caps) error {
 	// announced routes
 	if len(buf) > 0 {
 		var err error
-		u.Reach, err = attrs.ReadPrefixes(u.Reach, buf, af.AF_IPV4_UNICAST, cps)
+		u.Reach, err = nlri.Unmarshal(u.Reach, buf, af.AF_IPV4_UNICAST, cps)
 		if err != nil {
 			return err
 		}
@@ -82,7 +82,7 @@ func (u *Update) Parse(cps caps.Caps) error {
 	// witdrawn routes
 	if len(withdrawn) > 0 {
 		var err error
-		u.Unreach, err = attrs.ReadPrefixes(u.Unreach, withdrawn, af.AF_IPV4_UNICAST, cps)
+		u.Unreach, err = nlri.Unmarshal(u.Unreach, withdrawn, af.AF_IPV4_UNICAST, cps)
 		if err != nil {
 			return err
 		}
@@ -183,7 +183,7 @@ func (u *Update) Marshal(cps caps.Caps) error {
 
 	// withdrawn routes
 	buf = append(buf, 0, 0) // length (tbd [1])
-	buf = attrs.WritePrefixes(buf, u.Unreach, af.AF_IPV4_UNICAST, cps)
+	buf = nlri.Marshal(buf, u.Unreach, af.AF_IPV4_UNICAST, cps)
 	if l := len(buf) - 2; l > math.MaxUint16 {
 		return fmt.Errorf("Marshal: too long Withdrawn Routes: %w (%d)", ErrLength, l)
 	} else if l > 0 {
@@ -198,7 +198,7 @@ func (u *Update) Marshal(cps caps.Caps) error {
 	buf = append(buf, u.RawAttrs...)
 
 	// announced routes
-	buf = attrs.WritePrefixes(buf, u.Reach, af.AF_IPV4_UNICAST, cps)
+	buf = nlri.Marshal(buf, u.Reach, af.AF_IPV4_UNICAST, cps)
 
 	// done
 	msg.Type = UPDATE

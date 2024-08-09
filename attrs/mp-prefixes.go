@@ -53,7 +53,7 @@ func (a *MPPrefixes) Unmarshal(cps caps.Caps) error {
 		}
 	}
 
-	a.Prefixes, err = ReadPrefixes(a.Prefixes, a.Data, a.AF, cps)
+	a.Prefixes, err = nlri.Unmarshal(a.Prefixes, a.Data, a.AF, cps)
 	return err
 }
 
@@ -69,7 +69,7 @@ func (a *MPPrefixes) Marshal(cps caps.Caps) {
 	a.NH = nh
 
 	// prefixes
-	a.Data = WritePrefixes(a.Data[:0], a.Prefixes, a.AF, cps)
+	a.Data = nlri.Marshal(a.Data[:0], a.Prefixes, a.AF, cps)
 }
 
 func (a *MPPrefixes) ToJSON(dst []byte) []byte {
