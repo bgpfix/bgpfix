@@ -42,11 +42,10 @@ type MPNewFunc func(mp *MP) MPValue
 
 // MPNewFuncs maps ATTR_MP_* afi/safi pairs to their NewFunc
 var MPNewFuncs = map[af.AF]MPNewFunc{
-	af.NewAF(af.AFI_IPV4, af.SAFI_UNICAST):  NewMPPrefixes,
-	af.NewAF(af.AFI_IPV4, af.SAFI_FLOWSPEC): NewMPFlowspec,
-
-	af.NewAF(af.AFI_IPV6, af.SAFI_UNICAST):  NewMPPrefixes,
-	af.NewAF(af.AFI_IPV6, af.SAFI_FLOWSPEC): NewMPFlowspec,
+	af.AF_IPV4_UNICAST:  NewMPPrefixes,
+	af.AF_IPV4_FLOWSPEC: NewMPFlowspec,
+	af.AF_IPV6_UNICAST:  NewMPPrefixes,
+	af.AF_IPV6_FLOWSPEC: NewMPFlowspec,
 }
 
 func NewMP(at CodeFlags) Attr {

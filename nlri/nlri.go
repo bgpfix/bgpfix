@@ -137,7 +137,7 @@ func (p *NLRI) Unmarshal(src []byte, ipv6, addpath bool) (n int, err error) {
 // Unmarshal unmarshals IP prefixes from src into dst
 func Unmarshal(dst []NLRI, src []byte, as af.AF, cps caps.Caps) ([]NLRI, error) {
 	var (
-		ipv6    = as.IsAfi(af.AFI_IPV6)
+		ipv6    = as.IsIPv6()
 		addpath = cps.AddPathHasReceive(as)
 	)
 
@@ -184,7 +184,7 @@ func (p *NLRI) Marshal(dst []byte, addpath bool) []byte {
 // Marshal marshals prefixes in src to dst
 func Marshal(dst []byte, src []NLRI, as af.AF, cps caps.Caps) []byte {
 	var (
-		ipv6    = as.IsAfi(af.AFI_IPV6)
+		ipv6    = as.IsIPv6()
 		addpath = cps.AddPathHasSend(as)
 	)
 	for _, p := range src {

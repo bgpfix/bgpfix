@@ -155,7 +155,7 @@ func (u *Update) AF() af.AF {
 		} else if unreach, ok := u.Attrs.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); ok {
 			u.af = unreach.AF
 		} else {
-			u.af = af.NewAF(af.AFI_IPV4, af.SAFI_UNICAST)
+			u.af = af.AF_IPV4_UNICAST
 		}
 	}
 

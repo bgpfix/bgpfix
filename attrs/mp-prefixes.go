@@ -24,7 +24,7 @@ func NewMPPrefixes(mp *MP) MPValue {
 
 func (a *MPPrefixes) Unmarshal(cps caps.Caps) error {
 	var (
-		isv6 = a.IsAfi(af.AFI_IPV6)
+		isv6 = a.IsIPv6()
 		err  error
 	)
 

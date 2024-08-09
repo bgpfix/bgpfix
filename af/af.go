@@ -17,8 +17,11 @@ type AF uint32
 var (
 	AF_IPV4_UNICAST   = NewAF(AFI_IPV4, SAFI_UNICAST)
 	AF_IPV4_MULTICAST = NewAF(AFI_IPV4, SAFI_MULTICAST)
+	AF_IPV4_FLOWSPEC  = NewAF(AFI_IPV4, SAFI_FLOWSPEC)
+
 	AF_IPV6_UNICAST   = NewAF(AFI_IPV6, SAFI_UNICAST)
 	AF_IPV6_MULTICAST = NewAF(AFI_IPV6, SAFI_MULTICAST)
+	AF_IPV6_FLOWSPEC  = NewAF(AFI_IPV6, SAFI_FLOWSPEC)
 )
 
 // NewAF returns AF for given Afi and Safi
@@ -49,6 +52,14 @@ func (af AF) Afi() AFI {
 
 func (af AF) IsAfi(afi AFI) bool {
 	return af.Afi() == afi
+}
+
+func (af AF) IsIPv4() bool {
+	return af.Afi() == AFI_IPV4
+}
+
+func (af AF) IsIPv6() bool {
+	return af.Afi() == AFI_IPV6
 }
 
 func (af AF) Safi() SAFI {
