@@ -41,7 +41,7 @@ func ToJSON(dst []byte, src []NLRI) []byte {
 		if p.Options == OPT_ADDPATH {
 			dst = append(dst, `"#`...)
 			dst = json.Uint32(dst, p.Val)
-			dst = append(dst, ':')
+			dst = append(dst, '#')
 		} else {
 			dst = append(dst, '"')
 		}
@@ -66,7 +66,7 @@ func FromJSON(src []byte, dst []NLRI) ([]NLRI, error) {
 
 		// starts with #? treat as add-path path identifier
 		if s[0] == '#' {
-			before, after, found := strings.Cut(s[1:], ":")
+			before, after, found := strings.Cut(s[1:], "#")
 			if !found || len(before) < 2 {
 				return json.ErrValue
 			}
