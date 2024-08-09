@@ -20,7 +20,7 @@ type Input struct {
 
 	Id   int     // optional id
 	Name string  // optional name
-	Dir  msg.Dir // line direction
+	Dir  msg.Dir // input direction
 
 	// In is the input for incoming messages.
 	In chan *msg.Msg
@@ -54,7 +54,7 @@ func (in *Input) attach(p *Pipe, l *Line) {
 		}
 
 		// direction match?
-		if cb.Dir&l.Dir == 0 {
+		if cb.Dir != 0 && cb.Dir&l.Dir == 0 {
 			continue
 		}
 
