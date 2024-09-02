@@ -29,6 +29,12 @@ func MsgContext(m *msg.Msg) *Context {
 	}
 }
 
+// GetContext returns message Context inside m, iff it exists (or nil).
+func GetContext(m *msg.Msg) *Context {
+	mx, _ := m.Value.(*Context)
+	return mx
+}
+
 // HasContext returns true iff m has a Context
 func HasContext(m *msg.Msg) bool {
 	_, ok := m.Value.(*Context)
