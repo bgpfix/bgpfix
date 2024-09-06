@@ -48,11 +48,11 @@ type Event struct {
 	Seq  uint64    `json:"seq,omitempty"`  // event sequence number
 	Time time.Time `json:"time,omitempty"` // event timestamp
 
-	Type  string   `json:"type"`  // type, usually "lib/pkg.NAME"
-	Dir   msg.Dir  `json:"dir"`   // optional event direction
-	Msg   *msg.Msg `json:"-"`     // optional message that caused the event
-	Error error    `json:"err"`   // optional error related to the event
-	Value any      `json:"value"` // optional value, type-specific
+	Type  string  `json:"type"`  // type, usually "lib/pkg.NAME"
+	Dir   msg.Dir `json:"dir"`   // optional event direction
+	Msg   string  `json:"msg"`   // optional BGP message in JSON
+	Error error   `json:"err"`   // optional error related to the event
+	Value any     `json:"value"` // optional value, type-specific
 
 	Handler *Handler      // currently running handler (may be nil)
 	Action  Action        // optional event action (zero means none)
@@ -131,7 +131,7 @@ func (p *Pipe) Event(et string, args ...any) *Event {
 		switch v := arg.(type) {
 		case *msg.Msg:
 			if !msg_set {
-				ev.Msg = ActionBorrow(v) // make m safe to reference later
+				ev.Msg = v.String()
 				msg_set = true
 				continue
 			}
@@ -226,7 +226,7 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 		}
 
 		// prepare the handlers
-		hs = append(hs[:0], p.events[ev.Type]...)
+		hs = append(hs[:0], p.events[ev.Type]...) // TODO: append whs to p.events before?
 		hs = append(hs, whs...)
 
 		// call handlers
