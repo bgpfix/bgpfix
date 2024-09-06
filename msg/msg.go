@@ -396,8 +396,8 @@ func (msg *Msg) String() string {
 // GetJSON returns JSON representation of msg + "\n" directly from an internal buffer.
 // The result is always non-nil and non-empty. Copy the result if you need to keep it.
 func (msg *Msg) GetJSON() []byte {
-	// still good?
-	if msg.Upper != INVALID && len(msg.json) > 0 {
+	// still good to re-use?
+	if len(msg.json) > 0 {
 		return msg.json
 	}
 
@@ -465,7 +465,7 @@ func (msg *Msg) ToJSON(dst []byte) []byte {
 // FromJSON reads msg JSON representation from src into Upper
 func (msg *Msg) FromJSON(src []byte) (reterr error) {
 	// internal json still valid?
-	if l := len(msg.json) - 1; l > 0 && msg.Upper != INVALID {
+	if l := len(msg.json) - 1; l > 0 {
 		src = bytes.TrimSpace(src)
 		if len(src) == l && string(src) == string(msg.json[:l]) {
 			return nil // yay! we're done
