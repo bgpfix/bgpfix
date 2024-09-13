@@ -3,6 +3,7 @@ package msg
 import (
 	"fmt"
 	"math"
+	"net/netip"
 
 	"github.com/bgpfix/bgpfix/af"
 	"github.com/bgpfix/bgpfix/attrs"
@@ -20,7 +21,6 @@ type Update struct {
 	RawAttrs []byte      // raw attributes
 
 	Attrs attrs.Attrs // parsed attributes
-	af    af.AF       // AFI/SAFI from MP-BGP
 }
 
 const (
@@ -38,7 +38,6 @@ func (u *Update) Reset() {
 	u.Reach = u.Reach[:0]
 	u.RawAttrs = nil
 	u.Attrs.Reset()
-	u.af = 0
 }
 
 // Parse parses msg.Data as BGP UPDATE
@@ -250,21 +249,6 @@ func (u *Update) FromJSON(src []byte) error {
 	})
 }
 
-// AF returns the message address family, giving priority to MP-BGP attributes
-func (u *Update) AF() af.AF {
-	if u.af == 0 {
-		if reach, ok := u.Attrs.Get(attrs.ATTR_MP_REACH).(*attrs.MP); ok {
-			u.af = reach.AF
-		} else if unreach, ok := u.Attrs.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); ok {
-			u.af = unreach.AF
-		} else {
-			u.af = af.AF_IPV4_UNICAST
-		}
-	}
-
-	return u.af
-}
-
 // MP returns raw MP-BGP attribute ac, or nil
 func (u *Update) MP(ac attrs.Code) *attrs.MP {
 	if a, ok := u.Attrs.Get(ac).(*attrs.MP); ok {
@@ -273,8 +257,24 @@ func (u *Update) MP(ac attrs.Code) *attrs.MP {
 	return nil
 }
 
-// IsAnnounce returns true iff u announces reachable NLRI (for any address family AF).
-func (u *Update) IsAnnounce() bool {
+// AF returns the message address family, giving priority to MP-BGP attributes
+func (u *Update) AF() af.AF {
+	if u == nil || u.Msg.Upper != UPDATE {
+		return af.AF_INVALID
+	} else if reach := u.MP(attrs.ATTR_MP_REACH); reach != nil {
+		return reach.AF
+	} else if unreach := u.MP(attrs.ATTR_MP_UNREACH); unreach != nil {
+		return unreach.AF
+	} else {
+		return af.AF_IPV4_UNICAST
+	}
+}
+
+// HasReach returns true iff u announces reachable NLRI (for any address family AF).
+func (u *Update) HasReach() bool {
+	if u == nil || u.Msg.Upper != UPDATE {
+		return false
+	}
 	if len(u.Reach) > 0 {
 		return true
 	}
@@ -284,8 +284,11 @@ func (u *Update) IsAnnounce() bool {
 	return false
 }
 
-// IsWithdraw returns true iff u withdraws unreachable NLRI (for any address family AF).
-func (u *Update) IsWithdraw() bool {
+// HasUnreach returns true iff u withdraws unreachable NLRI (for any address family AF).
+func (u *Update) HasUnreach() bool {
+	if u == nil || u.Msg.Upper != UPDATE {
+		return false
+	}
 	if len(u.Unreach) > 0 {
 		return true
 	}
@@ -298,9 +301,25 @@ func (u *Update) IsWithdraw() bool {
 // AsPath returns the ATTR_ASPATH from u, or nil if not defined.
 // TODO: support ATTR_AS4PATH
 func (u *Update) AsPath() *attrs.Aspath {
-	if ap, ok := u.Attrs.Get(attrs.ATTR_ASPATH).(*attrs.Aspath); ok {
+	if u == nil || u.Msg.Upper != UPDATE {
+		return nil
+	} else if ap, ok := u.Attrs.Get(attrs.ATTR_ASPATH).(*attrs.Aspath); ok {
 		return ap
 	} else {
 		return nil
 	}
+}
+
+// NextHop returns NEXT_HOP address, or nil if not possible
+func (u *Update) NextHop() *netip.Addr {
+	if u == nil || u.Msg.Upper != UPDATE {
+		return nil
+	}
+	if mp := u.MP(attrs.ATTR_MP_REACH).Prefixes(); mp != nil {
+		return &mp.NextHop
+	}
+	if nh, _ := u.Attrs.Get(attrs.ATTR_NEXTHOP).(*attrs.IP); nh != nil {
+		return &nh.Addr
+	}
+	return nil
 }
