@@ -268,6 +268,16 @@ func (p *Pipe) PutMsg(m *msg.Msg) {
 	p.msgpool.Put(m)
 }
 
+// ParseMsg parses given message m (if needed), in the context of this Pipe.
+// In case of error, it emits EVENT_PARSE before returning.
+func (p *Pipe) ParseMsg(m *msg.Msg) error {
+	err := m.Parse(p.Caps)
+	if err != nil {
+		p.Event(EVENT_PARSE, m.Dir, m, err)
+	}
+	return err
+}
+
 // LineFor returns the line processing messages destined for dst.
 // Returns p.R if dst is bidir (DST_LR).
 func (p *Pipe) LineFor(dst msg.Dir) *Line {

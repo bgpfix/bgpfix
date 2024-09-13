@@ -162,3 +162,13 @@ func (mp *MP) FromJSON(src []byte) error {
 	}
 	return nil
 }
+
+// Prefixes returns mp.Value interpreted as MPPrefixes, or nil on error
+func (mp *MP) Prefixes() *MPPrefixes {
+	if mp == nil || mp.Value == nil {
+		return nil
+	}
+
+	pfx, _ := mp.Value.(*MPPrefixes)
+	return pfx
+}

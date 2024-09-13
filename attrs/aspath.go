@@ -2,6 +2,7 @@ package attrs
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
@@ -67,7 +68,9 @@ func (a *Aspath) Unmarshal(buf []byte, cps caps.Caps) error {
 		}
 
 		// store segment, go to next
-		a.Segments = append(a.Segments, seg)
+		if len(seg.List) > 0 {
+			a.Segments = append(a.Segments, seg)
+		}
 		buf = buf[tl:]
 	}
 
@@ -185,4 +188,54 @@ func (a *Aspath) FromJSON(src []byte) error {
 	})
 	seg_push()
 	return err
+}
+
+// HasAsn returns true if ap has given asn anywhere in AS_PATH
+func (ap *Aspath) HasAsn(asn uint32) bool {
+	for si := range ap.Segments {
+		if slices.Index(ap.Segments[si].List, asn) != -1 {
+			return true
+		}
+	}
+	return false
+}
+
+// HasOrigin returns true iff ap has given asn at the origin.
+// In case of origin AS sets, asn must be one of the set elements.
+func (ap *Aspath) HasOrigin(asn uint32) bool {
+	lastseg := len(ap.Segments) - 1
+	if lastseg < 0 {
+		return false // no segments?
+	}
+
+	seg := &ap.Segments[lastseg]
+	if sl := len(seg.List); sl == 0 {
+		return false // no ASes in the last segment?!
+	} else if seg.IsSet {
+		return slices.Index(seg.List, asn) != -1
+	} else {
+		return seg.List[sl-1] == asn
+	}
+}
+
+// Origin returns the last AS in AS_PATH, or 0 on error.
+// It treats AS_SET origins as errors.
+func (ap *Aspath) Origin() uint32 {
+	if ap == nil {
+		return 0
+	}
+
+	lastseg := len(ap.Segments) - 1
+	if lastseg < 0 {
+		return 0 // no segments?
+	}
+
+	seg := &ap.Segments[lastseg]
+	if sl := len(seg.List); sl == 0 {
+		return 0 // no ASes in the last segment?!
+	} else if seg.IsSet {
+		return 0 // treat as error
+	} else {
+		return seg.List[sl-1]
+	}
 }

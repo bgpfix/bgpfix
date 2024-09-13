@@ -178,9 +178,8 @@ input:
 
 			// need to parse first?
 			if !cb.Raw && m.Upper == msg.INVALID {
-				if err := m.Parse(p.Caps); err != nil {
-					p.Event(EVENT_PARSE, in.Dir, m, err)
-					continue input // next message
+				if p.ParseMsg(m) != nil {
+					continue input // parse error, drop the message
 				}
 			}
 

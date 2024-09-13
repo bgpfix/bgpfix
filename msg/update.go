@@ -147,21 +147,6 @@ func (u *Update) ParseAttrs(cps caps.Caps) error {
 	return nil
 }
 
-// AF returns the message address family, giving priority to MP-BGP attributes
-func (u *Update) AF() af.AF {
-	if u.af == 0 {
-		if reach, ok := u.Attrs.Get(attrs.ATTR_MP_REACH).(*attrs.MP); ok {
-			u.af = reach.AF
-		} else if unreach, ok := u.Attrs.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); ok {
-			u.af = unreach.AF
-		} else {
-			u.af = af.AF_IPV4_UNICAST
-		}
-	}
-
-	return u.af
-}
-
 // MarshalAttrs marshals u.Attrs into u.RawAttrs
 func (u *Update) MarshalAttrs(cps caps.Caps) error {
 	// NB: avoid u.RawAttrs[:0] as it might be referencing another slice
@@ -263,4 +248,59 @@ func (u *Update) FromJSON(src []byte) error {
 		}
 		return err
 	})
+}
+
+// AF returns the message address family, giving priority to MP-BGP attributes
+func (u *Update) AF() af.AF {
+	if u.af == 0 {
+		if reach, ok := u.Attrs.Get(attrs.ATTR_MP_REACH).(*attrs.MP); ok {
+			u.af = reach.AF
+		} else if unreach, ok := u.Attrs.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); ok {
+			u.af = unreach.AF
+		} else {
+			u.af = af.AF_IPV4_UNICAST
+		}
+	}
+
+	return u.af
+}
+
+// MP returns raw MP-BGP attribute ac, or nil
+func (u *Update) MP(ac attrs.Code) *attrs.MP {
+	if a, ok := u.Attrs.Get(ac).(*attrs.MP); ok {
+		return a
+	}
+	return nil
+}
+
+// IsAnnounce returns true iff u announces reachable NLRI (for any address family AF).
+func (u *Update) IsAnnounce() bool {
+	if len(u.Reach) > 0 {
+		return true
+	}
+	if mp := u.MP(attrs.ATTR_MP_REACH).Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
+		return true
+	}
+	return false
+}
+
+// IsWithdraw returns true iff u withdraws unreachable NLRI (for any address family AF).
+func (u *Update) IsWithdraw() bool {
+	if len(u.Unreach) > 0 {
+		return true
+	}
+	if mp := u.MP(attrs.ATTR_MP_UNREACH).Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
+		return true
+	}
+	return false
+}
+
+// AsPath returns the ATTR_ASPATH from u, or nil if not defined.
+// TODO: support ATTR_AS4PATH
+func (u *Update) AsPath() *attrs.Aspath {
+	if ap, ok := u.Attrs.Get(attrs.ATTR_ASPATH).(*attrs.Aspath); ok {
+		return ap
+	} else {
+		return nil
+	}
 }
