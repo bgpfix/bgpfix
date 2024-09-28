@@ -68,10 +68,10 @@ func FromJSON(src []byte, dst []NLRI) ([]NLRI, error) {
 		// starts with #? treat as add-path path identifier
 		if s[0] == '#' {
 			before, after, found := strings.Cut(s[1:], "#")
-			if !found || len(before) < 2 {
+			if !found || len(before) == 0 || len(after) == 0 {
 				return json.ErrValue
 			}
-			val, err := strconv.ParseUint(before[1:], 10, 32)
+			val, err := strconv.ParseUint(before, 10, 32)
 			if err != nil {
 				return err
 			}
