@@ -3,17 +3,17 @@ package caps
 import (
 	"sort"
 
-	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/json"
 )
 
 // MP implements CAP_MP rfc4760
 type MP struct {
-	Proto map[af.AF]bool
+	Proto map[afi.AS]bool
 }
 
 func NewMP(cc Code) Cap {
-	return &MP{make(map[af.AF]bool)}
+	return &MP{make(map[afi.AS]bool)}
 }
 
 func (c *MP) Unmarshal(buf []byte, caps Caps) error {
@@ -21,24 +21,24 @@ func (c *MP) Unmarshal(buf []byte, caps Caps) error {
 		return ErrLength
 	}
 	// ignore buf[2]
-	af := af.NewAFBytes(buf[:4])
+	af := afi.NewASBytes(buf[:4])
 	c.Add(af.Afi(), af.Safi())
 	return nil
 }
 
-func (c *MP) Add(afi af.AFI, safi af.SAFI) {
-	c.Proto[af.NewAF(afi, safi)] = true
+func (c *MP) Add(af afi.AFI, sf afi.SAFI) {
+	c.Proto[afi.NewAS(af, sf)] = true
 }
 
-func (c *MP) Has(afi af.AFI, safi af.SAFI) bool {
-	return c.Proto[af.NewAF(afi, safi)]
+func (c *MP) Has(af afi.AFI, sf afi.SAFI) bool {
+	return c.Proto[afi.NewAS(af, sf)]
 }
 
-func (c *MP) Drop(afi af.AFI, safi af.SAFI) {
-	delete(c.Proto, af.NewAF(afi, safi))
+func (c *MP) Drop(af afi.AFI, sf afi.SAFI) {
+	delete(c.Proto, afi.NewAS(af, sf))
 }
 
-func (c *MP) Sorted() (dst []af.AF) {
+func (c *MP) Sorted() (dst []afi.AS) {
 	for as, val := range c.Proto {
 		if val {
 			dst = append(dst, as)
@@ -57,7 +57,7 @@ func (c *MP) Intersect(cap2 Cap) Cap {
 	}
 
 	dst := &MP{
-		Proto: make(map[af.AF]bool),
+		Proto: make(map[afi.AS]bool),
 	}
 
 	for as, val := range c.Proto {
@@ -88,7 +88,7 @@ func (c *MP) ToJSON(dst []byte) []byte {
 }
 
 func (c *MP) FromJSON(src []byte) (err error) {
-	var as af.AF
+	var as afi.AS
 	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
 		if err := as.FromJSON(val); err != nil {
 			return err

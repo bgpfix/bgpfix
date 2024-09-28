@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/msg"
 )
 
@@ -49,7 +50,7 @@ type Event struct {
 	Time time.Time `json:"time,omitempty"` // event timestamp
 
 	Type  string  `json:"type"`  // type, usually "lib/pkg.NAME"
-	Dir   msg.Dir `json:"dir"`   // optional event direction
+	Dir   dir.Dir `json:"dir"`   // optional event direction
 	Msg   string  `json:"msg"`   // optional BGP message in JSON
 	Error error   `json:"err"`   // optional error related to the event
 	Value any     `json:"value"` // optional value, type-specific
@@ -68,9 +69,15 @@ func (ev *Event) String() string {
 	}
 }
 
-// Wait blocks until the event is handled
-func (ev *Event) Wait() {
-	<-ev.done
+// Wait blocks until the event is handled (returns true),
+// or aborts if the Pipe context is cancelled (returns false).
+func (ev *Event) Wait() bool {
+	select {
+	case <-ev.Pipe.ctx.Done():
+		return false
+	case <-ev.done:
+		return true
+	}
 }
 
 // attachEvent initializes the event handler
@@ -113,7 +120,7 @@ func (p *Pipe) attachEvent() {
 }
 
 // Event announces a new event type et to the pipe, with optional arguments.
-// The first msg.Dir argument is used as ev.Dir.
+// The first dir.Dir argument is used as ev.Dir.
 // The first *msg.Msg is used as ev.Msg and borrowed (add ACTION_BORROW).
 // All error arguments are joined together into a single ev.Error.
 // The remaining arguments are used as ev.Val.
@@ -135,7 +142,7 @@ func (p *Pipe) Event(et string, args ...any) *Event {
 				msg_set = true
 				continue
 			}
-		case msg.Dir:
+		case dir.Dir:
 			if !dir_set {
 				ev.Dir = v
 				dir_set = true

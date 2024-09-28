@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
 )
 
@@ -25,7 +26,7 @@ func NewAspath(at CodeFlags) Attr {
 	return &Aspath{CodeFlags: at}
 }
 
-func (a *Aspath) Unmarshal(buf []byte, cps caps.Caps) error {
+func (a *Aspath) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	// support an actually common case: empty AS_PATH
 	if len(buf) == 0 {
 		return nil
@@ -81,7 +82,7 @@ func (a *Aspath) Unmarshal(buf []byte, cps caps.Caps) error {
 	}
 }
 
-func (a *Aspath) Marshal(dst []byte, cps caps.Caps) []byte {
+func (a *Aspath) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
 	// asn length
 	asnlen := 2
 	if a.Code() == ATTR_AS4PATH || cps.Has(caps.CAP_AS4) {

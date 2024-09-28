@@ -3,8 +3,9 @@ package attrs
 import (
 	"net/netip"
 
-	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
 	"github.com/bgpfix/bgpfix/nlri"
 )
@@ -22,7 +23,7 @@ func NewMPPrefixes(mp *MP) MPValue {
 	return &MPPrefixes{MP: mp}
 }
 
-func (a *MPPrefixes) Unmarshal(cps caps.Caps) error {
+func (a *MPPrefixes) Unmarshal(cps caps.Caps, dir dir.Dir) error {
 	var (
 		isv6 = a.IsIPv6()
 		err  error
@@ -41,7 +42,7 @@ func (a *MPPrefixes) Unmarshal(cps caps.Caps) error {
 		} else if addr.Is6() {
 			// IPv6 nexthop for AFI=1 reachable prefixes?
 			enh, ok := cps.Get(caps.CAP_EXTENDED_NEXTHOP).(*caps.ExtNH)
-			if !ok || !enh.Has(a.AF, af.AFI_IPV6) {
+			if !ok || !enh.Has(a.AS, afi.AFI_IPV6) {
 				return ErrValue
 			}
 
@@ -53,11 +54,11 @@ func (a *MPPrefixes) Unmarshal(cps caps.Caps) error {
 		}
 	}
 
-	a.Prefixes, err = nlri.Unmarshal(a.Prefixes, a.Data, a.AF, cps)
+	a.Prefixes, err = nlri.Unmarshal(a.Prefixes, a.Data, a.AS, cps, dir)
 	return err
 }
 
-func (a *MPPrefixes) Marshal(cps caps.Caps) {
+func (a *MPPrefixes) Marshal(cps caps.Caps, dir dir.Dir) {
 	// next-hop
 	nh := a.NH[:0]
 	if a.NextHop.IsValid() {
@@ -69,7 +70,7 @@ func (a *MPPrefixes) Marshal(cps caps.Caps) {
 	a.NH = nh
 
 	// prefixes
-	a.Data = nlri.Marshal(a.Data[:0], a.Prefixes, a.AF, cps)
+	a.Data = nlri.Marshal(a.Data[:0], a.Prefixes, a.AS, cps, dir)
 }
 
 func (a *MPPrefixes) ToJSON(dst []byte) []byte {

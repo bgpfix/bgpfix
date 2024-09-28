@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
 )
 
@@ -19,7 +20,7 @@ func NewCommunity(at CodeFlags) Attr {
 	return &Community{CodeFlags: at}
 }
 
-func (a *Community) Unmarshal(buf []byte, cps caps.Caps) error {
+func (a *Community) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	for len(buf) > 0 {
 		if len(buf) < 4 {
 			return ErrLength
@@ -36,7 +37,7 @@ func (a *Community) Add(asn uint16, value uint16) {
 	a.Value = append(a.Value, value)
 }
 
-func (a *Community) Marshal(dst []byte, cps caps.Caps) []byte {
+func (a *Community) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
 	tl := 4 * len(a.ASN)
 	dst = a.CodeFlags.MarshalLen(dst, tl)
 	for i := range a.ASN {

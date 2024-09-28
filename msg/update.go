@@ -5,7 +5,7 @@ import (
 	"math"
 	"net/netip"
 
-	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/attrs"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
@@ -40,7 +40,8 @@ func (u *Update) Reset() {
 	u.Attrs.Reset()
 }
 
-// Parse parses msg.Data as BGP UPDATE
+// Parse parses msg.Data as BGP UPDATE,
+// in the context of BGP capabilities cps, which can be empty.
 func (u *Update) Parse(cps caps.Caps) error {
 	buf := u.Msg.Data
 	if len(buf) < UPDATE_MINLEN {
@@ -72,7 +73,7 @@ func (u *Update) Parse(cps caps.Caps) error {
 	// announced routes
 	if len(buf) > 0 {
 		var err error
-		u.Reach, err = nlri.Unmarshal(u.Reach, buf, af.AF_IPV4_UNICAST, cps)
+		u.Reach, err = nlri.Unmarshal(u.Reach, buf, afi.AS_IPV4_UNICAST, cps, u.Msg.Dir)
 		if err != nil {
 			return err
 		}
@@ -81,7 +82,7 @@ func (u *Update) Parse(cps caps.Caps) error {
 	// witdrawn routes
 	if len(withdrawn) > 0 {
 		var err error
-		u.Unreach, err = nlri.Unmarshal(u.Unreach, withdrawn, af.AF_IPV4_UNICAST, cps)
+		u.Unreach, err = nlri.Unmarshal(u.Unreach, withdrawn, afi.AS_IPV4_UNICAST, cps, u.Msg.Dir)
 		if err != nil {
 			return err
 		}
@@ -136,7 +137,7 @@ func (u *Update) ParseAttrs(cps caps.Caps) error {
 		// create, overwrite flags, try parsing
 		attr := ats.Use(acode)
 		attr.SetFlags(atyp.Flags())
-		if err := attr.Unmarshal(buf, cps); err != nil {
+		if err := attr.Unmarshal(buf, cps, u.Msg.Dir); err != nil {
 			return fmt.Errorf("%s: %w", acode, err)
 		}
 	}
@@ -154,7 +155,7 @@ func (u *Update) MarshalAttrs(cps caps.Caps) error {
 	// marshal one-by-one
 	var raw []byte
 	u.Attrs.Each(func(i int, ac attrs.Code, at attrs.Attr) {
-		raw = at.Marshal(raw, cps)
+		raw = at.Marshal(raw, cps, u.Msg.Dir)
 	})
 	u.RawAttrs = raw
 	return nil
@@ -167,7 +168,7 @@ func (u *Update) Marshal(cps caps.Caps) error {
 
 	// withdrawn routes
 	buf = append(buf, 0, 0) // length (tbd [1])
-	buf = nlri.Marshal(buf, u.Unreach, af.AF_IPV4_UNICAST, cps)
+	buf = nlri.Marshal(buf, u.Unreach, afi.AS_IPV4_UNICAST, cps, u.Msg.Dir)
 	if l := len(buf) - 2; l > math.MaxUint16 {
 		return fmt.Errorf("Marshal: too long Withdrawn Routes: %w (%d)", ErrLength, l)
 	} else if l > 0 {
@@ -182,7 +183,7 @@ func (u *Update) Marshal(cps caps.Caps) error {
 	buf = append(buf, u.RawAttrs...)
 
 	// announced routes
-	buf = nlri.Marshal(buf, u.Reach, af.AF_IPV4_UNICAST, cps)
+	buf = nlri.Marshal(buf, u.Reach, afi.AS_IPV4_UNICAST, cps, msg.Dir)
 
 	// done
 	msg.Type = UPDATE
@@ -257,16 +258,16 @@ func (u *Update) MP(ac attrs.Code) *attrs.MP {
 	return nil
 }
 
-// AF returns the message address family, giving priority to MP-BGP attributes
-func (u *Update) AF() af.AF {
+// AS returns the message AFI+SAFI, giving priority to MP-BGP attributes
+func (u *Update) AS() afi.AS {
 	if u == nil || u.Msg.Upper != UPDATE {
-		return af.AF_INVALID
+		return afi.AS_INVALID
 	} else if reach := u.MP(attrs.ATTR_MP_REACH); reach != nil {
-		return reach.AF
+		return reach.AS
 	} else if unreach := u.MP(attrs.ATTR_MP_UNREACH); unreach != nil {
-		return unreach.AF
+		return unreach.AS
 	} else {
-		return af.AF_IPV4_UNICAST
+		return afi.AS_IPV4_UNICAST
 	}
 }
 

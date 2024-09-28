@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
 )
 
@@ -20,10 +21,10 @@ type Attr interface {
 	SetFlags(Flags)
 
 	// Unmarshal parses wire representation from src
-	Unmarshal(src []byte, cps caps.Caps) error
+	Unmarshal(src []byte, cps caps.Caps, dir dir.Dir) error
 
 	// Marshal appends wire representation to dst: type(16), length(8/16), and value
-	Marshal(dst []byte, cps caps.Caps) []byte
+	Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte
 
 	// ToJSON appends JSON representation of the value to dst
 	ToJSON(dst []byte) []byte

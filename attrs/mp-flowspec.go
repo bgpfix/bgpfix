@@ -8,8 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
 	"github.com/bgpfix/bgpfix/nlri"
 )
@@ -103,9 +104,9 @@ var FlowNewFuncs6 = map[FlowType]FlowNewFunc{
 }
 
 // NewFlowValue returns a new FlowValue for given FlowType and AFI
-func NewFlowValue(ft FlowType, afi af.AFI) FlowValue {
+func NewFlowValue(ft FlowType, af afi.AFI) FlowValue {
 	var newfuncs map[FlowType]FlowNewFunc
-	if afi == af.AFI_IPV6 {
+	if af == afi.AFI_IPV6 {
 		newfuncs = FlowNewFuncs6
 	} else {
 		newfuncs = FlowNewFuncs4
@@ -145,7 +146,7 @@ func (op FlowOp) Len() int {
 	return 1 << (lcode >> 4)
 }
 
-func (a *MPFlowspec) Unmarshal(cps caps.Caps) error {
+func (a *MPFlowspec) Unmarshal(cps caps.Caps, _ dir.Dir) error {
 	// best-effort NH parser
 	if len(a.NH) > 0 {
 		a.NextHop, a.LinkLocal, _ = ParseNH(a.NH)
@@ -194,7 +195,7 @@ func (a *MPFlowspec) Unmarshal(cps caps.Caps) error {
 	return nil
 }
 
-func (a *MPFlowspec) Marshal(cps caps.Caps) {
+func (a *MPFlowspec) Marshal(cps caps.Caps, _ dir.Dir) {
 	// best-effort
 	nh := a.NH[:0]
 	if a.NextHop.IsValid() {
@@ -316,7 +317,7 @@ func (fr FlowRule) ToJSON(dst []byte) []byte {
 	return append(dst, '}')
 }
 
-func (fr FlowRule) FromJSON(src []byte, afi af.AFI) error {
+func (fr FlowRule) FromJSON(src []byte, afi afi.AFI) error {
 	return json.ObjectEach(src, func(key string, val []byte, typ json.Type) error {
 		// lookup flow type
 		ftype, ok := FlowTypeValue[key]

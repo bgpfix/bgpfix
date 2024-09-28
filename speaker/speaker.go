@@ -6,8 +6,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
 	"github.com/rs/zerolog"
@@ -39,7 +40,7 @@ func NewSpeaker(ctx context.Context) *Speaker {
 
 // Attach attaches the speaker to given pipe input.
 // Must not be called more than once.
-func (s *Speaker) Attach(p *pipe.Pipe, dst msg.Dir) error {
+func (s *Speaker) Attach(p *pipe.Pipe, dst dir.Dir) error {
 	s.pipe = p
 	s.in = p.AddInput(dst)
 	s.up = p.LineFor(dst)
@@ -142,11 +143,11 @@ func (s *Speaker) sendOpen(ro *msg.Open) {
 	o.Caps.Use(caps.CAP_EXTENDED_MESSAGE)
 	o.Caps.Use(caps.CAP_ROUTE_REFRESH)
 	if mp, ok := o.Caps.Use(caps.CAP_MP).(*caps.MP); ok {
-		mp.Add(af.AFI_IPV4, af.SAFI_UNICAST)
-		mp.Add(af.AFI_IPV4, af.SAFI_FLOWSPEC)
+		mp.Add(afi.AFI_IPV4, afi.SAFI_UNICAST)
+		mp.Add(afi.AFI_IPV4, afi.SAFI_FLOWSPEC)
 
-		mp.Add(af.AFI_IPV6, af.SAFI_UNICAST)
-		mp.Add(af.AFI_IPV6, af.SAFI_FLOWSPEC)
+		mp.Add(afi.AFI_IPV6, afi.SAFI_UNICAST)
+		mp.Add(afi.AFI_IPV6, afi.SAFI_FLOWSPEC)
 	}
 
 	// queue for sending

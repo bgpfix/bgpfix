@@ -3,17 +3,17 @@ package caps
 import (
 	"slices"
 
-	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/json"
 )
 
 // ExtNH implements CAP_EXTENDED_NEXTHOP rfc8950
 type ExtNH struct {
-	Proto map[af.AFV]bool
+	Proto map[afi.ASV]bool
 }
 
 func NewExtNH(cc Code) Cap {
-	return &ExtNH{make(map[af.AFV]bool)}
+	return &ExtNH{make(map[afi.ASV]bool)}
 }
 
 func (c *ExtNH) Unmarshal(buf []byte, caps Caps) error {
@@ -22,8 +22,8 @@ func (c *ExtNH) Unmarshal(buf []byte, caps Caps) error {
 			return ErrLength
 		}
 
-		asf := af.NewAFBytes(buf[0:4])
-		nhf := af.NewAFIBytes(buf[4:6])
+		asf := afi.NewASBytes(buf[0:4])
+		nhf := afi.NewAFIBytes(buf[4:6])
 		buf = buf[6:]
 
 		c.Add(asf, nhf)
@@ -32,19 +32,19 @@ func (c *ExtNH) Unmarshal(buf []byte, caps Caps) error {
 	return nil
 }
 
-func (c *ExtNH) Add(as af.AF, nhf af.AFI) {
+func (c *ExtNH) Add(as afi.AS, nhf afi.AFI) {
 	c.Proto[as.AddVal(uint32(nhf))] = true
 }
 
-func (c *ExtNH) Has(as af.AF, nhf af.AFI) bool {
+func (c *ExtNH) Has(as afi.AS, nhf afi.AFI) bool {
 	return c.Proto[as.AddVal(uint32(nhf))]
 }
 
-func (c *ExtNH) Drop(as af.AF, nhf af.AFI) {
+func (c *ExtNH) Drop(as afi.AS, nhf afi.AFI) {
 	delete(c.Proto, as.AddVal(uint32(nhf)))
 }
 
-func (c *ExtNH) Sorted() (dst []af.AFV) {
+func (c *ExtNH) Sorted() (dst []afi.ASV) {
 	for asv, val := range c.Proto {
 		if val {
 			dst = append(dst, asv)
@@ -60,7 +60,7 @@ func (c *ExtNH) Intersect(cap2 Cap) Cap {
 		return nil
 	}
 
-	dst := &ExtNH{make(map[af.AFV]bool)}
+	dst := &ExtNH{make(map[afi.ASV]bool)}
 	for asv, val := range c.Proto {
 		if val && c2.Proto[asv] {
 			dst.Proto[asv] = true
@@ -72,7 +72,7 @@ func (c *ExtNH) Intersect(cap2 Cap) Cap {
 func (c *ExtNH) Marshal(dst []byte) []byte {
 	todo := c.Sorted()
 
-	var step []af.AFV
+	var step []afi.ASV
 	for len(todo) > 0 {
 		if len(todo) > 42 {
 			dst = append(dst, byte(CAP_EXTENDED_NEXTHOP), 6*42)
@@ -100,7 +100,7 @@ func (c *ExtNH) ToJSON(dst []byte) []byte {
 		if i > 0 {
 			dst = append(dst, `,`...)
 		}
-		afi2 := af.AFI(afv.Val())
+		afi2 := afi.AFI(afv.Val())
 		dst = afv.ToJSON(dst, afi2.String())
 	}
 	return append(dst, ']')
@@ -108,9 +108,9 @@ func (c *ExtNH) ToJSON(dst []byte) []byte {
 
 func (c *ExtNH) FromJSON(src []byte) (err error) {
 	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
-		var asv af.AFV
+		var asv afi.ASV
 		err := asv.FromJSON(val, func(s string) (uint32, error) {
-			afi2, err := af.AFIString(s)
+			afi2, err := afi.AFIString(s)
 			return uint32(afi2), err
 		})
 		if err != nil {

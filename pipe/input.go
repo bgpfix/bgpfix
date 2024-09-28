@@ -6,9 +6,10 @@ import (
 	"slices"
 	"time"
 
-	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/attrs"
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/msg"
 )
 
@@ -20,7 +21,7 @@ type Input struct {
 
 	Id   int     // optional id
 	Name string  // optional name
-	Dir  msg.Dir // input direction
+	Dir  dir.Dir // input direction
 
 	// In is the input for incoming messages.
 	In chan *msg.Msg
@@ -152,7 +153,7 @@ func (in *Input) process() {
 		p        = in.Pipe
 		l        = in.Line
 		closed   bool
-		eor_todo map[af.AF]bool
+		eor_todo map[afi.AS]bool
 	)
 	defer close(in.done)
 
@@ -230,7 +231,7 @@ input:
 			// an End-of-RIB marker?
 			if m.Len() < 32 && m.Parse(p.Caps) == nil {
 				// get Address Family
-				afi := af.AF_IPV4_UNICAST
+				as := afi.AS_IPV4_UNICAST
 				if m.Len() == msg.HEADLEN+msg.UPDATE_MINLEN {
 					// must be IPv4 unicast
 				} else if a := m.Update.Attrs; a.Len() != 1 {
@@ -238,30 +239,30 @@ input:
 				} else if unreach, ok := a.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); !ok {
 					break // must ATTR_MP_UNREACH
 				} else {
-					afi = unreach.AF
+					as = unreach.AS
 				}
 
 				// already seen?
-				if _, loaded := l.EoR.LoadOrStore(afi, t); loaded {
+				if _, loaded := l.EoR.LoadOrStore(as, t); loaded {
 					break
 				} else { // it's new, announce
-					p.Event(EVENT_EOR_AF, m.Dir, afi.Afi(), afi.Safi())
+					p.Event(EVENT_EOR_AF, m.Dir, as.Afi(), as.Safi())
 				}
 
 				// tick afi off our todo list
 				if eor_todo == nil {
-					eor_todo = make(map[af.AF]bool)
+					eor_todo = make(map[afi.AS]bool)
 					if c, ok := p.Caps.Get(caps.CAP_MP).(*caps.MP); ok {
 						maps.Copy(eor_todo, c.Proto)
 					} else {
-						eor_todo[af.AF_IPV4_UNICAST] = true
+						eor_todo[afi.AS_IPV4_UNICAST] = true
 					}
 				} else if len(eor_todo) == 0 {
 					break // already seen all required AFs
 				}
 
 				// satisfies all AFs in p.Caps?
-				delete(eor_todo, afi)
+				delete(eor_todo, as)
 				if len(eor_todo) == 0 {
 					p.Event(EVENT_EOR, m.Dir)
 				}
@@ -283,9 +284,15 @@ func (in *Input) Close() {
 	close(in.In)
 }
 
-// Wait blocks until the input is done processing the messages
-func (in *Input) Wait() {
-	<-in.done
+// Wait blocks until the input is done processing the messages (returns true),
+// or aborts if the Pipe context is cancelled (returns false).
+func (in *Input) Wait() bool {
+	select {
+	case <-in.Pipe.ctx.Done():
+		return false
+	case <-in.done:
+		return true
+	}
 }
 
 // Write implements io.Writer and reads all BGP messages from src into in.In.

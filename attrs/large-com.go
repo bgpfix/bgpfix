@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
 )
 
@@ -21,7 +22,7 @@ func NewLargeCom(at CodeFlags) Attr {
 	return &LargeCom{CodeFlags: at}
 }
 
-func (a *LargeCom) Unmarshal(buf []byte, cps caps.Caps) error {
+func (a *LargeCom) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	for len(buf) > 0 {
 		if len(buf) < 12 {
 			return ErrLength
@@ -42,7 +43,7 @@ func (a *LargeCom) Add(asn, value1, value2 uint32) {
 	a.Value2 = append(a.Value2, value2)
 }
 
-func (a *LargeCom) Marshal(dst []byte, cps caps.Caps) []byte {
+func (a *LargeCom) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
 	tl := 12 * len(a.ASN)
 	dst = a.CodeFlags.MarshalLen(dst, tl)
 	for i := range a.ASN {

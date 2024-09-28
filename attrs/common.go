@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
 )
 
@@ -19,14 +20,14 @@ func NewRaw(at CodeFlags) Attr {
 	return &Raw{CodeFlags: at}
 }
 
-func (a *Raw) Unmarshal(buf []byte, cps caps.Caps) error {
+func (a *Raw) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	if len(buf) > 0 {
 		a.Raw = append(a.Raw, buf...) // copy
 	}
 	return nil
 }
 
-func (a *Raw) Marshal(dst []byte, cps caps.Caps) []byte {
+func (a *Raw) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
 	dst = a.CodeFlags.MarshalLen(dst, len(a.Raw))
 	dst = append(dst, a.Raw...)
 	return dst
@@ -59,7 +60,7 @@ func NewOrigin(at CodeFlags) Attr {
 	return &Origin{CodeFlags: at}
 }
 
-func (a *Origin) Unmarshal(buf []byte, cps caps.Caps) error {
+func (a *Origin) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	if len(buf) != 1 {
 		return ErrLength
 	}
@@ -68,7 +69,7 @@ func (a *Origin) Unmarshal(buf []byte, cps caps.Caps) error {
 	return nil
 }
 
-func (a *Origin) Marshal(dst []byte, cps caps.Caps) []byte {
+func (a *Origin) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
 	dst = a.CodeFlags.MarshalLen(dst, 1)
 	return append(dst, a.Origin)
 }
@@ -111,7 +112,7 @@ func NewU32(at CodeFlags) Attr {
 	return &U32{CodeFlags: at}
 }
 
-func (a *U32) Unmarshal(buf []byte, cps caps.Caps) error {
+func (a *U32) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	if len(buf) != 4 {
 		return ErrLength
 	}
@@ -120,7 +121,7 @@ func (a *U32) Unmarshal(buf []byte, cps caps.Caps) error {
 	return nil
 }
 
-func (a *U32) Marshal(dst []byte, cps caps.Caps) []byte {
+func (a *U32) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
 	dst = a.CodeFlags.MarshalLen(dst, 4)
 	return msb.AppendUint32(dst, a.Val)
 }
@@ -145,7 +146,7 @@ func NewAggregator(at CodeFlags) Attr {
 	return &Aggregator{CodeFlags: at}
 }
 
-func (a *Aggregator) Unmarshal(buf []byte, cps caps.Caps) error {
+func (a *Aggregator) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	// asn length
 	asnlen := 2
 	if a.Code() == ATTR_AS4AGGREGATOR || cps.Has(caps.CAP_AS4) {
@@ -168,7 +169,7 @@ func (a *Aggregator) Unmarshal(buf []byte, cps caps.Caps) error {
 	return nil
 }
 
-func (a *Aggregator) Marshal(dst []byte, cps caps.Caps) []byte {
+func (a *Aggregator) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
 	// asn length
 	asnlen := 2
 	if a.Code() == ATTR_AS4AGGREGATOR || cps.Has(caps.CAP_AS4) {
@@ -221,7 +222,7 @@ func NewIP6(at CodeFlags) Attr {
 	return &IP{CodeFlags: at, IPv6: true}
 }
 
-func (a *IP) Unmarshal(buf []byte, cps caps.Caps) error {
+func (a *IP) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	switch {
 	case !a.IPv6 && len(buf) == 4:
 		a.Addr = netip.AddrFrom4([4]byte(buf))
@@ -233,7 +234,7 @@ func (a *IP) Unmarshal(buf []byte, cps caps.Caps) error {
 	return nil
 }
 
-func (a *IP) Marshal(dst []byte, cps caps.Caps) []byte {
+func (a *IP) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
 	addr := a.Addr.AsSlice()
 	dst = a.CodeFlags.MarshalLen(dst, len(addr))
 	dst = append(dst, addr...)
@@ -272,7 +273,7 @@ func NewIPList6(at CodeFlags) Attr {
 	return &IPList{CodeFlags: at, IPv6: true}
 }
 
-func (a *IPList) Unmarshal(buf []byte, cps caps.Caps) error {
+func (a *IPList) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	var addr netip.Addr
 	for len(buf) > 0 {
 		if a.IPv6 {
@@ -295,7 +296,7 @@ func (a *IPList) Unmarshal(buf []byte, cps caps.Caps) error {
 	return nil
 }
 
-func (a *IPList) Marshal(dst []byte, cps caps.Caps) []byte {
+func (a *IPList) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
 	tl := 0
 	for _, addr := range a.Addr {
 		if addr.Is6() {

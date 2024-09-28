@@ -5,7 +5,8 @@ import (
 	"io"
 	"sync/atomic"
 
-	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/afi"
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/puzpuzpuz/xsync/v3"
 )
@@ -14,7 +15,7 @@ import (
 // run messages through callbacks and write the results to a common output.
 type Line struct {
 	Pipe *Pipe   // parent pipe
-	Dir  msg.Dir // line direction
+	Dir  dir.Dir // line direction
 
 	// the default Input, which processes messages through all callbacks.
 	Input
@@ -35,7 +36,7 @@ type Line struct {
 	Open atomic.Pointer[msg.Open]
 
 	// UNIX timestamp (seconds) of the first EoR for given AF
-	EoR *xsync.MapOf[af.AF, int64]
+	EoR *xsync.MapOf[afi.AS, int64]
 
 	inputs []*Input      // all input processors, [0] is the default .Input
 	seq    atomic.Int64  // last seq number assigned
@@ -47,7 +48,7 @@ type Line struct {
 func (l *Line) attach() {
 	p := l.Pipe
 	l.done = make(chan struct{})
-	l.EoR = xsync.NewMapOf[af.AF, int64]()
+	l.EoR = xsync.NewMapOf[afi.AS, int64]()
 
 	// the default input
 	l.Input.attach(p, l)
@@ -78,9 +79,15 @@ func (l *Line) start() {
 	}()
 }
 
-// Wait blocks until all processing is done
-func (l *Line) Wait() {
-	<-l.done
+// Wait blocks until all processing is done (returns true),
+// or aborts if the Pipe context is cancelled (returns false).
+func (l *Line) Wait() bool {
+	select {
+	case <-l.Pipe.ctx.Done():
+		return false
+	case <-l.done:
+		return true
+	}
 }
 
 // Close safely closes all inputs, which should eventually stop the line

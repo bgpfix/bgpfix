@@ -1,4 +1,4 @@
-package af
+package afi
 
 //go:generate go run github.com/dmarkham/enumer -type SAFI -trimprefix SAFI_
 type SAFI uint8
