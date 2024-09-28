@@ -3,28 +3,29 @@ package caps
 import (
 	"slices"
 
-	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/afi"
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
 )
 
 // AddPath implements CAP_ADDPATH rfc7911
 type AddPath struct {
 	// Proto maps AFI+SAFI pairs to Send/Receive directions
-	Proto map[af.AF]AddPathDir
+	Proto map[afi.AS]AddPathDir
 }
 
 //go:generate go run github.com/dmarkham/enumer -type AddPathDir -trimprefix ADDPATH_
 type AddPathDir uint8
 
-// the only valid values for the Send/Receive field
+// re-use values used in the dir package; assume we're the L side
 const (
-	ADDPATH_RECEIVE AddPathDir = 0b01
-	ADDPATH_SEND    AddPathDir = 0b10
-	ADDPATH_BIDIR   AddPathDir = 0b11
+	ADDPATH_RECEIVE AddPathDir = AddPathDir(dir.DIR_L)
+	ADDPATH_SEND    AddPathDir = AddPathDir(dir.DIR_R)
+	ADDPATH_BIDIR   AddPathDir = AddPathDir(dir.DIR_LR)
 )
 
 func NewAddPath(cc Code) Cap {
-	return &AddPath{make(map[af.AF]AddPathDir)}
+	return &AddPath{make(map[afi.AS]AddPathDir)}
 }
 
 // Unmarshal parses wire representation from src.
@@ -34,12 +35,16 @@ func (c *AddPath) Unmarshal(src []byte, caps Caps) error {
 		if len(src) < 4 {
 			return ErrLength
 		}
-		as := af.NewAFBytes(src[0:3]) // afi+safi
-		sr := AddPathDir(src[3])      // send/receive
-		if !sr.IsAAddPathDir() {
+
+		as := afi.NewASBytes(src[0:3]) // afi+safi
+		sr := AddPathDir(src[3])       // send/receive
+		src = src[4:]
+
+		if sr.IsAAddPathDir() {
+			c.Add(as, sr)
+		} else {
 			return ErrValue
 		}
-		c.Add(as, sr)
 	}
 	return nil
 }
@@ -57,37 +62,43 @@ func (c *AddPath) Marshal(dst []byte) []byte {
 
 // Add adds ADD_PATH for AFI+SAIF pair in as, and the Send/Receive value in dir.
 // The value in sr must already be valid.
-func (c *AddPath) Add(as af.AF, dir AddPathDir) {
+func (c *AddPath) Add(as afi.AS, dir AddPathDir) {
 	c.Proto[as] = dir
 }
 
 // Has returns true iff ADD_PATH is enabled for AFI+SAFI pair in the dir direction.
-func (c *AddPath) Has(as af.AF, dir AddPathDir) bool {
+func (c *AddPath) Has(as afi.AS, dir AddPathDir) bool {
 	return c != nil && c.Proto[as]&dir != 0
 }
 
-// AddPathHasSend returns true iff cps has ADD_PATH enabled in the Send direction
-func (cps *Caps) AddPathHasSend(as af.AF) bool {
+// AddPathEnabled returns true iff ADD_PATH is enabled in given direction for as
+func (cps *Caps) AddPathEnabled(as afi.AS, dst dir.Dir) bool {
 	ap, ok := cps.Get(CAP_ADDPATH).(*AddPath)
-	return ok && ap.Has(as, ADDPATH_SEND)
-}
+	if !ok {
+		return false
+	}
 
-// AddPathHasReceive returns true iff cps has ADD_PATH enabled in the Receive direction
-func (cps *Caps) AddPathHasReceive(as af.AF) bool {
-	ap, ok := cps.Get(CAP_ADDPATH).(*AddPath)
-	return ok && ap.Has(as, ADDPATH_RECEIVE)
+	if dst&dir.DIR_R != 0 {
+		// ie. we are L sending to R
+		return ap.Has(as, ADDPATH_SEND)
+	} else {
+		// ie. we are L receiving from R
+		return ap.Has(as, ADDPATH_RECEIVE)
+	}
 }
 
 // Drop drops ADD_PATH for AFI+SAFI pair in as, whatever the Send/Receive is.
-func (c *AddPath) Drop(as af.AF) {
+func (c *AddPath) Drop(as afi.AS) {
 	delete(c.Proto, as)
 }
 
-// Sorted returns all AFI+SAFI pairs in sorted order,
-// with their Send/Receive encoded as VAL in AFV.
-func (c *AddPath) Sorted() (dst []af.AFV) {
+// Sorted returns all valid AFI+SAFI pairs in sorted order,
+// with their Send/Receive encoded as VAL in ASV.
+func (c *AddPath) Sorted() (dst []afi.ASV) {
 	for as, dir := range c.Proto {
-		dst = append(dst, as.AddVal(uint32(dir)))
+		if dir.IsAAddPathDir() {
+			dst = append(dst, as.AddVal(uint32(dir)))
+		}
 	}
 	slices.Sort(dst)
 	return
@@ -104,53 +115,57 @@ func (c *AddPath) ToJSON(dst []byte) []byte {
 		dir := AddPathDir(afv.Val())
 		dst = afv.ToJSON(dst, dir.String())
 	}
-
 	return append(dst, '}')
 }
 
 // FromJSON reads from JSON representation in src
 func (c *AddPath) FromJSON(src []byte) (err error) {
 	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
-		var asv af.AFV
-		err := asv.FromJSON(val, func(s string) (uint32, error) {
+		var afv afi.ASV
+		err := afv.FromJSON(val, func(s string) (uint32, error) {
 			dir, err := AddPathDirString(s)
 			return uint32(dir), err
 		})
-		if err != nil {
-			return err
+		if err == nil {
+			c.Proto[afv.AF()] = AddPathDir(afv.Val())
 		}
-		c.Proto[asv.DropVal()] = AddPathDir(asv.Val())
-		return nil
+		return err
 	})
 }
 
 // Intersect returns a new instance that represents its intersection with cap2.
-// c1 is received from peer, cap2 is what we sent.
-func (c1 *AddPath) Intersect(cap2 Cap) Cap {
-	c2, ok := cap2.(*AddPath)
+// cr = caps sent from L to R, cl = caps sent from R to L
+func (cr *AddPath) Intersect(cap2 Cap) Cap {
+	// ADD_PATH sent in R direction
+	cl, ok := cap2.(*AddPath)
 	if !ok {
 		return nil
 	}
 
+	// the result
 	dst := &AddPath{
-		Proto: make(map[af.AF]AddPathDir),
+		Proto: make(map[afi.AS]AddPathDir),
 	}
 
-	for as, peer := range c1.Proto {
-		local := c2.Proto[as]  // what we sent for AFI+SAFI
-		final := AddPathDir(0) // negotiated for AFI+SAFI
+	// for every AFI+SAFI from R
+	for as, fromR := range cl.Proto {
+		fromL := cr.Proto[as] // check what was sent from L
+		var final AddPathDir  // negotiated
 
-		// can we send ADD_PATH?
-		if local&ADDPATH_SEND != 0 && peer&ADDPATH_RECEIVE != 0 {
+		// can L send?
+		if fromL&ADDPATH_SEND != 0 && fromR&ADDPATH_RECEIVE != 0 {
 			final |= ADDPATH_SEND
 		}
 
-		// should we receive ADD_PATH?
-		if local&ADDPATH_RECEIVE != 0 && peer&ADDPATH_SEND != 0 {
+		// can L receive?
+		if fromL&ADDPATH_RECEIVE != 0 && fromR&ADDPATH_SEND != 0 {
 			final |= ADDPATH_RECEIVE
 		}
 
-		dst.Proto[as] = final
+		// double-sure its valid
+		if final.IsAAddPathDir() {
+			dst.Proto[as] = final
+		}
 	}
 
 	return dst
