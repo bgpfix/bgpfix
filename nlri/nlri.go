@@ -23,13 +23,42 @@ type NLRI struct {
 	Val     uint32  // additional NLRI value, eg. the ADD_PATH Path Identifier
 }
 
-type Options byte
+type Options = byte
 
 const (
 	_           Options = iota
 	OPT_VALUE           // Val holds some arbitrary value (user-controlled)
 	OPT_ADDPATH         // Val holds ADD_PATH
 )
+
+// FromPrefix returns prefix p wrapped in NLRI
+func FromPrefix(p netip.Prefix) NLRI {
+	return NLRI{Prefix: p}
+}
+
+// FindParent returns the first index i into parents
+// where parents[i] fully covers p, or -1 if not found.
+func (p *NLRI) FindParent(parents []NLRI) int {
+	addr, bits := p.Addr(), p.Bits()
+
+	for i := range parents {
+		p2 := &parents[i]
+		switch bits2 := p2.Bits(); {
+		case bits2 < bits:
+			if p2.Overlaps(p.Prefix) {
+				return i
+			}
+		case bits2 > bits:
+			continue // p2 is smaller, no way its a parent
+		default:
+			if p2.Addr().Compare(addr) == 0 {
+				return i
+			}
+		}
+	}
+
+	return -1
+}
 
 // ToJSON appends JSON representation of prefixes in src to dst
 func ToJSON(dst []byte, src []NLRI) []byte {
