@@ -191,9 +191,21 @@ func (a *Aspath) FromJSON(src []byte) error {
 	return err
 }
 
-// HasAsn returns true if ap has given asn anywhere in AS_PATH
-func (ap *Aspath) HasAsn(asn uint32) bool {
+// HasAsn returns true if ap has given asn anywhere in AS_PATH.
+// If as_set=1, scans AS_SETs only; if -1, ignores AS_SETs completely.
+func (ap *Aspath) HasAsn(asn uint32, as_set int) bool {
 	for si := range ap.Segments {
+		seg := &ap.Segments[si]
+		switch as_set {
+		case 1: // require AS_SETs
+			if !seg.IsSet {
+				continue
+			}
+		case -1: // ignore AS_SETs
+			if seg.IsSet {
+				continue
+			}
+		}
 		if slices.Index(ap.Segments[si].List, asn) != -1 {
 			return true
 		}
@@ -202,20 +214,35 @@ func (ap *Aspath) HasAsn(asn uint32) bool {
 }
 
 // HasOrigin returns true iff ap has given asn at the origin.
-// In case of origin AS sets, asn must be one of the set elements.
-func (ap *Aspath) HasOrigin(asn uint32) bool {
+// If as_set=1, requires an AS_SET origin; if -1, requires a non-AS_SET origin.
+// For an AS_SET origin to match the asn must be one of its elements.
+func (ap *Aspath) HasOrigin(asn uint32, as_set int) bool {
 	lastseg := len(ap.Segments) - 1
 	if lastseg < 0 {
 		return false // no segments?
 	}
 
 	seg := &ap.Segments[lastseg]
-	if sl := len(seg.List); sl == 0 {
+	segl := len(seg.List)
+	if segl == 0 {
 		return false // no ASes in the last segment?!
-	} else if seg.IsSet {
+	}
+
+	switch as_set {
+	case 1: // require AS_SETs
+		if !seg.IsSet {
+			return false
+		}
+	case -1: // ignore AS_SETs
+		if seg.IsSet {
+			return false
+		}
+	}
+
+	if seg.IsSet {
 		return slices.Index(seg.List, asn) != -1
 	} else {
-		return seg.List[sl-1] == asn
+		return seg.List[segl-1] == asn
 	}
 }
 
