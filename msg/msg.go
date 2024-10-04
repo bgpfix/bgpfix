@@ -384,10 +384,10 @@ func (msg *Msg) GetJSON() []byte {
 	dst := append(msg.json[:0], `["`...)
 
 	// [0] direction
-	dst = append(dst, msg.Dir.String()...) // TODO: or number
+	dst = append(dst, msg.Dir.String()...)
 	dst = append(dst, `",`...)
 
-	// [1] sequence number (for dir)
+	// [1] sequence number
 	dst = strconv.AppendInt(dst, msg.Seq, 10)
 	dst = append(dst, `,"`...)
 
