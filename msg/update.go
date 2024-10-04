@@ -285,6 +285,18 @@ func (u *Update) HasReach() bool {
 	return false
 }
 
+// GetReach appends all reachable IP prefixes in u to dst (can be nil)
+func (u *Update) GetReach(dst []nlri.NLRI) []nlri.NLRI {
+	if u == nil || u.Msg.Upper != UPDATE {
+		return dst
+	}
+	dst = append(dst, u.Reach...)
+	if mp := u.MP(attrs.ATTR_MP_REACH).Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
+		dst = append(dst, mp.Prefixes...)
+	}
+	return dst
+}
+
 // HasUnreach returns true iff u withdraws unreachable NLRI (for any address family AF).
 func (u *Update) HasUnreach() bool {
 	if u == nil || u.Msg.Upper != UPDATE {
@@ -299,6 +311,18 @@ func (u *Update) HasUnreach() bool {
 	return false
 }
 
+// GetUnreach appends all unreachable IP prefixes in u to dst (can be nil)
+func (u *Update) GetUnreach(dst []nlri.NLRI) []nlri.NLRI {
+	if u == nil || u.Msg.Upper != UPDATE {
+		return dst
+	}
+	dst = append(dst, u.Unreach...)
+	if mp := u.MP(attrs.ATTR_MP_UNREACH).Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
+		dst = append(dst, mp.Prefixes...)
+	}
+	return dst
+}
+
 // AsPath returns the ATTR_ASPATH from u, or nil if not defined.
 // TODO: support ATTR_AS4PATH
 func (u *Update) AsPath() *attrs.Aspath {
@@ -311,16 +335,17 @@ func (u *Update) AsPath() *attrs.Aspath {
 	}
 }
 
-// NextHop returns NEXT_HOP address, or nil if not possible
-func (u *Update) NextHop() *netip.Addr {
+// NextHop returns NEXT_HOP address, if possible.
+// Check nh.IsValid() before using the value.
+func (u *Update) NextHop() (nh netip.Addr) {
 	if u == nil || u.Msg.Upper != UPDATE {
-		return nil
+		return
 	}
 	if mp := u.MP(attrs.ATTR_MP_REACH).Prefixes(); mp != nil {
-		return &mp.NextHop
+		return mp.NextHop
 	}
 	if nh, _ := u.Attrs.Get(attrs.ATTR_NEXTHOP).(*attrs.IP); nh != nil {
-		return &nh.Addr
+		return nh.Addr
 	}
-	return nil
+	return
 }
