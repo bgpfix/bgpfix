@@ -71,7 +71,7 @@ func main() {
 
 	// create a Pipe, add callback and event handlers
 	p := pipe.NewPipe(context.Background())
-	p.OnMsg(print, msg.DIR_LR) // call print() on every message in any direction
+	p.OnMsg(print, dir.DIR_LR) // call print() on every message in any direction
 	p.OnEvent(event)           // call event() on any pipe event
 
 	// L side: a TCP target, sending to R
@@ -86,7 +86,7 @@ func main() {
 	spk.Options.LocalASN = *opt_asn
 	spk.Options.LocalHoldTime = *opt_hold
 	spk.Options.LocalId = netip.MustParseAddr(*opt_id)
-	spk.Attach(p, msg.DIR_L)
+	spk.Attach(p, dir.DIR_L)
 
 	// copy from conn -> R
 	go func() {
@@ -294,6 +294,7 @@ RFCs:
  * [RFC5668 4-Octet AS Specific BGP Extended Community](https://datatracker.ietf.org/doc/html/rfc5668)
  * [RFC6793 BGP Support for Four-Octet Autonomous System (AS) Number Space](https://datatracker.ietf.org/doc/html/rfc6793)
  * [RFC6396 Multi-Threaded Routing Toolkit (MRT) Routing Information Export Format](https://datatracker.ietf.org/doc/html/rfc6396)
+ * [RFC7911 Advertisement of Multiple Paths in BGP](https://datatracker.ietf.org/doc/html/rfc7911)
  * [RFC8092 BGP Large Communities Attribute](https://datatracker.ietf.org/doc/html/rfc8092)
  * [RFC8654 Extended Message Support for BGP](https://datatracker.ietf.org/doc/html/rfc8654)
  * [RFC8950 Advertising IPv4 Network Layer Reachability Information (NLRI) with an IPv6 Next Hop](https://datatracker.ietf.org/doc/html/rfc8950)

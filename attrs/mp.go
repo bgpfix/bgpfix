@@ -1,15 +1,16 @@
 package attrs
 
 import (
-	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
 )
 
 // MP represents ATTR_MP_REACH and ATTR_MP_UNREACH attributes
 type MP struct {
 	CodeFlags
-	af.AF
+	afi.AS
 
 	NH    []byte  // only for ATTR_MP_REACH
 	Data  []byte  // NLRI or unreachable
@@ -19,16 +20,16 @@ type MP struct {
 // MP attribute Value
 type MPValue interface {
 	// Afi returns the AFI of the parent
-	Afi() af.AFI
+	Afi() afi.AFI
 
 	// Safi returns the SAFI of the parent
-	Safi() af.SAFI
+	Safi() afi.SAFI
 
 	// Unmarshal parses wire representation from the parent
-	Unmarshal(cps caps.Caps) error
+	Unmarshal(cps caps.Caps, dir dir.Dir) error
 
 	// Marshal writes wire representation to the parent
-	Marshal(cps caps.Caps)
+	Marshal(cps caps.Caps, dir dir.Dir)
 
 	// ToJSON appends *JSON keys* to dst (will be embedded in the parent object)
 	ToJSON(dst []byte) []byte
@@ -41,12 +42,11 @@ type MPValue interface {
 type MPNewFunc func(mp *MP) MPValue
 
 // MPNewFuncs maps ATTR_MP_* afi/safi pairs to their NewFunc
-var MPNewFuncs = map[af.AF]MPNewFunc{
-	af.New(af.AFI_IPV4, af.SAFI_UNICAST):  NewMPPrefixes,
-	af.New(af.AFI_IPV4, af.SAFI_FLOWSPEC): NewMPFlowspec,
-
-	af.New(af.AFI_IPV6, af.SAFI_UNICAST):  NewMPPrefixes,
-	af.New(af.AFI_IPV6, af.SAFI_FLOWSPEC): NewMPFlowspec,
+var MPNewFuncs = map[afi.AS]MPNewFunc{
+	afi.AS_IPV4_UNICAST:  NewMPPrefixes,
+	afi.AS_IPV4_FLOWSPEC: NewMPFlowspec,
+	afi.AS_IPV6_UNICAST:  NewMPPrefixes,
+	afi.AS_IPV6_FLOWSPEC: NewMPFlowspec,
 }
 
 func NewMP(at CodeFlags) Attr {
@@ -56,19 +56,19 @@ func NewMP(at CodeFlags) Attr {
 // NewMPValue returns a new MPValue for parent mp,
 // or nil if its AFI/SAFI pair is not supported.
 func NewMPValue(mp *MP) MPValue {
-	if newfunc, ok := MPNewFuncs[mp.AF]; ok {
+	if newfunc, ok := MPNewFuncs[mp.AS]; ok {
 		return newfunc(mp)
 	} else {
 		return nil
 	}
 }
 
-func (mp *MP) Unmarshal(buf []byte, cps caps.Caps) error {
+func (mp *MP) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	// afi + safi
 	if len(buf) < 3 {
 		return ErrLength
 	}
-	mp.AF = af.NewASBytes(buf[0:3])
+	mp.AS = afi.NewASBytes(buf[0:3])
 	buf = buf[3:]
 
 	// nexthop?
@@ -93,15 +93,15 @@ func (mp *MP) Unmarshal(buf []byte, cps caps.Caps) error {
 	// parse the value?
 	mp.Value = NewMPValue(mp)
 	if mp.Value != nil {
-		return mp.Value.Unmarshal(cps)
+		return mp.Value.Unmarshal(cps, dir)
 	}
 
 	return nil
 }
 
-func (mp *MP) Marshal(dst []byte, cps caps.Caps) []byte {
+func (mp *MP) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
 	if mp.Value != nil {
-		mp.Value.Marshal(cps)
+		mp.Value.Marshal(cps, dir)
 	}
 
 	tl := 2 + 1 + len(mp.Data) // afi + safi + nlri
@@ -110,7 +110,7 @@ func (mp *MP) Marshal(dst []byte, cps caps.Caps) []byte {
 	}
 	dst = mp.CodeFlags.MarshalLen(dst, tl)
 
-	dst = mp.AF.Marshal3(dst)
+	dst = mp.AS.Marshal3(dst)
 	if mp.Code() == ATTR_MP_REACH {
 		dst = append(dst, byte(len(mp.NH)))
 		dst = append(dst, mp.NH...)
@@ -122,7 +122,7 @@ func (mp *MP) Marshal(dst []byte, cps caps.Caps) []byte {
 
 func (mp *MP) ToJSON(dst []byte) []byte {
 	dst = append(dst, '{')
-	dst = mp.AF.ToJSONKey(dst, "af")
+	dst = mp.AS.ToJSONKey(dst, "af")
 	dst = append(dst, ',')
 
 	if mp.Value != nil {
@@ -144,7 +144,7 @@ func (mp *MP) FromJSON(src []byte) error {
 	err := json.ObjectEach(src, func(key string, val []byte, typ json.Type) (err error) {
 		switch key {
 		case "af":
-			err = mp.AF.FromJSON(val)
+			err = mp.AS.FromJSON(val)
 		case "nh":
 			mp.NH, err = json.UnHex(val, mp.NH[:0])
 		case "data":
@@ -162,4 +162,14 @@ func (mp *MP) FromJSON(src []byte) error {
 		return mp.Value.FromJSON(src)
 	}
 	return nil
+}
+
+// Prefixes returns mp.Value interpreted as MPPrefixes, or nil on error
+func (mp *MP) Prefixes() *MPPrefixes {
+	if mp == nil || mp.Value == nil {
+		return nil
+	}
+
+	pfx, _ := mp.Value.(*MPPrefixes)
+	return pfx
 }

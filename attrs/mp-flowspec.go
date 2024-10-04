@@ -8,9 +8,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
+	"github.com/bgpfix/bgpfix/nlri"
 )
 
 // NewMPFlowspec returns, for a parent mp attribute, a new MPValue implementing Flowspec
@@ -102,9 +104,9 @@ var FlowNewFuncs6 = map[FlowType]FlowNewFunc{
 }
 
 // NewFlowValue returns a new FlowValue for given FlowType and AFI
-func NewFlowValue(ft FlowType, afi af.AFI) FlowValue {
+func NewFlowValue(ft FlowType, af afi.AFI) FlowValue {
 	var newfuncs map[FlowType]FlowNewFunc
-	if afi == af.AFI_IPV6 {
+	if af == afi.AFI_IPV6 {
 		newfuncs = FlowNewFuncs6
 	} else {
 		newfuncs = FlowNewFuncs4
@@ -144,7 +146,7 @@ func (op FlowOp) Len() int {
 	return 1 << (lcode >> 4)
 }
 
-func (a *MPFlowspec) Unmarshal(cps caps.Caps) error {
+func (a *MPFlowspec) Unmarshal(cps caps.Caps, _ dir.Dir) error {
 	// best-effort NH parser
 	if len(a.NH) > 0 {
 		a.NextHop, a.LinkLocal, _ = ParseNH(a.NH)
@@ -193,7 +195,7 @@ func (a *MPFlowspec) Unmarshal(cps caps.Caps) error {
 	return nil
 }
 
-func (a *MPFlowspec) Marshal(cps caps.Caps) {
+func (a *MPFlowspec) Marshal(cps caps.Caps, _ dir.Dir) {
 	// best-effort
 	nh := a.NH[:0]
 	if a.NextHop.IsValid() {
@@ -315,7 +317,7 @@ func (fr FlowRule) ToJSON(dst []byte) []byte {
 	return append(dst, '}')
 }
 
-func (fr FlowRule) FromJSON(src []byte, afi af.AFI) error {
+func (fr FlowRule) FromJSON(src []byte, afi afi.AFI) error {
 	return json.ObjectEach(src, func(key string, val []byte, typ json.Type) error {
 		// lookup flow type
 		ftype, ok := FlowTypeValue[key]
@@ -364,45 +366,18 @@ func (f *FlowRaw) FromJSON(src []byte) (err error) {
 }
 
 // FlowPrefix4 holds IPv4 prefix
-type FlowPrefix4 struct{ netip.Prefix }
+type FlowPrefix4 struct{ nlri.NLRI }
 
 func NewFlowPrefix4(_ FlowType) FlowValue {
 	return &FlowPrefix4{}
 }
 
 func (f *FlowPrefix4) Unmarshal(buf []byte, cps caps.Caps) (int, error) {
-	if len(buf) < 1 {
-		return 0, ErrLength
-	}
-
-	l := int(buf[0])
-	if l > 32 {
-		return 0, ErrValue
-	}
-	n := 1
-	buf = buf[1:]
-
-	b := l / 8
-	if l%8 != 0 {
-		b++
-	}
-	if len(buf) < b {
-		return 0, ErrLength
-	}
-
-	var tmp [4]byte
-	n += copy(tmp[:], buf[:b]) // the rest of [4]tmp is zeroed
-	pfx, err := netip.AddrFrom4(tmp).Prefix(l)
-	if err != nil {
-		return 0, err
-	}
-
-	f.Prefix = pfx
-	return n, nil
+	return f.NLRI.Unmarshal(buf, false, false)
 }
 
 func (f *FlowPrefix4) Marshal(dst []byte, cps caps.Caps) []byte {
-	return WritePrefix(dst, f.Prefix)
+	return f.NLRI.Marshal(dst, false)
 }
 
 func (f *FlowPrefix4) ToJSON(dst []byte) []byte {

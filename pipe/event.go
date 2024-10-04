@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/msg"
 )
 
@@ -48,11 +49,11 @@ type Event struct {
 	Seq  uint64    `json:"seq,omitempty"`  // event sequence number
 	Time time.Time `json:"time,omitempty"` // event timestamp
 
-	Type  string   `json:"type"`  // type, usually "lib/pkg.NAME"
-	Dir   msg.Dir  `json:"dir"`   // optional event direction
-	Msg   *msg.Msg `json:"-"`     // optional message that caused the event
-	Error error    `json:"err"`   // optional error related to the event
-	Value any      `json:"value"` // optional value, type-specific
+	Type  string  `json:"type"`  // type, usually "lib/pkg.NAME"
+	Dir   dir.Dir `json:"dir"`   // optional event direction
+	Msg   string  `json:"msg"`   // optional BGP message in JSON
+	Error error   `json:"err"`   // optional error related to the event
+	Value any     `json:"value"` // optional value, type-specific
 
 	Handler *Handler      // currently running handler (may be nil)
 	Action  Action        // optional event action (zero means none)
@@ -68,9 +69,15 @@ func (ev *Event) String() string {
 	}
 }
 
-// Wait blocks until the event is handled
-func (ev *Event) Wait() {
-	<-ev.done
+// Wait blocks until the event is handled (returns true),
+// or aborts if the Pipe context is cancelled (returns false).
+func (ev *Event) Wait() bool {
+	select {
+	case <-ev.Pipe.ctx.Done():
+		return false
+	case <-ev.done:
+		return true
+	}
 }
 
 // attachEvent initializes the event handler
@@ -113,7 +120,7 @@ func (p *Pipe) attachEvent() {
 }
 
 // Event announces a new event type et to the pipe, with optional arguments.
-// The first msg.Dir argument is used as ev.Dir.
+// The first dir.Dir argument is used as ev.Dir.
 // The first *msg.Msg is used as ev.Msg and borrowed (add ACTION_BORROW).
 // All error arguments are joined together into a single ev.Error.
 // The remaining arguments are used as ev.Val.
@@ -131,11 +138,11 @@ func (p *Pipe) Event(et string, args ...any) *Event {
 		switch v := arg.(type) {
 		case *msg.Msg:
 			if !msg_set {
-				ev.Msg = ActionBorrow(v) // make m safe to reference later
+				ev.Msg = v.String()
 				msg_set = true
 				continue
 			}
-		case msg.Dir:
+		case dir.Dir:
 			if !dir_set {
 				ev.Dir = v
 				dir_set = true
@@ -226,7 +233,7 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 		}
 
 		// prepare the handlers
-		hs = append(hs[:0], p.events[ev.Type]...)
+		hs = append(hs[:0], p.events[ev.Type]...) // TODO: append whs to p.events before?
 		hs = append(hs, whs...)
 
 		// call handlers
@@ -234,7 +241,7 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 			// skip handler?
 			if h == nil || h.Dropped {
 				continue // dropped
-			} else if h.Dir != 0 && h.Dir != ev.Dir {
+			} else if h.Dir != 0 && h.Dir&ev.Dir == 0 {
 				continue // different direction
 			} else if h.Enabled != nil && !h.Enabled.Load() {
 				continue // disabled

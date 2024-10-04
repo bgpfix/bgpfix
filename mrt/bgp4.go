@@ -6,7 +6,7 @@ import (
 	"net/netip"
 	"strconv"
 
-	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
 )
@@ -166,34 +166,34 @@ func (b4 *Bgp4) Parse() error {
 	}
 
 	// read depending on subtype
-	var afi af.AFI
+	var af afi.AFI
 	switch mrt.Sub {
 	case BGP4_MESSAGE, BGP4_MESSAGE_LOCAL:
 		b4.PeerAS = uint32(msb.Uint16(buf[0:2]))
 		b4.LocalAS = uint32(msb.Uint16(buf[2:4]))
 		b4.Interface = msb.Uint16(buf[4:6])
-		afi = af.NewAFIBytes(buf[6:8])
+		af = afi.NewAFIBytes(buf[6:8])
 		buf = buf[8:]
 	case BGP4_MESSAGE_AS4, BGP4_MESSAGE_AS4_LOCAL:
 		b4.PeerAS = msb.Uint32(buf[0:4])
 		b4.LocalAS = msb.Uint32(buf[4:8])
 		b4.Interface = msb.Uint16(buf[8:10])
-		afi = af.NewAFIBytes(buf[10:12])
+		af = afi.NewAFIBytes(buf[10:12])
 		buf = buf[12:]
 	default:
 		return ErrSub
 	}
 
 	// parse IP based on AF (NB: the BGPMSG_MINLEN check above)
-	switch afi {
-	case af.AFI_IPV4:
+	switch af {
+	case afi.AFI_IPV4:
 		if len(buf) < 2*4+msg.HEADLEN {
 			return ErrShort
 		}
 		b4.PeerIP = netip.AddrFrom4([4]byte(buf[0:4])) // yay go 1.20
 		b4.LocalIP = netip.AddrFrom4([4]byte(buf[4:8]))
 		buf = buf[2*4:]
-	case af.AFI_IPV6:
+	case afi.AFI_IPV6:
 		if len(buf) < 2*16+msg.HEADLEN {
 			return ErrShort
 		}
@@ -201,7 +201,7 @@ func (b4 *Bgp4) Parse() error {
 		b4.LocalIP = netip.AddrFrom16([16]byte(buf[16:32]))
 		buf = buf[2*16:]
 	default:
-		return fmt.Errorf("%w: %d", ErrAF, afi)
+		return fmt.Errorf("%w: %d", ErrAF, af)
 	}
 
 	// reference the raw BGP message
@@ -244,7 +244,7 @@ func (b4 *Bgp4) Marshal() error {
 	localip := b4.PeerIP.AsSlice()
 	switch {
 	case b4.PeerIP.Is6() || b4.LocalIP.Is6():
-		buf = msb.AppendUint16(buf, uint16(af.AFI_IPV6))
+		buf = msb.AppendUint16(buf, uint16(afi.AFI_IPV6))
 		for len(peerip) < 16 {
 			peerip = append(peerip, 0)
 		}
@@ -254,7 +254,7 @@ func (b4 *Bgp4) Marshal() error {
 		}
 		buf = append(buf, localip[:16]...)
 	default:
-		buf = msb.AppendUint16(buf, uint16(af.AFI_IPV4))
+		buf = msb.AppendUint16(buf, uint16(afi.AFI_IPV4))
 		for len(peerip) < 4 {
 			peerip = append(peerip, 0)
 		}

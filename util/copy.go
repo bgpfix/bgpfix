@@ -5,7 +5,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/bgpfix/bgpfix/msg"
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/pipe"
 )
 
@@ -26,9 +26,9 @@ func CopyThrough(p *pipe.Pipe, lhs, rhs io.ReadWriteCloser) (lhsb, rhsb []int, e
 
 	// add inputs
 	po := &p.Options
-	rin = po.AddInput(msg.DIR_R)
+	rin = po.AddInput(dir.DIR_R)
 	if rhs != nil {
-		lin = po.AddInput(msg.DIR_L)
+		lin = po.AddInput(dir.DIR_L)
 	}
 
 	p.Start()

@@ -5,8 +5,10 @@ import (
 	"context"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/rs/zerolog"
@@ -57,7 +59,7 @@ func NewPipe(ctx context.Context) *Pipe {
 
 	p.R = &Line{
 		Pipe: p,
-		Dir:  msg.DIR_R,
+		Dir:  dir.DIR_R,
 		Input: Input{
 			In: make(chan *msg.Msg, 10),
 		},
@@ -66,7 +68,7 @@ func NewPipe(ctx context.Context) *Pipe {
 
 	p.L = &Line{
 		Pipe: p,
-		Dir:  msg.DIR_L,
+		Dir:  dir.DIR_L,
 		Input: Input{
 			In: make(chan *msg.Msg, 10),
 		},
@@ -208,8 +210,11 @@ func (p *Pipe) Stop() {
 	p.L.Close()
 	p.R.Close()
 
-	// yank the cable out of blocked calls (hopefully)
-	p.cancel(ErrStopped)
+	// yank the cable out of blocked calls (give it 1 sec)
+	go func() {
+		<-time.After(time.Second)
+		p.cancel(ErrStopped)
+	}()
 
 	// wait for input handlers
 	p.L.Wait()
@@ -268,10 +273,20 @@ func (p *Pipe) PutMsg(m *msg.Msg) {
 	p.msgpool.Put(m)
 }
 
+// ParseMsg parses given message m (if needed), in the context of this Pipe.
+// In case of error, it emits EVENT_PARSE before returning.
+func (p *Pipe) ParseMsg(m *msg.Msg) error {
+	err := m.Parse(p.Caps)
+	if err != nil {
+		p.Event(EVENT_PARSE, m.Dir, m, err)
+	}
+	return err
+}
+
 // LineFor returns the line processing messages destined for dst.
 // Returns p.R if dst is bidir (DST_LR).
-func (p *Pipe) LineFor(dst msg.Dir) *Line {
-	if dst == msg.DIR_L {
+func (p *Pipe) LineFor(dst dir.Dir) *Line {
+	if dst == dir.DIR_L {
 		return p.L
 	} else {
 		return p.R

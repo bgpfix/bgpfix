@@ -11,6 +11,7 @@ import (
 
 	"github.com/bgpfix/bgpfix/binary"
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
 )
 
@@ -24,7 +25,7 @@ type Msg struct {
 
 	// optional metadata
 
-	Dir  Dir       // message destination
+	Dir  dir.Dir   // message destination
 	Seq  int64     // sequence number
 	Time time.Time // message timestamp
 
@@ -55,28 +56,6 @@ type Value interface {
 
 	// FromJSON reads from JSON representation in src
 	FromJSON(src []byte) error
-}
-
-// BGP message direction
-type Dir byte
-
-//go:generate go run github.com/dmarkham/enumer -type Dir -trimprefix DIR_
-const (
-	DIR_LR Dir = 0b00 // no particular direction (ie. both L and R)
-	DIR_L  Dir = 0b01 // L direction: "left" or "local"
-	DIR_R  Dir = 0b10 // R direction: "right" or "remote"
-)
-
-// Flip returns the opposite direction
-func (d Dir) Flip() Dir {
-	switch d {
-	case DIR_L:
-		return DIR_R
-	case DIR_R:
-		return DIR_L
-	default:
-		return 0
-	}
 }
 
 // BGP message type
@@ -275,7 +254,7 @@ func (msg *Msg) Parse(cps caps.Caps) error {
 		err = o.ParseCaps()
 	case UPDATE:
 		u := &msg.Update
-		err = u.Parse()
+		err = u.Parse(cps)
 		if err != nil {
 			break
 		}
@@ -396,8 +375,8 @@ func (msg *Msg) String() string {
 // GetJSON returns JSON representation of msg + "\n" directly from an internal buffer.
 // The result is always non-nil and non-empty. Copy the result if you need to keep it.
 func (msg *Msg) GetJSON() []byte {
-	// still good?
-	if msg.Upper != INVALID && len(msg.json) > 0 {
+	// still good to re-use?
+	if len(msg.json) > 0 {
 		return msg.json
 	}
 
@@ -405,10 +384,10 @@ func (msg *Msg) GetJSON() []byte {
 	dst := append(msg.json[:0], `["`...)
 
 	// [0] direction
-	dst = append(dst, msg.Dir.String()...) // TODO: or number
+	dst = append(dst, msg.Dir.String()...)
 	dst = append(dst, `",`...)
 
-	// [1] sequence number (for dir)
+	// [1] sequence number
 	dst = strconv.AppendInt(dst, msg.Seq, 10)
 	dst = append(dst, `,"`...)
 
@@ -465,7 +444,7 @@ func (msg *Msg) ToJSON(dst []byte) []byte {
 // FromJSON reads msg JSON representation from src into Upper
 func (msg *Msg) FromJSON(src []byte) (reterr error) {
 	// internal json still valid?
-	if l := len(msg.json) - 1; l > 0 && msg.Upper != INVALID {
+	if l := len(msg.json) - 1; l > 0 {
 		src = bytes.TrimSpace(src)
 		if len(src) == l && string(src) == string(msg.json[:l]) {
 			return nil // yay! we're done
@@ -475,14 +454,8 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 	msg.Modified() // will modify Upper
 	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) (err error) {
 		switch key {
-		case 0: // dst TODO: better
-			if typ == json.STRING {
-				msg.Dir, err = DirString(json.S(val))
-			} else if typ == json.NUMBER {
-				var v byte
-				v, err = json.UnByte(val)
-				msg.Dir = Dir(v)
-			}
+		case 0: // dst
+			msg.Dir, err = dir.DirString(json.S(val))
 
 		case 1: // seq number
 			msg.Seq, err = strconv.ParseInt(json.S(val), 10, 64)

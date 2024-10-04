@@ -3,9 +3,11 @@ package attrs
 import (
 	"net/netip"
 
-	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
+	"github.com/bgpfix/bgpfix/nlri"
 )
 
 // MPPrefixes represents ATTR_MP for the generic RFC4760 IP prefix encoding
@@ -14,17 +16,16 @@ type MPPrefixes struct {
 
 	NextHop   netip.Addr // only for ATTR_MP_REACH
 	LinkLocal netip.Addr // only for IPv6 NextHop, if given
-	Prefixes  []netip.Prefix
+	Prefixes  []nlri.NLRI
 }
 
 func NewMPPrefixes(mp *MP) MPValue {
 	return &MPPrefixes{MP: mp}
 }
 
-func (a *MPPrefixes) Unmarshal(cps caps.Caps) error {
+func (a *MPPrefixes) Unmarshal(cps caps.Caps, dir dir.Dir) error {
 	var (
-		afi  = a.Afi()
-		safi = a.Safi()
+		isv6 = a.IsIPv6()
 		err  error
 	)
 
@@ -35,13 +36,13 @@ func (a *MPPrefixes) Unmarshal(cps caps.Caps) error {
 			return ErrLength
 		}
 
-		if afi == af.AFI_IPV6 {
+		if isv6 {
 			a.NextHop = addr
 			a.LinkLocal = ll
 		} else if addr.Is6() {
 			// IPv6 nexthop for AFI=1 reachable prefixes?
 			enh, ok := cps.Get(caps.CAP_EXTENDED_NEXTHOP).(*caps.ExtNH)
-			if !ok || !enh.Has(afi, safi, af.AFI_IPV6) {
+			if !ok || !enh.Has(a.AS, afi.AFI_IPV6) {
 				return ErrValue
 			}
 
@@ -53,11 +54,11 @@ func (a *MPPrefixes) Unmarshal(cps caps.Caps) error {
 		}
 	}
 
-	a.Prefixes, err = ReadPrefixes(a.Prefixes, a.Data, afi == af.AFI_IPV6)
+	a.Prefixes, err = nlri.Unmarshal(a.Prefixes, a.Data, a.AS, cps, dir)
 	return err
 }
 
-func (a *MPPrefixes) Marshal(cps caps.Caps) {
+func (a *MPPrefixes) Marshal(cps caps.Caps, dir dir.Dir) {
 	// next-hop
 	nh := a.NH[:0]
 	if a.NextHop.IsValid() {
@@ -69,7 +70,7 @@ func (a *MPPrefixes) Marshal(cps caps.Caps) {
 	a.NH = nh
 
 	// prefixes
-	a.Data = WritePrefixes(a.Data[:0], a.Prefixes)
+	a.Data = nlri.Marshal(a.Data[:0], a.Prefixes, a.AS, cps, dir)
 }
 
 func (a *MPPrefixes) ToJSON(dst []byte) []byte {
@@ -84,7 +85,7 @@ func (a *MPPrefixes) ToJSON(dst []byte) []byte {
 	}
 
 	dst = append(dst, `"prefixes":`...)
-	return json.Prefixes(dst, a.Prefixes)
+	return nlri.ToJSON(dst, a.Prefixes)
 }
 
 func (a *MPPrefixes) FromJSON(src []byte) error {
@@ -99,7 +100,7 @@ func (a *MPPrefixes) FromJSON(src []byte) error {
 				a.LinkLocal, err = netip.ParseAddr(json.S(val))
 			}
 		case "prefixes":
-			a.Prefixes, err = json.UnPrefixes(val, a.Prefixes)
+			a.Prefixes, err = nlri.FromJSON(val, a.Prefixes)
 		}
 		return err
 	})

@@ -29,7 +29,7 @@ type ReaderStats struct {
 	Garbled    uint64 // parse error
 }
 
-// NewReader returns a new Reader.
+// NewReader returns a new Reader with given target Input.
 func NewReader(p *pipe.Pipe, input *pipe.Input) *Reader {
 	return &Reader{
 		pipe: p,
@@ -39,7 +39,7 @@ func NewReader(p *pipe.Pipe, input *pipe.Input) *Reader {
 }
 
 // Write implements io.Writer and reads all MRT-BGP4MP messages from src
-// into br.in. Must not be used concurrently.
+// into the target Input. Must not be used concurrently.
 func (br *Reader) Write(src []byte) (n int, err error) {
 	return br.WriteFunc(src, nil)
 }
@@ -129,25 +129,25 @@ func (br *Reader) WriteFunc(src []byte, cb pipe.CallbackFunc) (n int, err error)
 	return n, nil
 }
 
-// FromBytes parses the first MRT-BGP4MP message in buf, and references it in m.
-// Does not buffer or copy buf. Can be used concurrently. mrt may be nil
-func (br *Reader) FromBytes(buf []byte, m *msg.Msg, mrt *Mrt) (n int, err error) {
+// FromBytes parses the first MRT-BGP4MP message in buf, and references it in bgp_msg.
+// Does not buffer or copy buf. Can be used concurrently. mrt_msg may be nil
+func (br *Reader) FromBytes(buf []byte, bgp_msg *msg.Msg, mrt_msg *Mrt) (n int, err error) {
 	// intermediate buffer
-	if mrt == nil {
-		mrt = NewMrt()
+	if mrt_msg == nil {
+		mrt_msg = NewMrt()
 	} else {
-		mrt.Reset()
+		mrt_msg.Reset()
 	}
 
 	// parse as raw MRT message
-	n, err = mrt.FromBytes(buf)
+	n, err = mrt_msg.FromBytes(buf)
 	if err != nil {
 		return n, fmt.Errorf("MRT: %w", err)
 	}
 
 	// parse as MRT-BGP4MP
-	b4 := &mrt.Bgp4
-	switch err := b4.Parse(); err {
+	bgp4 := &mrt_msg.Bgp4
+	switch err := bgp4.Parse(); err {
 	case nil:
 		break // success
 	case ErrSub:
@@ -156,5 +156,5 @@ func (br *Reader) FromBytes(buf []byte, m *msg.Msg, mrt *Mrt) (n int, err error)
 		return n, fmt.Errorf("BGP4MP: %w", err)
 	}
 
-	return n, b4.ToMsg(m, !br.NoTags)
+	return n, bgp4.ToMsg(bgp_msg, !br.NoTags)
 }

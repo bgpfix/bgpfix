@@ -5,22 +5,22 @@ import (
 	"math"
 	"net/netip"
 
-	"github.com/bgpfix/bgpfix/af"
+	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/attrs"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
+	"github.com/bgpfix/bgpfix/nlri"
 )
 
 // Update represents a BGP UPDATE message
 type Update struct {
 	Msg *Msg // parent BGP message
 
-	Reach    []netip.Prefix // reachable IPv4 unicast
-	Unreach  []netip.Prefix // unreachable IPv4 unicast
-	RawAttrs []byte         // raw attributes
+	Reach    []nlri.NLRI // reachable IPv4 unicast
+	Unreach  []nlri.NLRI // unreachable IPv4 unicast
+	RawAttrs []byte      // raw attributes
 
 	Attrs attrs.Attrs // parsed attributes
-	af    af.AF       // AFI/SAFI from MP-BGP
 }
 
 const (
@@ -38,16 +38,17 @@ func (u *Update) Reset() {
 	u.Reach = u.Reach[:0]
 	u.RawAttrs = nil
 	u.Attrs.Reset()
-	u.af = 0
 }
 
-// Parse parses msg.Data as BGP UPDATE
-func (u *Update) Parse() error {
+// Parse parses msg.Data as BGP UPDATE,
+// in the context of BGP capabilities cps, which can be empty.
+func (u *Update) Parse(cps caps.Caps) error {
 	buf := u.Msg.Data
 	if len(buf) < UPDATE_MINLEN {
 		return ErrShort
 	}
 
+	// withdrawn routes - prepare
 	var withdrawn []byte
 	l := msb.Uint16(buf[0:2])
 	buf = buf[2:]
@@ -58,6 +59,7 @@ func (u *Update) Parse() error {
 		buf = buf[l:]
 	}
 
+	// attributes
 	var ats []byte
 	l = msb.Uint16(buf[0:2])
 	buf = buf[2:]
@@ -68,23 +70,25 @@ func (u *Update) Parse() error {
 		buf = buf[l:]
 	}
 
-	announced := buf
-
-	var err error
-	if len(announced) > 0 {
-		u.Reach, err = attrs.ReadPrefixes(u.Reach, announced, false)
+	// announced routes
+	if len(buf) > 0 {
+		var err error
+		u.Reach, err = nlri.Unmarshal(u.Reach, buf, afi.AS_IPV4_UNICAST, cps, u.Msg.Dir)
 		if err != nil {
 			return err
 		}
 	}
 
+	// witdrawn routes
 	if len(withdrawn) > 0 {
-		u.Unreach, err = attrs.ReadPrefixes(u.Unreach, withdrawn, false)
+		var err error
+		u.Unreach, err = nlri.Unmarshal(u.Unreach, withdrawn, afi.AS_IPV4_UNICAST, cps, u.Msg.Dir)
 		if err != nil {
 			return err
 		}
 	}
 
+	// take it
 	u.RawAttrs = ats
 	u.Msg.Upper = UPDATE
 	return nil
@@ -133,7 +137,7 @@ func (u *Update) ParseAttrs(cps caps.Caps) error {
 		// create, overwrite flags, try parsing
 		attr := ats.Use(acode)
 		attr.SetFlags(atyp.Flags())
-		if err := attr.Unmarshal(buf, cps); err != nil {
+		if err := attr.Unmarshal(buf, cps, u.Msg.Dir); err != nil {
 			return fmt.Errorf("%s: %w", acode, err)
 		}
 	}
@@ -141,21 +145,6 @@ func (u *Update) ParseAttrs(cps caps.Caps) error {
 	// store
 	u.Attrs = ats
 	return nil
-}
-
-// AF returns the message address family, giving priority to MP-BGP attributes
-func (u *Update) AF() af.AF {
-	if u.af == 0 {
-		if reach, ok := u.Attrs.Get(attrs.ATTR_MP_REACH).(*attrs.MP); ok {
-			u.af = reach.AF
-		} else if unreach, ok := u.Attrs.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); ok {
-			u.af = unreach.AF
-		} else {
-			u.af = af.New(af.AFI_IPV4, af.SAFI_UNICAST)
-		}
-	}
-
-	return u.af
 }
 
 // MarshalAttrs marshals u.Attrs into u.RawAttrs
@@ -166,7 +155,7 @@ func (u *Update) MarshalAttrs(cps caps.Caps) error {
 	// marshal one-by-one
 	var raw []byte
 	u.Attrs.Each(func(i int, ac attrs.Code, at attrs.Attr) {
-		raw = at.Marshal(raw, cps)
+		raw = at.Marshal(raw, cps, u.Msg.Dir)
 	})
 	u.RawAttrs = raw
 	return nil
@@ -179,7 +168,7 @@ func (u *Update) Marshal(cps caps.Caps) error {
 
 	// withdrawn routes
 	buf = append(buf, 0, 0) // length (tbd [1])
-	buf = attrs.WritePrefixes(buf, u.Unreach)
+	buf = nlri.Marshal(buf, u.Unreach, afi.AS_IPV4_UNICAST, cps, u.Msg.Dir)
 	if l := len(buf) - 2; l > math.MaxUint16 {
 		return fmt.Errorf("Marshal: too long Withdrawn Routes: %w (%d)", ErrLength, l)
 	} else if l > 0 {
@@ -193,8 +182,8 @@ func (u *Update) Marshal(cps caps.Caps) error {
 	buf = msb.AppendUint16(buf, uint16(len(u.RawAttrs)))
 	buf = append(buf, u.RawAttrs...)
 
-	// NLRI
-	buf = attrs.WritePrefixes(buf, u.Reach)
+	// announced routes
+	buf = nlri.Marshal(buf, u.Reach, afi.AS_IPV4_UNICAST, cps, msg.Dir)
 
 	// done
 	msg.Type = UPDATE
@@ -216,7 +205,7 @@ func (u *Update) ToJSON(dst []byte) []byte {
 
 	if len(u.Reach) > 0 {
 		dst = append(dst, `"reach":`...)
-		dst = json.Prefixes(dst, u.Reach)
+		dst = nlri.ToJSON(dst, u.Reach)
 	}
 
 	if len(u.Unreach) > 0 {
@@ -224,7 +213,7 @@ func (u *Update) ToJSON(dst []byte) []byte {
 			dst = append(dst, ',')
 		}
 		dst = append(dst, `"unreach":`...)
-		dst = json.Prefixes(dst, u.Unreach)
+		dst = nlri.ToJSON(dst, u.Unreach)
 	}
 
 	if len(u.Reach) > 0 || len(u.Unreach) > 0 {
@@ -247,9 +236,9 @@ func (u *Update) FromJSON(src []byte) error {
 	return json.ObjectEach(src, func(key string, val []byte, typ json.Type) (err error) {
 		switch key {
 		case "reach":
-			u.Reach, err = json.UnPrefixes(val, u.Reach[:0])
+			u.Reach, err = nlri.FromJSON(val, u.Reach[:0])
 		case "unreach":
-			u.Unreach, err = json.UnPrefixes(val, u.Unreach[:0])
+			u.Unreach, err = nlri.FromJSON(val, u.Unreach[:0])
 		case "attrs":
 			if typ == json.STRING {
 				u.RawAttrs, err = json.UnHex(val, u.RawAttrs[:0])
@@ -259,4 +248,104 @@ func (u *Update) FromJSON(src []byte) error {
 		}
 		return err
 	})
+}
+
+// MP returns raw MP-BGP attribute ac, or nil
+func (u *Update) MP(ac attrs.Code) *attrs.MP {
+	if a, ok := u.Attrs.Get(ac).(*attrs.MP); ok {
+		return a
+	}
+	return nil
+}
+
+// AS returns the message AFI+SAFI, giving priority to MP-BGP attributes
+func (u *Update) AS() afi.AS {
+	if u == nil || u.Msg.Upper != UPDATE {
+		return afi.AS_INVALID
+	} else if reach := u.MP(attrs.ATTR_MP_REACH); reach != nil {
+		return reach.AS
+	} else if unreach := u.MP(attrs.ATTR_MP_UNREACH); unreach != nil {
+		return unreach.AS
+	} else {
+		return afi.AS_IPV4_UNICAST
+	}
+}
+
+// HasReach returns true iff u announces reachable NLRI (for any address family AF).
+func (u *Update) HasReach() bool {
+	if u == nil || u.Msg.Upper != UPDATE {
+		return false
+	}
+	if len(u.Reach) > 0 {
+		return true
+	}
+	if mp := u.MP(attrs.ATTR_MP_REACH).Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
+		return true
+	}
+	return false
+}
+
+// GetReach appends all reachable IP prefixes in u to dst (can be nil)
+func (u *Update) GetReach(dst []nlri.NLRI) []nlri.NLRI {
+	if u == nil || u.Msg.Upper != UPDATE {
+		return dst
+	}
+	dst = append(dst, u.Reach...)
+	if mp := u.MP(attrs.ATTR_MP_REACH).Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
+		dst = append(dst, mp.Prefixes...)
+	}
+	return dst
+}
+
+// HasUnreach returns true iff u withdraws unreachable NLRI (for any address family AF).
+func (u *Update) HasUnreach() bool {
+	if u == nil || u.Msg.Upper != UPDATE {
+		return false
+	}
+	if len(u.Unreach) > 0 {
+		return true
+	}
+	if mp := u.MP(attrs.ATTR_MP_UNREACH).Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
+		return true
+	}
+	return false
+}
+
+// GetUnreach appends all unreachable IP prefixes in u to dst (can be nil)
+func (u *Update) GetUnreach(dst []nlri.NLRI) []nlri.NLRI {
+	if u == nil || u.Msg.Upper != UPDATE {
+		return dst
+	}
+	dst = append(dst, u.Unreach...)
+	if mp := u.MP(attrs.ATTR_MP_UNREACH).Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
+		dst = append(dst, mp.Prefixes...)
+	}
+	return dst
+}
+
+// AsPath returns the ATTR_ASPATH from u, or nil if not defined.
+// TODO: support ATTR_AS4PATH
+func (u *Update) AsPath() *attrs.Aspath {
+	if u == nil || u.Msg.Upper != UPDATE {
+		return nil
+	} else if ap, ok := u.Attrs.Get(attrs.ATTR_ASPATH).(*attrs.Aspath); ok {
+		return ap
+	} else {
+		return nil
+	}
+}
+
+// NextHop returns NEXT_HOP address, if possible.
+// Check nh.IsValid() before using the value.
+func (u *Update) NextHop() (nh netip.Addr) {
+	if u == nil || u.Msg.Upper != UPDATE {
+		return
+	}
+	if mp := u.MP(attrs.ATTR_MP_REACH).Prefixes(); mp != nil {
+		return mp.NextHop
+	}
+	if nh, _ := u.Attrs.Get(attrs.ATTR_NEXTHOP).(*attrs.IP); nh != nil {
+		return nh.Addr
+	}
+	return
 }

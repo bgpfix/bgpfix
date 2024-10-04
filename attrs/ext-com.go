@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
 )
 
@@ -155,7 +156,7 @@ func (et *ExtcomType) FromJSON(src []byte) error {
 	return nil
 }
 
-func (a *Extcom) Unmarshal(buf []byte, cps caps.Caps) error {
+func (a *Extcom) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	for len(buf) > 0 {
 		if len(buf) < 8 {
 			return ErrLength
@@ -178,7 +179,7 @@ func (a *Extcom) Unmarshal(buf []byte, cps caps.Caps) error {
 	return nil
 }
 
-func (a *Extcom) Marshal(dst []byte, cps caps.Caps) []byte {
+func (a *Extcom) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
 	tl := 8 * len(a.Type)
 	dst = a.CodeFlags.MarshalLen(dst, tl)
 	for i := range a.Type {

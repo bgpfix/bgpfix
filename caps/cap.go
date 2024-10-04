@@ -55,6 +55,7 @@ type Cap interface {
 
 	// Intersect returns a new instance that represents its intersection with cap2.
 	// This is used during capability negotiation. Return nil if equal or N/A.
+	// When needed, assume cap2 is what was sent in the L direction.
 	Intersect(cap2 Cap) Cap
 }
 
@@ -67,6 +68,7 @@ var NewFuncs = map[Code]NewFunc{
 	CAP_AS4:              NewAS4,
 	CAP_EXTENDED_NEXTHOP: NewExtNH,
 	CAP_FQDN:             NewFqdn,
+	CAP_ADDPATH:          NewAddPath,
 }
 
 // NewCap returns a new Cap instance for given code cc
