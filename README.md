@@ -18,33 +18,6 @@ BGPFix can "fix" or "extend" BGP sessions *in-flight*, possibly adding new featu
  * protecting from [grave flaws in BGP error handling](https://blog.benjojo.co.uk/post/bgp-path-attributes-grave-error-handling), and possibly other flaws found using [BGP fuzzing projects](https://github.com/Forescout/bgp_boofuzzer)
  * academic research ideas, eg. [Pretty Good BGP](https://www.cs.princeton.edu/~jrex/papers/pgbgp.pdf) or protection against [distributed prefix de-aggregation attacks](https://arxiv.org/abs/2210.10676).
 
-# BGP features
-
-RFCs:
- * [RFC1997 BGP Communities Attribute](https://datatracker.ietf.org/doc/html/rfc1997)
- * [RFC2918 Route Refresh Capability for BGP-4](https://datatracker.ietf.org/doc/html/rfc2918)
- * [RFC4360 BGP Extended Communities Attribute](https://datatracker.ietf.org/doc/html/rfc4360)
- * [RFC4271 A Border Gateway Protocol 4 (BGP-4)](https://datatracker.ietf.org/doc/html/rfc4271)
- * [RFC4456 BGP Route Reflection: An Alternative to Full Mesh Internal BGP (IBGP)](https://datatracker.ietf.org/doc/html/rfc4456)
- * [RFC4760 Multiprotocol Extensions for BGP-4](https://datatracker.ietf.org/doc/html/rfc4760)
- * [RFC5492 Capabilities Advertisement with BGP-4](https://datatracker.ietf.org/doc/html/rfc5492)
- * [RFC5668 4-Octet AS Specific BGP Extended Community](https://datatracker.ietf.org/doc/html/rfc5668)
- * [RFC6793 BGP Support for Four-Octet Autonomous System (AS) Number Space](https://datatracker.ietf.org/doc/html/rfc6793)
- * [RFC6396 Multi-Threaded Routing Toolkit (MRT) Routing Information Export Format](https://datatracker.ietf.org/doc/html/rfc6396)
- * [RFC7911 Advertisement of Multiple Paths in BGP](https://datatracker.ietf.org/doc/html/rfc7911)
- * [RFC8092 BGP Large Communities Attribute](https://datatracker.ietf.org/doc/html/rfc8092)
- * [RFC8654 Extended Message Support for BGP](https://datatracker.ietf.org/doc/html/rfc8654)
- * [RFC8950 Advertising IPv4 Network Layer Reachability Information (NLRI) with an IPv6 Next Hop](https://datatracker.ietf.org/doc/html/rfc8950)
- * [RFC8955 Dissemination of Flow Specification Rules](https://datatracker.ietf.org/doc/html/rfc8955)
- * [RFC8956 Dissemination of Flow Specification Rules for IPv6](https://datatracker.ietf.org/doc/html/rfc8956)
- * [RFC9072 Extended Optional Parameters Length for BGP OPEN Message](https://datatracker.ietf.org/doc/html/rfc9072)
-
-Drafts:
- * [draft-simpson-idr-flowspec-redirect: BGP Flow-Spec Extended Community for Traffic Redirect to IP Next Hop](https://datatracker.ietf.org/doc/html/draft-simpson-idr-flowspec-redirect-02)
- * [draft-walton-bgp-hostname-capability-02: Hostname Capability for BGP](https://datatracker.ietf.org/doc/html/draft-walton-bgp-hostname-capability-02)
-
-*Note: some of the above correspond to partial or work-in-progress support.*
-
 # Idea
 
 The overall idea is presented below. You don't need to use the whole library, eg. you may stick to the basic [BGP message marshal / unmarshal procedures](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/msg).
@@ -340,6 +313,33 @@ $ bgpipe --log disabled --stdout \
 ]
 ^C
 ```
+
+# BGP features
+
+RFCs:
+ * [RFC1997 BGP Communities Attribute](https://datatracker.ietf.org/doc/html/rfc1997)
+ * [RFC2918 Route Refresh Capability for BGP-4](https://datatracker.ietf.org/doc/html/rfc2918)
+ * [RFC4360 BGP Extended Communities Attribute](https://datatracker.ietf.org/doc/html/rfc4360)
+ * [RFC4271 A Border Gateway Protocol 4 (BGP-4)](https://datatracker.ietf.org/doc/html/rfc4271)
+ * [RFC4456 BGP Route Reflection: An Alternative to Full Mesh Internal BGP (IBGP)](https://datatracker.ietf.org/doc/html/rfc4456)
+ * [RFC4760 Multiprotocol Extensions for BGP-4](https://datatracker.ietf.org/doc/html/rfc4760)
+ * [RFC5492 Capabilities Advertisement with BGP-4](https://datatracker.ietf.org/doc/html/rfc5492)
+ * [RFC5668 4-Octet AS Specific BGP Extended Community](https://datatracker.ietf.org/doc/html/rfc5668)
+ * [RFC6793 BGP Support for Four-Octet Autonomous System (AS) Number Space](https://datatracker.ietf.org/doc/html/rfc6793)
+ * [RFC6396 Multi-Threaded Routing Toolkit (MRT) Routing Information Export Format](https://datatracker.ietf.org/doc/html/rfc6396)
+ * [RFC7911 Advertisement of Multiple Paths in BGP](https://datatracker.ietf.org/doc/html/rfc7911)
+ * [RFC8092 BGP Large Communities Attribute](https://datatracker.ietf.org/doc/html/rfc8092)
+ * [RFC8654 Extended Message Support for BGP](https://datatracker.ietf.org/doc/html/rfc8654)
+ * [RFC8950 Advertising IPv4 Network Layer Reachability Information (NLRI) with an IPv6 Next Hop](https://datatracker.ietf.org/doc/html/rfc8950)
+ * [RFC8955 Dissemination of Flow Specification Rules](https://datatracker.ietf.org/doc/html/rfc8955)
+ * [RFC8956 Dissemination of Flow Specification Rules for IPv6](https://datatracker.ietf.org/doc/html/rfc8956)
+ * [RFC9072 Extended Optional Parameters Length for BGP OPEN Message](https://datatracker.ietf.org/doc/html/rfc9072)
+
+Drafts:
+ * [draft-simpson-idr-flowspec-redirect: BGP Flow-Spec Extended Community for Traffic Redirect to IP Next Hop](https://datatracker.ietf.org/doc/html/draft-simpson-idr-flowspec-redirect-02)
+ * [draft-walton-bgp-hostname-capability-02: Hostname Capability for BGP](https://datatracker.ietf.org/doc/html/draft-walton-bgp-hostname-capability-02)
+
+*Note: some of the above correspond to partial or work-in-progress support.*
 
 # Alternatives
 
