@@ -250,21 +250,25 @@ func (u *Update) FromJSON(src []byte) error {
 	})
 }
 
-// MP returns raw MP-BGP attribute ac, or nil
-func (u *Update) MP(ac attrs.Code) *attrs.MP {
-	if a, ok := u.Attrs.Get(ac).(*attrs.MP); ok {
-		return a
-	}
-	return nil
+// ReachMP returns raw MP-BGP attribute ATTR_MP_REACH, or nil
+func (u *Update) ReachMP() *attrs.MP {
+	a, _ := u.Attrs.Get(attrs.ATTR_MP_REACH).(*attrs.MP)
+	return a
 }
 
-// AS returns the message AFI+SAFI, giving priority to MP-BGP attributes
-func (u *Update) AS() afi.AS {
+// UnreachMP returns raw MP-BGP attribute ATTR_MP_UNREACH, or nil
+func (u *Update) UnreachMP() *attrs.MP {
+	a, _ := u.Attrs.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP)
+	return a
+}
+
+// AfiSafi returns the message AFI+SAFI, giving priority to MP-BGP attributes
+func (u *Update) AfiSafi() afi.AS {
 	if u == nil || u.Msg.Upper != UPDATE {
 		return afi.AS_INVALID
-	} else if reach := u.MP(attrs.ATTR_MP_REACH); reach != nil {
+	} else if reach := u.ReachMP(); reach != nil {
 		return reach.AS
-	} else if unreach := u.MP(attrs.ATTR_MP_UNREACH); unreach != nil {
+	} else if unreach := u.UnreachMP(); unreach != nil {
 		return unreach.AS
 	} else {
 		return afi.AS_IPV4_UNICAST
@@ -279,7 +283,7 @@ func (u *Update) HasReach() bool {
 	if len(u.Reach) > 0 {
 		return true
 	}
-	if mp := u.MP(attrs.ATTR_MP_REACH).Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
+	if mp := u.ReachMP().Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
 		return true
 	}
 	return false
@@ -291,7 +295,7 @@ func (u *Update) GetReach(dst []nlri.NLRI) []nlri.NLRI {
 		return dst
 	}
 	dst = append(dst, u.Reach...)
-	if mp := u.MP(attrs.ATTR_MP_REACH).Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
+	if mp := u.ReachMP().Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
 		dst = append(dst, mp.Prefixes...)
 	}
 	return dst
@@ -305,7 +309,7 @@ func (u *Update) HasUnreach() bool {
 	if len(u.Unreach) > 0 {
 		return true
 	}
-	if mp := u.MP(attrs.ATTR_MP_UNREACH).Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
+	if mp := u.UnreachMP().Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
 		return true
 	}
 	return false
@@ -317,7 +321,7 @@ func (u *Update) GetUnreach(dst []nlri.NLRI) []nlri.NLRI {
 		return dst
 	}
 	dst = append(dst, u.Unreach...)
-	if mp := u.MP(attrs.ATTR_MP_UNREACH).Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
+	if mp := u.UnreachMP().Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
 		dst = append(dst, mp.Prefixes...)
 	}
 	return dst
@@ -341,7 +345,7 @@ func (u *Update) NextHop() (nh netip.Addr) {
 	if u == nil || u.Msg.Upper != UPDATE {
 		return
 	}
-	if mp := u.MP(attrs.ATTR_MP_REACH).Prefixes(); mp != nil {
+	if mp := u.ReachMP().Prefixes(); mp != nil {
 		return mp.NextHop
 	}
 	if nh, _ := u.Attrs.Get(attrs.ATTR_NEXTHOP).(*attrs.IP); nh != nil {
