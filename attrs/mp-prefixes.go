@@ -23,6 +23,15 @@ func NewMPPrefixes(mp *MP) MPValue {
 	return &MPPrefixes{MP: mp}
 }
 
+// Count returns the number of prefixes in a, if non-nil
+func (a *MPPrefixes) Count() int {
+	if a == nil {
+		return 0
+	} else {
+		return len(a.Prefixes)
+	}
+}
+
 func (a *MPPrefixes) Unmarshal(cps caps.Caps, dir dir.Dir) error {
 	var (
 		isv6 = a.IsIPv6()

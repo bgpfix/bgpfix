@@ -77,9 +77,8 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg) error {
 	mrt.Sub = BGP4_MESSAGE_AS4
 	mrt.Data = nil
 
-	// m has Context with relevant tags?
-	if pipe.HasTags(m) {
-		tags := pipe.MsgTags(m)
+	// m has Context with tags?
+	if tags := pipe.GetContext(m).GetTags(); len(tags) > 0 {
 		if s := tags["PEER_AS"]; len(s) > 0 {
 			v, err := strconv.ParseUint(s, 10, 32)
 			if err == nil {
@@ -130,7 +129,7 @@ func (b4 *Bgp4) ToMsg(m *msg.Msg, set_tags bool) error {
 
 	// copy BGP4MP metadata?
 	if set_tags {
-		tags := pipe.MsgTags(m)
+		tags := pipe.UseContext(m).UseTags()
 		if b4.PeerAS != 0 {
 			tags["PEER_AS"] = strconv.FormatUint(uint64(b4.PeerAS), 10)
 		}

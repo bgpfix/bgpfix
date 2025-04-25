@@ -45,22 +45,27 @@ type Line struct {
 }
 
 // attach line inputs
-func (l *Line) attach() {
+func (l *Line) attach() error {
 	p := l.Pipe
 	l.done = make(chan struct{})
 	l.EoR = xsync.NewMapOf[afi.AS, int64]()
 
 	// the default input
-	l.Input.attach(p, l)
+	if err := l.Input.attach(p, l); err != nil {
+		return err
+	}
 	l.inputs = append(l.inputs, &l.Input)
 
 	// inputs from Options
 	for _, li := range p.Options.Inputs {
 		if li != nil && li.Dir == l.Dir {
-			li.attach(p, l)
+			if err := li.attach(p, l); err != nil {
+				return err
+			}
 			l.inputs = append(l.inputs, li)
 		}
 	}
+	return nil
 }
 
 // start starts all input processors

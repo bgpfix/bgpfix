@@ -10,7 +10,7 @@ A generic-purpose, high-performance Golang library for [bridging the gaps in BGP
 
 BGPFix can "fix" or "extend" BGP sessions *in-flight*, possibly adding new features or security layers to proprietary BGP speakers (think big router vendors). The project vision is to allow implementing:
  * bidirectional BGP session to JSON translation, replacing [exabgp](https://github.com/Exa-Networks/exabgp/) for some use-cases,
- * transparent BGP proxy, optionally rewriting the messages in-flight,
+ * transparent BGP proxy, optionally rewriting and filtering messages in-flight,
  * streaming MRT files to BGP routers, adding the necessary OPEN negotiation beforehand,
  * Flowspec data plane firewalls using [Linux Netfilter](https://netfilter.org/),
  * passive inspection (and storage) of ongoing BGP sessions, like in [tcpdump](https://www.tcpdump.org/),
@@ -352,4 +352,4 @@ If you're interested in bgpfix, you might also want to see:
 
 # Author
 
-Pawel Foremski [@pforemski](https://twitter.com/pforemski) 2023-2024
+Pawel Foremski [@pforemski](https://twitter.com/pforemski) 2023-2025

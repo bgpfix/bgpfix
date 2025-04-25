@@ -20,8 +20,9 @@ import (
 type Msg struct {
 	// internal
 
-	ref bool   // true iff Data references memory we don't own
-	buf []byte // internal buffer
+	ref  bool   // true iff Data references memory we don't own
+	buf  []byte // internal buffer
+	json []byte // JSON representation (own memory), can be nil
 
 	// optional metadata
 
@@ -42,11 +43,8 @@ type Msg struct {
 
 	// for optional use beyond this pkg, eg. to store pipe.Context
 
-	Value Value // NB: not affected by Reset()
-
-	// JSON support
-
-	json []byte // JSON representation (own memory), can be nil
+	Version int   // contents version number, incremented on each change
+	Value   Value // attached value, NOTE: this is *NOT* affected by Reset()
 }
 
 // Value represents an optional, arbitrary value attached to a message
@@ -109,6 +107,7 @@ func (msg *Msg) Reset() *Msg {
 	msg.Seq = 0
 	msg.Time = time.Time{}
 	msg.Type = 0
+	msg.Version = 0
 
 	msg.Data = nil
 	msg.ref = false
@@ -157,12 +156,14 @@ func (msg *Msg) Use(typ Type) *Msg {
 
 // Modified ditches msg.Data and its internal JSON representation,
 // making the upper layer the only source of information about msg.
+// It also increments msg.Version, to signal that the message has changed.
 //
 // Modified must be called when the upper layer is modified, to signal that
 // both msg.Data and JSON representation must be regenerated when needed.
 func (msg *Msg) Modified() {
 	msg.Data = nil
 	msg.json = msg.json[:0]
+	msg.Version++
 }
 
 // CopyData makes msg the owner of msg.Data, copying referenced external data iff needed.
@@ -228,6 +229,7 @@ func (msg *Msg) FromBytes(buf []byte) (off int, err error) {
 	// needs fresh Parse() and GetJSON() results
 	msg.Upper = INVALID
 	msg.json = msg.json[:0]
+	msg.Version++
 
 	// done!
 	return off + dlen, nil
@@ -235,7 +237,7 @@ func (msg *Msg) FromBytes(buf []byte) (off int, err error) {
 
 // Parse parses msg.Data into the upper layer iff needed.
 // Capabilities in caps can infuence the upper layer decoders.
-// Does not reference data in msg.Data.
+// Can reference data in msg.Data, so call CopyData() first if needed.
 func (msg *Msg) Parse(cps caps.Caps) error {
 	if msg.Upper != INVALID {
 		return nil // assume already done
@@ -269,9 +271,11 @@ func (msg *Msg) Parse(cps caps.Caps) error {
 		err = ErrType
 	}
 
+	// success?
 	if err == nil {
 		msg.Upper = msg.Type
 		msg.json = msg.json[:0]
+		msg.Version++
 	}
 
 	return err

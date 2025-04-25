@@ -18,8 +18,8 @@ type Context struct {
 	tags   map[string]string // message tags (essentially a Key-Value store)
 }
 
-// MsgContext returns message Context inside m, creating one if needed.
-func MsgContext(m *msg.Msg) *Context {
+// UseContext returns message Context inside m, creating one if needed.
+func UseContext(m *msg.Msg) *Context {
 	if mx, ok := m.Value.(*Context); ok {
 		return mx
 	} else {
@@ -33,24 +33,6 @@ func MsgContext(m *msg.Msg) *Context {
 func GetContext(m *msg.Msg) *Context {
 	mx, _ := m.Value.(*Context)
 	return mx
-}
-
-// HasContext returns true iff m has a Context
-func HasContext(m *msg.Msg) bool {
-	_, ok := m.Value.(*Context)
-	return ok
-}
-
-// MsgTags returns message Tags inside m, creating them first if needed
-func MsgTags(m *msg.Msg) map[string]string {
-	mx := MsgContext(m)
-	return mx.Tags()
-}
-
-// HasTags returns true iff m has a Context and non-empty Tags
-func HasTags(m *msg.Msg) bool {
-	mx, ok := m.Value.(*Context)
-	return ok && len(mx.tags) > 0
 }
 
 // Reset resets pc to empty state
@@ -67,8 +49,13 @@ func (mx *Context) Reset() {
 	clear(mx.tags)
 }
 
-// Tags returns message Tags inside mx, creating them first if needed
-func (mx *Context) Tags() map[string]string {
+// HasTags returns true iff the context has any Tags set
+func (mx *Context) HasTags() bool {
+	return mx != nil && len(mx.tags) > 0
+}
+
+// UseTags returns message tags inside mx, creating them first if needed
+func (mx *Context) UseTags() map[string]string {
 	if mx == nil {
 		return nil
 	} else if mx.tags == nil {
@@ -77,26 +64,32 @@ func (mx *Context) Tags() map[string]string {
 	return mx.tags
 }
 
-// HasTags returns true iff the context has any Tags set
-func (mx *Context) HasTags() bool {
-	return mx != nil && len(mx.tags) > 0
+// GetTags returns message Tags inside mx, iff they exist (or nil).
+func (mx *Context) GetTags() map[string]string {
+	if mx == nil || mx.tags == nil {
+		return nil
+	} else {
+		return mx.tags
+	}
 }
 
 // HasTag returns true iff the context has a particular Tag set
 func (mx *Context) HasTag(tag string) bool {
-	if !mx.HasTags() {
+	if mx.HasTags() {
+		_, ok := mx.tags[tag]
+		return ok
+	} else {
 		return false
 	}
-	_, ok := mx.tags[tag]
-	return ok
 }
 
 // GetTag returns given Tag value, or "" if not set
 func (mx *Context) GetTag(tag string) string {
-	if !mx.HasTags() {
+	if mx.HasTags() {
+		return mx.tags[tag]
+	} else {
 		return ""
 	}
-	return mx.tags[tag]
 }
 
 // SetTag set given Tag to given value.
@@ -107,6 +100,17 @@ func (mx *Context) SetTag(tag string, val string) {
 		mx.tags = make(map[string]string)
 	}
 	mx.tags[tag] = val
+}
+
+// DropTag deletes given tag, returning true if it existed
+func (mx *Context) DropTag(tag string) bool {
+	if mx != nil && len(mx.tags) > 0 {
+		if _, ok := mx.tags[tag]; ok {
+			delete(mx.tags, tag)
+			return true
+		}
+	}
+	return false
 }
 
 // DropTags drops all message tags

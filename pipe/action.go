@@ -90,41 +90,41 @@ func (ac Action) Not(a Action) bool {
 
 // ActionClear clears all action flags but ACTION_BORROW in m and returns it.
 func ActionClear(m *msg.Msg) *msg.Msg {
-	MsgContext(m).Action.Clear()
+	UseContext(m).Action.Clear()
 	return m
 }
 
 // ActionBorrow adds ACTION_BORROW to m and returns it.
 func ActionBorrow(m *msg.Msg) *msg.Msg {
-	MsgContext(m).Action.Add(ACTION_BORROW)
+	UseContext(m).Action.Add(ACTION_BORROW)
 	return m
 }
 
 // ActionIsBorrow returns true if ACTION_BORROW is set in m.
 func ActionIsBorrow(m *msg.Msg) bool {
-	return MsgContext(m).Action.Is(ACTION_BORROW)
+	return UseContext(m).Action.Is(ACTION_BORROW)
 }
 
 // ActionDrop adds ACTION_DROP to m and returns it.
 func ActionDrop(m *msg.Msg) *msg.Msg {
-	MsgContext(m).Action.Add(ACTION_DROP)
+	UseContext(m).Action.Add(ACTION_DROP)
 	return m
 }
 
 // ActionIsDrop returns true if ACTION_DROP is set in m.
 func ActionIsDrop(m *msg.Msg) bool {
-	return MsgContext(m).Action.Is(ACTION_DROP)
+	return UseContext(m).Action.Is(ACTION_DROP)
 }
 
 // ActionAccept adds ACTION_ACCEPT to m and returns it.
 func ActionAccept(m *msg.Msg) *msg.Msg {
-	MsgContext(m).Action.Add(ACTION_ACCEPT)
+	UseContext(m).Action.Add(ACTION_ACCEPT)
 	return m
 }
 
 // ActionIsAccept returns true if ACTION_ACCEPT is set in m.
 func ActionIsAccept(m *msg.Msg) bool {
-	return MsgContext(m).Action.Is(ACTION_ACCEPT)
+	return UseContext(m).Action.Is(ACTION_ACCEPT)
 }
 
 // ToJSON appends JSON representation to dst

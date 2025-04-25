@@ -18,9 +18,12 @@ type Update struct {
 
 	Reach    []nlri.NLRI // reachable IPv4 unicast
 	Unreach  []nlri.NLRI // unreachable IPv4 unicast
-	RawAttrs []byte      // raw attributes
+	RawAttrs []byte      // raw attributes, referencing Msg.Data
 
 	Attrs attrs.Attrs // parsed attributes
+
+	cached int            // msg.Version for which the cache is valid
+	cache  map[string]any // cached message attributes
 }
 
 const (
@@ -38,6 +41,21 @@ func (u *Update) Reset() {
 	u.Reach = u.Reach[:0]
 	u.RawAttrs = nil
 	u.Attrs.Reset()
+	u.cached = 0
+	clear(u.cache)
+}
+
+func (u *Update) recache() bool {
+	if u == nil || u.Msg.Upper != UPDATE {
+		return false
+	} else if u.cache == nil {
+		u.cache = make(map[string]any)
+		u.cached = u.Msg.Version
+	} else if u.Msg.Version != u.cached {
+		clear(u.cache)
+		u.cached = u.Msg.Version
+	}
+	return true
 }
 
 // Parse parses msg.Data as BGP UPDATE,
@@ -252,104 +270,174 @@ func (u *Update) FromJSON(src []byte) error {
 
 // ReachMP returns raw MP-BGP attribute ATTR_MP_REACH, or nil
 func (u *Update) ReachMP() *attrs.MP {
+	if u == nil || u.Msg.Upper != UPDATE {
+		return nil
+	}
 	a, _ := u.Attrs.Get(attrs.ATTR_MP_REACH).(*attrs.MP)
 	return a
 }
 
 // UnreachMP returns raw MP-BGP attribute ATTR_MP_UNREACH, or nil
 func (u *Update) UnreachMP() *attrs.MP {
+	if u == nil || u.Msg.Upper != UPDATE {
+		return nil
+	}
 	a, _ := u.Attrs.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP)
 	return a
 }
 
 // AfiSafi returns the message AFI+SAFI, giving priority to MP-BGP attributes
 func (u *Update) AfiSafi() afi.AS {
-	if u == nil || u.Msg.Upper != UPDATE {
-		return afi.AS_INVALID
-	} else if reach := u.ReachMP(); reach != nil {
-		return reach.AS
+	if !u.recache() {
+		return 0
+	}
+
+	as, ok := u.cache["afisafi"].(afi.AS)
+	if ok {
+		return as
+	}
+
+	if reach := u.ReachMP(); reach != nil {
+		as = reach.AS
 	} else if unreach := u.UnreachMP(); unreach != nil {
-		return unreach.AS
+		as = unreach.AS
 	} else {
-		return afi.AS_IPV4_UNICAST
+		as = afi.AS_IPV4_UNICAST
 	}
+
+	u.cache["afisafi"] = as
+	return as
 }
 
-// HasReach returns true iff u announces reachable NLRI (for any address family AF).
+// AllReach returns all reachable prefixes, including those in MP-BGP attributes.
+// Uses cached value if available. Do not modify the returned slice.
+func (u *Update) AllReach() []nlri.NLRI {
+	if !u.recache() {
+		return nil
+	}
+
+	all, ok := u.cache["allreach"].([]nlri.NLRI)
+	if ok {
+		return all
+	}
+
+	// can optimize?
+	mp := u.ReachMP().Prefixes()
+	if mp == nil {
+		all = u.Reach
+	} else if len(u.Reach) == 0 {
+		all = mp.Prefixes
+	} else {
+		all = make([]nlri.NLRI, 0, len(u.Reach)+len(mp.Prefixes))
+		all = append(all, u.Reach...)
+		all = append(all, mp.Prefixes...)
+	}
+
+	u.cache["allreach"] = all
+	return all
+}
+
+// HasReach returns true iff u announces reachable NLRI (for any address family).
 func (u *Update) HasReach() bool {
-	if u == nil || u.Msg.Upper != UPDATE {
-		return false
-	}
-	if len(u.Reach) > 0 {
-		return true
-	}
-	if mp := u.ReachMP().Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
-		return true
-	}
-	return false
+	return len(u.AllReach()) > 0
 }
 
-// GetReach appends all reachable IP prefixes in u to dst (can be nil)
-func (u *Update) GetReach(dst []nlri.NLRI) []nlri.NLRI {
-	if u == nil || u.Msg.Upper != UPDATE {
-		return dst
-	}
-	dst = append(dst, u.Reach...)
-	if mp := u.ReachMP().Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
-		dst = append(dst, mp.Prefixes...)
-	}
-	return dst
-}
-
-// HasUnreach returns true iff u withdraws unreachable NLRI (for any address family AF).
-func (u *Update) HasUnreach() bool {
-	if u == nil || u.Msg.Upper != UPDATE {
-		return false
-	}
-	if len(u.Unreach) > 0 {
-		return true
-	}
-	if mp := u.UnreachMP().Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
-		return true
-	}
-	return false
-}
-
-// GetUnreach appends all unreachable IP prefixes in u to dst (can be nil)
-func (u *Update) GetUnreach(dst []nlri.NLRI) []nlri.NLRI {
-	if u == nil || u.Msg.Upper != UPDATE {
-		return dst
-	}
-	dst = append(dst, u.Unreach...)
-	if mp := u.UnreachMP().Prefixes(); mp != nil && len(mp.Prefixes) > 0 {
-		dst = append(dst, mp.Prefixes...)
-	}
-	return dst
-}
-
-// AsPath returns the ATTR_ASPATH from u, or nil if not defined.
-// TODO: support ATTR_AS4PATH
-func (u *Update) AsPath() *attrs.Aspath {
-	if u == nil || u.Msg.Upper != UPDATE {
+// AllUnreach returns all unreachable prefixes, including those in MP-BGP attributes.
+// Uses cached value if available. Do not modify the returned slice.
+func (u *Update) AllUnreach() []nlri.NLRI {
+	if !u.recache() {
 		return nil
-	} else if ap, ok := u.Attrs.Get(attrs.ATTR_ASPATH).(*attrs.Aspath); ok {
-		return ap
+	}
+
+	all, ok := u.cache["allunreach"].([]nlri.NLRI)
+	if ok {
+		return all
+	}
+
+	// can optimize?
+	mp := u.UnreachMP().Prefixes()
+	if mp == nil {
+		all = u.Unreach
+	} else if len(u.Unreach) == 0 {
+		all = mp.Prefixes
 	} else {
-		return nil
+		all = make([]nlri.NLRI, 0, len(u.Unreach)+len(mp.Prefixes))
+		all = append(all, u.Unreach...)
+		all = append(all, mp.Prefixes...)
 	}
+
+	u.cache["allunreach"] = all
+	return all
+}
+
+// HasUnreach returns true iff u withdraws unreachable NLRI (for any address family).
+func (u *Update) HasUnreach() bool {
+	return len(u.AllUnreach()) > 0
+}
+
+// AsPath returns the AS path from u, or nil if not defined.
+func (u *Update) AsPath() (aspath *attrs.Aspath) {
+	if ok := u.recache(); !ok {
+		return nil // empty
+	} else if aspath, ok = u.cache["aspath"].(*attrs.Aspath); ok {
+		return aspath
+	}
+
+	// AS_PATH must be present and valid
+	ap, ok := u.Attrs.Get(attrs.ATTR_ASPATH).(*attrs.Aspath)
+	if !ok || !ap.Valid() {
+		u.cache["aspath"] = nil
+		return nil // empty
+	}
+	aspath = ap // AS_PATH looks good so far
+
+	// need to process the AS4_PATH	attribute?
+	if ap4, ok := u.Attrs.Get(attrs.ATTR_AS4PATH).(*attrs.Aspath); ok {
+		switch apl, ap4l := ap.Len(), ap4.Len(); {
+		case apl < ap4l: // AS4_PATH is invalid
+			aspath = ap
+		case apl == ap4l: // AS4_PATH is good as-is
+			aspath = ap4
+		default: // AS4_PATH is missing the leading part of AS_PATH
+			aspath = attrs.NewAspath(ap.CodeFlags).(*attrs.Aspath)
+
+			// start with the missing part of AS_PATH
+			diff := apl - ap4l
+			for i, hop := range ap.Hops() {
+				if i >= diff {
+					break
+				}
+				aspath.Append(hop)
+			}
+
+			// append the AS4_PATH
+			for _, hop := range ap4.Hops() {
+				aspath.Append(hop)
+			}
+		}
+	}
+
+	u.cache["aspath"] = aspath
+	return aspath
 }
 
 // NextHop returns NEXT_HOP address, if possible.
 // Check nh.IsValid() before using the value.
 func (u *Update) NextHop() (nh netip.Addr) {
-	if u == nil || u.Msg.Upper != UPDATE {
-		return
+	if ok := u.recache(); !ok {
+		return // empty
+	} else if nh, ok = u.cache["nexthop"].(netip.Addr); ok {
+		return // nh set from cache
 	}
+
 	if mp := u.ReachMP().Prefixes(); mp != nil {
-		return mp.NextHop
+		nh = mp.NextHop.Unmap()
+	} else if aip, _ := u.Attrs.Get(attrs.ATTR_NEXTHOP).(*attrs.IP); aip != nil {
+		nh = aip.Addr.Unmap()
+	} else {
+		// nh remains invalid
 	}
-	if nh, _ := u.Attrs.Get(attrs.ATTR_NEXTHOP).(*attrs.IP); nh != nil {
-		return nh.Addr
-	}
-	return
+
+	u.cache["nexthop"] = nh
+	return nh
 }

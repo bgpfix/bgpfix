@@ -10,6 +10,7 @@ import (
 	"github.com/bgpfix/bgpfix/attrs"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/dir"
+	"github.com/bgpfix/bgpfix/filter"
 	"github.com/bgpfix/bgpfix/msg"
 )
 
@@ -29,18 +30,22 @@ type Input struct {
 	// Reverse, when true, runs callbacks in reverse order.
 	Reverse bool
 
-	// CallbackFilter controls which callbacks to skip (disabled by default)
-	CallbackFilter FilterMode
+	// CbFilter controls which callbacks to skip (disabled by default)
+	CbFilter CbFilterMode
 
-	// FilterValue specifies the value for CallbackFilter
-	FilterValue any
+	// CbFilterValue specifies the value for CbFilter
+	CbFilterValue any
+
+	// Filter is an optional message filter for this Input
+	Filter *filter.Filter
 
 	ibuf []byte          // input buffer
 	cbs  [16][]*Callback // callbacks for given message type
 	done chan struct{}   // closed when the input is done processing
 }
 
-func (in *Input) attach(p *Pipe, l *Line) {
+// attach attaches this Input to the given Pipe-Line.
+func (in *Input) attach(p *Pipe, l *Line) error {
 	in.Pipe = p
 	in.Line = l
 	in.Dir = l.Dir
@@ -60,7 +65,7 @@ func (in *Input) attach(p *Pipe, l *Line) {
 		}
 
 		// callback filter?
-		if filterSkip(in, cb) {
+		if cbfilterSkip(in, cb) {
 			continue
 		}
 
@@ -112,12 +117,14 @@ func (in *Input) attach(p *Pipe, l *Line) {
 			}
 		}
 	}
+
+	return nil
 }
 
 // prepare prepares metadata and context of m for processing in this Input.
 // The message type must already be set.
 func (in *Input) prepare(m *msg.Msg) *Context {
-	mx := MsgContext(m)
+	mx := UseContext(m)
 
 	// already mine?
 	if mx.Input == in {
@@ -154,13 +161,31 @@ func (in *Input) process() {
 		l        = in.Line
 		closed   bool
 		eor_todo map[afi.AS]bool
+		eval     = filter.NewEval(true)
 	)
 	defer close(in.done)
 
 input:
 	for m := range in.In {
-		// prepare the message iff needed
+		// prepare tools
 		mx := in.prepare(m)
+		eval.SetMsg(m)
+		eval.SetPipe(p.KV, p.Caps, mx.tags)
+
+		// has input filter?
+		if in.Filter != nil {
+			// parse the message first?
+			if m.Upper == msg.INVALID && p.ParseMsg(m) != nil {
+				p.PutMsg(m)
+				continue input
+			}
+
+			// evaluate the filter
+			if !eval.Run(in.Filter) {
+				p.PutMsg(m)
+				continue input
+			}
+		}
 
 		// run the callbacks
 		for len(mx.cbs) > 0 {
@@ -178,10 +203,16 @@ input:
 			}
 
 			// need to parse first?
-			if !cb.Raw && m.Upper == msg.INVALID {
+			if m.Upper == msg.INVALID && (!cb.Raw || cb.Filter != nil) {
 				if p.ParseMsg(m) != nil {
+					p.PutMsg(m)
 					continue input // parse error, drop the message
 				}
+			}
+
+			// evaluate a message filter?
+			if cb.Filter != nil && !eval.Run(cb.Filter) {
+				continue // skip m for this callback
 			}
 
 			// run the callback, block until done
@@ -213,19 +244,19 @@ input:
 			if t > oldt && l.LastOpen.CompareAndSwap(oldt, t) {
 				mx.Action.Add(ACTION_BORROW)
 				l.Open.Store(&m.Open)
-				p.Event(EVENT_OPEN, m.Dir, oldt)
+				p.Event(EVENT_OPEN, m.Dir, t)
 			}
 
 		case msg.KEEPALIVE:
 			oldt := l.LastAlive.Load()
 			if t > oldt && l.LastAlive.CompareAndSwap(oldt, t) {
-				p.Event(EVENT_ALIVE, m.Dir, oldt)
+				p.Event(EVENT_ALIVE, m.Dir, t)
 			}
 
 		case msg.UPDATE:
 			oldt := l.LastUpdate.Load()
 			if t > oldt && l.LastUpdate.CompareAndSwap(oldt, t) {
-				p.Event(EVENT_UPDATE, m.Dir, oldt)
+				p.Event(EVENT_UPDATE, m.Dir, t)
 			}
 
 			// an End-of-RIB marker?
@@ -237,7 +268,7 @@ input:
 				} else if a := m.Update.Attrs; a.Len() != 1 {
 					break // must have 1 attribute
 				} else if unreach, ok := a.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); !ok {
-					break // must ATTR_MP_UNREACH
+					break // the attr must be ATTR_MP_UNREACH
 				} else {
 					as = unreach.AS
 				}

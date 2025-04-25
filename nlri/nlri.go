@@ -31,9 +31,46 @@ const (
 	OPT_ADDPATH         // Val holds ADD_PATH
 )
 
-// FromPrefix returns prefix p wrapped in NLRI
-func FromPrefix(p netip.Prefix) NLRI {
+// FromAddr returns normalized address ip wrapped in NLRI
+func FromAddr(ip netip.Addr) NLRI {
+	var p netip.Prefix
+	if ip.Is4() {
+		p, _ = ip.Prefix(32)
+	} else {
+		p, _ = ip.Unmap().Prefix(128)
+	}
 	return NLRI{Prefix: p}
+}
+
+// FromPrefix returns normalized prefix p wrapped in NLRI
+func FromPrefix(p netip.Prefix) NLRI {
+	p, _ = p.Addr().Unmap().Prefix(p.Bits())
+	return NLRI{Prefix: p}
+}
+
+// FromString parses either a prefix or an address in string format,
+// and returns it normalized and wrapped in NLRI.
+func FromString(s string) (n NLRI, e error) {
+	// min. length is 7 (eg. "1.1.1.1")
+	if len(s) < 7 {
+		return n, ErrLength
+	}
+
+	// is a prefix?
+	if strings.LastIndexByte(s, '/') > 0 {
+		p, err := netip.ParsePrefix(s)
+		if err != nil {
+			return n, err
+		}
+		return FromPrefix(p), nil
+	}
+
+	// parse as an address
+	a, err := netip.ParseAddr(s)
+	if err != nil {
+		return n, err
+	}
+	return FromAddr(a), nil
 }
 
 // FindParent returns the first index i into parents

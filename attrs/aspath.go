@@ -2,6 +2,7 @@ package attrs
 
 import (
 	"fmt"
+	"iter"
 	"slices"
 	"strconv"
 
@@ -24,6 +25,163 @@ type AspathSegment struct {
 
 func NewAspath(at CodeFlags) Attr {
 	return &Aspath{CodeFlags: at}
+}
+
+// Clone creates a deep copy of the Aspath object.
+func (a *Aspath) Clone() *Aspath {
+	a2 := &Aspath{
+		CodeFlags: a.CodeFlags,
+		Segments:  slices.Clone(a.Segments),
+	}
+	for i := range a.Segments {
+		a2.Segments[i].List = slices.Clone(a.Segments[i].List)
+	}
+	return a2
+}
+
+// Len returns the number of ASNs in the AS_PATH, treating non-empty AS_SETs as 1.
+func (a *Aspath) Len() int {
+	l := 0
+	for i := range a.Segments {
+		seg := &a.Segments[i]
+		if seg.IsSet {
+			l += min(len(seg.List), 1)
+		} else {
+			l += len(seg.List)
+		}
+	}
+	return l
+}
+
+// Hops returns an iterator over the AS_PATH hops.
+// Each hop is either a single ASN (len=1) or a list of AS_SET members (len>1).
+func (a *Aspath) Hops() iter.Seq2[int, []uint32] {
+	return func(yield func(int, []uint32) bool) {
+		done := 0
+		for i := range a.Segments {
+			seg := &a.Segments[i]
+			if seg.IsSet {
+				if !yield(done, seg.List) {
+					return
+				} else {
+					done++
+				}
+			} else {
+				for j := range seg.List {
+					if !yield(done, seg.List[j:j+1]) {
+						return
+					} else {
+						done++
+					}
+				}
+			}
+		}
+	}
+}
+
+// Hop returns the AS_PATH hop at given index (zero-based).
+// In case index < 0, it counts backwards from the end.
+// NOTE: this function assumes a.Valid() == true.
+func (a *Aspath) Hop(index int) []uint32 {
+	sl := len(a.Segments)
+	if sl == 0 {
+		return nil
+	}
+
+	if index >= 0 {
+		// special case: the first hop
+		if index == 0 {
+			first := &a.Segments[0]
+			ll := len(first.List)
+			if ll == 0 {
+				return nil
+			} else if first.IsSet {
+				return first.List
+			} else {
+				return first.List[:1]
+			}
+		}
+
+		for i := range a.Segments {
+			seg := &a.Segments[i]
+			if seg.IsSet {
+				if index == 0 {
+					return seg.List
+				} else {
+					index--
+				}
+			} else {
+				ll := len(seg.List)
+				if index < ll {
+					return seg.List[index : index+1]
+				} else {
+					index -= ll
+				}
+			}
+		}
+	} else { // negative index
+		// special case: the last hop
+		if index == -1 {
+			last := &a.Segments[sl-1]
+			ll := len(last.List)
+			if ll == 0 {
+				return nil
+			} else if last.IsSet {
+				return last.List
+			} else {
+				return last.List[ll-1:]
+			}
+		}
+
+		// convert to positive, iterate from back
+		index = -index - 1
+		for i := sl - 1; i >= 0; i-- {
+			seg := &a.Segments[i]
+			if seg.IsSet {
+				if index == 0 {
+					return seg.List
+				} else {
+					index--
+				}
+			} else {
+				sl := len(seg.List)
+				if index < sl {
+					return seg.List[sl-index-1 : sl-index]
+				} else {
+					index -= sl
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// Append appends a hop to the AS_PATH.
+// If the hop is a single ASN, it is appended to the last segment.
+// Otherwise, it is appended as a new AS_SET segment.
+func (a *Aspath) Append(hop []uint32) {
+	switch len(hop) {
+	case 0:
+		return // invalid
+	case 1:
+		l := len(a.Segments) - 1
+		if l < 0 || a.Segments[l].IsSet {
+			a.Segments = append(a.Segments, AspathSegment{})
+			l++
+		}
+		seg := &a.Segments[l]
+		seg.List = append(seg.List, hop...)
+	default:
+		a.Segments = append(a.Segments, AspathSegment{
+			IsSet: true,
+			List:  slices.Clone(hop),
+		})
+	}
+}
+
+// Valid returns true iff the AS_PATH is valid
+func (ap *Aspath) Valid() bool {
+	return ap != nil && len(ap.Segments) > 0 && len(ap.Segments[0].List) > 0
 }
 
 func (a *Aspath) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
