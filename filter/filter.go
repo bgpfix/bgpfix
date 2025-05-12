@@ -54,18 +54,18 @@ type (
 )
 
 const (
-	ATTR_EXPR    Attr = iota // sub-expression in value (nested)
-	ATTR_TAG                 // message tag (from pipe context)
-	ATTR_TYPE                // BGP message type
-	ATTR_AF                  // address family / subsequent address family
-	ATTR_REACH               // reachable prefixes
-	ATTR_UNREACH             // unreachable prefixes
-	ATTR_PREFIX              // prefix, either reachable or unreachable
-	ATTR_ASPATH              // AS_PATH attribute
-	ATTR_NEXTHOP             // NEXT_HOP attribute
-	// ATTR_COMM                   // COMMUNITY attribute
-	// ATTR_COMM_EXT               // EXTENDED_COMMUNITY attribute
-	// ATTR_COMM_LARGE             // LARGE_COMMUNITY attribute
+	ATTR_EXPR       Attr = iota // sub-expression in value (nested)
+	ATTR_TAG                    // message tag (from pipe context)
+	ATTR_TYPE                   // BGP message type
+	ATTR_AF                     // address family / subsequent address family
+	ATTR_REACH                  // reachable prefixes
+	ATTR_UNREACH                // unreachable prefixes
+	ATTR_PREFIX                 // prefix, either reachable or unreachable
+	ATTR_ASPATH                 // AS_PATH attribute
+	ATTR_NEXTHOP                // NEXT_HOP attribute
+	ATTR_COMM                   // COMMUNITY attribute
+	ATTR_COMM_EXT               // EXTENDED_COMMUNITY attribute
+	ATTR_COMM_LARGE             // LARGE_COMMUNITY attribute
 )
 
 const (
@@ -161,7 +161,7 @@ func (f *Filter) parse(expstr string, lvl int) (parsed *Expr, left string, err e
 			continue
 		}
 
-		// read attribute
+		// read attribute name
 		var attr string
 		for i, c := range str {
 			if c == ' ' || c == '[' || c == ')' {
@@ -280,75 +280,6 @@ func (f *Filter) parse(expstr string, lvl int) (parsed *Expr, left string, err e
 	}
 }
 
-// parseAttr parses the attribute name
-// it can set the attribute type, operator and value iff needed
-func (e *Expr) parseAttr(attr string) bool {
-	switch attr {
-	case "tag", "tags":
-		e.Attr = ATTR_TAG
-
-	case "type":
-		e.Attr = ATTR_TYPE
-	case "UPDATE":
-		e.Attr = ATTR_TYPE
-		e.Op = OP_EQ
-		e.Val = msg.UPDATE
-	case "OPEN":
-		e.Attr = ATTR_TYPE
-		e.Op = OP_EQ
-		e.Val = msg.OPEN
-	case "KEEPALIVE":
-		e.Attr = ATTR_TYPE
-		e.Op = OP_EQ
-		e.Val = msg.KEEPALIVE
-
-	case "reach":
-		e.Attr = ATTR_REACH
-	case "unreach":
-		e.Attr = ATTR_UNREACH
-	case "prefix":
-		e.Attr = ATTR_PREFIX
-
-	case "af":
-		e.Attr = ATTR_AF
-	case "ipv4":
-		e.Attr = ATTR_AF
-		e.Op = OP_EQ
-		e.Val = afi.AS_IPV4_UNICAST
-	case "ipv6":
-		e.Attr = ATTR_AF
-		e.Op = OP_EQ
-		e.Val = afi.AS_IPV6_UNICAST
-
-	case "aspath", "as_path":
-		e.Attr = ATTR_ASPATH
-	case "as_origin":
-		e.Attr = ATTR_ASPATH
-		e.Idx = -1
-	case "as_upstream":
-		e.Attr = ATTR_ASPATH
-		e.Idx = -2
-	case "as_peer":
-		e.Attr = ATTR_ASPATH
-		e.Idx = 0
-
-	case "nexthop", "nh":
-		e.Attr = ATTR_NEXTHOP
-
-	// case "com", "community":
-	// 	e.Attr = ATTR_COMM
-	// case "com_ext", "extended_community":
-	// 	e.Attr = ATTR_COMM_EXT
-	// case "com_large", "large_community":
-	// 	e.Attr = ATTR_COMM_LARGE
-
-	default:
-		return false
-	}
-
-	return true
-}
-
 func (e *Expr) parseIndex(index string) bool {
 	if index == "" {
 		return true
@@ -421,6 +352,78 @@ func (e *Expr) parseValue(val string) bool {
 	return e.Val != nil
 }
 
+// parseAttr parses the attribute name
+// it can set the attribute type, operator and value iff needed
+func (e *Expr) parseAttr(attr string) bool {
+	attr = strings.ToLower(attr)
+	attr = strings.ReplaceAll(attr, "-", "_")
+
+	switch attr {
+	case "tag", "tags":
+		e.Attr = ATTR_TAG
+
+	case "type":
+		e.Attr = ATTR_TYPE
+	case "update":
+		e.Attr = ATTR_TYPE
+		e.Op = OP_EQ
+		e.Val = msg.UPDATE
+	case "open":
+		e.Attr = ATTR_TYPE
+		e.Op = OP_EQ
+		e.Val = msg.OPEN
+	case "keepalive":
+		e.Attr = ATTR_TYPE
+		e.Op = OP_EQ
+		e.Val = msg.KEEPALIVE
+
+	case "reach":
+		e.Attr = ATTR_REACH
+	case "unreach":
+		e.Attr = ATTR_UNREACH
+	case "prefix":
+		e.Attr = ATTR_PREFIX
+
+	case "af":
+		e.Attr = ATTR_AF
+	case "ipv4":
+		e.Attr = ATTR_AF
+		e.Op = OP_EQ
+		e.Val = afi.AS_IPV4_UNICAST
+	case "ipv6":
+		e.Attr = ATTR_AF
+		e.Op = OP_EQ
+		e.Val = afi.AS_IPV6_UNICAST
+
+	case "aspath", "as_path":
+		e.Attr = ATTR_ASPATH
+	case "as_origin":
+		e.Attr = ATTR_ASPATH
+		e.Idx = -1
+	case "as_upstream":
+		e.Attr = ATTR_ASPATH
+		e.Idx = -2
+	case "as_peer":
+		e.Attr = ATTR_ASPATH
+		e.Idx = 0
+
+	case "nexthop", "nh":
+		e.Attr = ATTR_NEXTHOP
+
+	case "com", "community":
+		e.Attr = ATTR_COMM
+	case "com_ext", "ext_community", "ext_com":
+		e.Attr = ATTR_COMM_EXT
+	case "com_large", "large_community", "large_com":
+		e.Attr = ATTR_COMM_LARGE
+
+	default:
+		return false
+	}
+
+	return true
+}
+
 func (e *Expr) parseCheck() error {
 	switch e.Attr {
 	case ATTR_EXPR:
@@ -437,7 +440,38 @@ func (e *Expr) parseCheck() error {
 		return e.nexthopParse()
 	case ATTR_ASPATH:
 		return e.aspathParse()
+	case ATTR_COMM, ATTR_COMM_EXT, ATTR_COMM_LARGE:
+		return e.communityParse()
 	default:
 		return fmt.Errorf("unsupported attribute")
+	}
+}
+
+func (e *Expr) eval(ev *Eval) (res bool) {
+	switch e.Attr {
+	case ATTR_EXPR: // sub-expression
+		res = ev.exprEval(e.Val.(*Expr))
+	case ATTR_TAG:
+		res = e.tagEval(ev)
+	case ATTR_TYPE:
+		res = e.typeEval(ev)
+	case ATTR_AF:
+		res = e.afEval(ev)
+	case ATTR_REACH, ATTR_UNREACH, ATTR_PREFIX:
+		res = e.prefixEval(ev)
+	case ATTR_NEXTHOP:
+		res = e.nexthopEval(ev)
+	case ATTR_ASPATH:
+		res = e.aspathEval(ev)
+	case ATTR_COMM, ATTR_COMM_EXT, ATTR_COMM_LARGE:
+		res = e.communityEval(ev)
+	default:
+		panic("not implemented")
+	}
+
+	if e.Not {
+		return !res
+	} else {
+		return res
 	}
 }

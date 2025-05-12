@@ -11,24 +11,15 @@ func (e *Expr) tagParse() error {
 	case OP_TRUE:
 		// non-empty tag or tags
 	case OP_EQ:
-		_, ok := e.Val.(string)
-		if !ok {
+		if _, ok := e.Val.(string); !ok {
 			e.Val = fmt.Sprintf("%v", e.Val)
 		}
-	case OP_LIKE:
-		switch v := e.Val.(type) {
-		case *regexp.Regexp:
-			e.Op = OP_TRUE
-		case string:
-			re, err := regexp.Compile(v)
-			if err != nil {
-				return fmt.Errorf("invalid regex: %w", err)
-			}
-			e.Val = re
-		default:
-			e.Op = OP_EQ
-			e.Val = fmt.Sprintf("%v", e.Val)
+	case OP_LIKE: // value is a string
+		re, err := regexp.Compile(e.Val.(string))
+		if err != nil {
+			return fmt.Errorf("invalid regex: %w", err)
 		}
+		e.Val = re
 	default:
 		return ErrOp
 	}

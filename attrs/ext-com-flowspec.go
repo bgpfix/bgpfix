@@ -5,7 +5,6 @@ import (
 	"math"
 	"strconv"
 
-	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
 )
 
@@ -24,7 +23,7 @@ func (e *ExtcomFlowRate) Unmarshal(raw uint64) error {
 	return nil
 }
 
-func (e *ExtcomFlowRate) Marshal(cps caps.Caps) uint64 {
+func (e *ExtcomFlowRate) Marshal() uint64 {
 	var raw uint64
 	raw |= uint64(e.Id) << 32
 	raw |= uint64(math.Float32bits(e.Rate))
@@ -86,7 +85,7 @@ func (e *ExtcomFlowAction) Unmarshal(raw uint64) error {
 	return nil
 }
 
-func (e *ExtcomFlowAction) Marshal(cps caps.Caps) uint64 {
+func (e *ExtcomFlowAction) Marshal() uint64 {
 	var raw uint64
 	if e.Terminal {
 		raw |= EXTCOM_FLOW_ACTION_TERMINAL
@@ -125,7 +124,7 @@ func (e *ExtcomFlowRedirectNH) Unmarshal(raw uint64) error {
 	return nil
 }
 
-func (e *ExtcomFlowRedirectNH) Marshal(cps caps.Caps) uint64 {
+func (e *ExtcomFlowRedirectNH) Marshal() uint64 {
 	var raw uint64
 	if e.Copy {
 		raw |= 0x01
@@ -158,7 +157,7 @@ func (e *ExtcomFlowDSCP) Unmarshal(raw uint64) error {
 	return nil
 }
 
-func (e *ExtcomFlowDSCP) Marshal(cps caps.Caps) uint64 {
+func (e *ExtcomFlowDSCP) Marshal() uint64 {
 	var raw uint64
 	raw |= uint64(e.DSCP & 0b00111111)
 	return raw

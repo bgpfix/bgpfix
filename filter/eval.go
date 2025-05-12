@@ -81,31 +81,7 @@ func (ev *Eval) exprEval(first *Expr) (result bool) {
 			}
 			fallthrough
 		default:
-			switch e.Attr {
-			case ATTR_EXPR: // sub-expression
-				res = ev.exprEval(e.Val.(*Expr))
-			case ATTR_TAG:
-				res = e.tagEval(ev)
-			case ATTR_TYPE: // message type
-				res = e.typeEval(ev)
-			case ATTR_AF: // afi/safi
-				res = e.afEval(ev)
-			case ATTR_REACH, ATTR_UNREACH, ATTR_PREFIX:
-				res = e.prefixEval(ev)
-			case ATTR_NEXTHOP:
-				res = e.nexthopEval(ev)
-			case ATTR_ASPATH:
-				res = e.aspathEval(ev)
-			default:
-				panic("not implemented")
-			}
-
-			// negate?
-			if e.Not {
-				res = !res
-			}
-
-			// put into cache?
+			res = e.eval(ev)
 			if ev.cache != nil {
 				ev.cache[e.String] = res
 			}
@@ -115,19 +91,16 @@ func (ev *Eval) exprEval(first *Expr) (result bool) {
 		any_ok = any_ok || res
 
 		// no need to keep checking?
+		is_and := prev_and || e.And // left or right is AND?
 		if res {
-			// ... || <this-expression> || ...
-			if prev_and == false && e.And == false {
+			if !is_and {
 				return true
 			}
 		} else {
-			// ... && <this-expression> ?? ...
-			// ... ?? <this-expression> && ...
-			if prev_and == true || e.And == true {
+			if is_and {
 				return false
 			}
 		}
-
 		prev_and = e.And
 	}
 

@@ -441,3 +441,21 @@ func (u *Update) NextHop() (nh netip.Addr) {
 	u.cache["nexthop"] = nh
 	return nh
 }
+
+// Community returns the community attribute, or nil if not defined.
+func (u *Update) Community() *attrs.Community {
+	c, _ := u.Attrs.Get(attrs.ATTR_COMMUNITY).(*attrs.Community)
+	return c
+}
+
+// ExtCommunity returns the extended community attribute, or nil if not defined.
+func (u *Update) ExtCommunity() *attrs.Extcom {
+	c, _ := u.Attrs.Get(attrs.ATTR_EXT_COMMUNITY).(*attrs.Extcom)
+	return c
+}
+
+// LargeCommunity returns the large community attribute, or nil if not defined.
+func (u *Update) LargeCommunity() *attrs.LargeCom {
+	c, _ := u.Attrs.Get(attrs.ATTR_LARGE_COMMUNITY).(*attrs.LargeCom)
+	return c
+}

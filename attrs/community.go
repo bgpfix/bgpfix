@@ -20,6 +20,14 @@ func NewCommunity(at CodeFlags) Attr {
 	return &Community{CodeFlags: at}
 }
 
+func (a *Community) Len() int {
+	if a != nil {
+		return len(a.ASN)
+	} else {
+		return 0
+	}
+}
+
 func (a *Community) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	for len(buf) > 0 {
 		if len(buf) < 4 {

@@ -55,13 +55,38 @@ func (e *Expr) prefixEval(ev *Eval) bool {
 		return len(prefixes) > 0
 	}
 
-	// iterate over prefixes, compare vs. ref
+	// check checks specific prefix value
 	ref := e.Val.(nlri.NLRI)
+	ra, rb := ref.Addr().Unmap(), ref.Bits()
+	check := func(pfx *nlri.NLRI) bool {
+		pa, pb := pfx.Addr().Unmap(), pfx.Bits()
+		if ra.Is4() != pa.Is4() {
+			return false // different address families never match
+		}
+		switch e.Op {
+		case OP_EQ:
+			return rb == pb && ra == pa
+		case OP_LT:
+			return rb < pb && ref.Overlaps(pfx.Prefix)
+		case OP_LE:
+			return rb <= pb && ref.Overlaps(pfx.Prefix)
+		case OP_GT:
+			return rb > pb && pfx.Overlaps(ref.Prefix)
+		case OP_GE:
+			return rb >= pb && ref.Overlaps(pfx.Prefix)
+		case OP_LIKE:
+			return ref.Overlaps(pfx.Prefix)
+		default:
+			panic("unreachable")
+		}
+	}
+
+	// iterate over prefixes, compare vs. ref
 	all := e.Idx == "*" // must match all prefixes?
 	any_ok := false     // any OK so far?
 	for i := range 2 {
 		for p := range prefixes {
-			res := e.prefixCheck(&ref, &prefixes[p])
+			res := check(&prefixes[p])
 			any_ok = any_ok || res
 			if all {
 				if !res {
@@ -83,29 +108,4 @@ func (e *Expr) prefixEval(ev *Eval) bool {
 	}
 
 	return any_ok
-}
-
-func (e *Expr) prefixCheck(ref, pfx *nlri.NLRI) bool {
-	ra, rb := ref.Addr().Unmap(), ref.Bits()
-	pa, pb := pfx.Addr().Unmap(), pfx.Bits()
-	if ra.Is4() != pa.Is4() {
-		return false // different address families never match
-	}
-
-	switch e.Op {
-	case OP_EQ:
-		return rb == pb && ra == pa
-	case OP_LT:
-		return rb < pb && ref.Overlaps(pfx.Prefix)
-	case OP_LE:
-		return rb <= pb && ref.Overlaps(pfx.Prefix)
-	case OP_GT:
-		return rb > pb && pfx.Overlaps(ref.Prefix)
-	case OP_GE:
-		return rb >= pb && ref.Overlaps(pfx.Prefix)
-	case OP_LIKE:
-		return ref.Overlaps(pfx.Prefix)
-	}
-
-	panic("unreachable") // should never happen
 }
