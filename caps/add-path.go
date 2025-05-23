@@ -106,7 +106,7 @@ func (c *AddPath) Sorted() (dst []afi.ASV) {
 
 // ToJSON appends JSON representation of the value to dst
 func (c *AddPath) ToJSON(dst []byte) []byte {
-	dst = append(dst, '{')
+	dst = append(dst, '[')
 	for i, afv := range c.Sorted() {
 		if i > 0 {
 			dst = append(dst, ',')
@@ -115,7 +115,7 @@ func (c *AddPath) ToJSON(dst []byte) []byte {
 		dir := AddPathDir(afv.Val())
 		dst = afv.ToJSON(dst, dir.String())
 	}
-	return append(dst, '}')
+	return append(dst, ']')
 }
 
 // FromJSON reads from JSON representation in src
