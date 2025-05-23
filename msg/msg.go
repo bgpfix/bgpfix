@@ -145,22 +145,38 @@ func (msg *Msg) Len() int {
 }
 
 // Use selects the upper layer of given type for active use.
-// Calls msg.Modified(), but does not reset the selected upper layer.
+// Calls msg.Edit(), but does not reset the selected upper layer.
 // Use Reset() on msg or the selected layer if needed.
 func (msg *Msg) Use(typ Type) *Msg {
 	msg.Type = typ
 	msg.Upper = typ
-	msg.Modified()
+	msg.Edit()
 	return msg
 }
 
-// Modified ditches msg.Data and its internal JSON representation,
+// Edit ditches msg.Data and its internal JSON representation,
 // making the upper layer the only source of information about msg.
 // It also increments msg.Version, to signal that the message has changed.
 //
-// Modified must be called when the upper layer is modified, to signal that
+// If cond is non-empty, it will be checked first for any true value.
+//
+// Edit must be called when the upper layer is modified, to signal that
 // both msg.Data and JSON representation must be regenerated when needed.
-func (msg *Msg) Modified() {
+func (msg *Msg) Edit(cond ...bool) {
+	// check conditions first?
+	if len(cond) > 0 {
+		found := false
+		for _, v := range cond {
+			if v {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return
+		}
+	}
+
 	msg.Data = nil
 	msg.json = msg.json[:0]
 	msg.Version++
@@ -455,7 +471,7 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 		}
 	}
 
-	msg.Modified() // will modify Upper
+	msg.Edit() // will modify Upper
 	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) (err error) {
 		switch key {
 		case 0: // dst
