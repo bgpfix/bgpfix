@@ -66,7 +66,7 @@ func (mx *Context) UseTags() map[string]string {
 
 // GetTags returns message Tags inside mx, iff they exist (or nil).
 func (mx *Context) GetTags() map[string]string {
-	if mx == nil || mx.tags == nil {
+	if mx == nil {
 		return nil
 	} else {
 		return mx.tags
@@ -113,9 +113,14 @@ func (mx *Context) DropTag(tag string) bool {
 	return false
 }
 
-// DropTags drops all message tags
-func (mx *Context) DropTags() {
-	mx.tags = nil
+// DropTags drops all message tags, returning true if any existed
+func (mx *Context) DropTags() bool {
+	if mx.HasTags() {
+		clear(mx.tags)
+		return true
+	} else {
+		return false
+	}
 }
 
 // ToJSON marshals Context to JSON
