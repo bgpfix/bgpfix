@@ -126,10 +126,11 @@ func (c *AddPath) FromJSON(src []byte) (err error) {
 			dir, err := AddPathDirString(s)
 			return uint32(dir), err
 		})
-		if err == nil {
-			c.Proto[afv.AF()] = AddPathDir(afv.Val())
+		if err != nil {
+			return err
 		}
-		return err
+		c.Proto[afv.AF()] = AddPathDir(afv.Val())
+		return nil
 	})
 }
 
