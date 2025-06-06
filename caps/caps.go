@@ -11,7 +11,7 @@ import (
 
 	"github.com/bgpfix/bgpfix/binary"
 	"github.com/bgpfix/bgpfix/json"
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 )
 
 var msb = binary.Msb
@@ -26,14 +26,14 @@ var msb = binary.Msb
 // stored here in a thread-safe way.
 type Caps struct {
 	// the database of capabilities, initially nil
-	db *xsync.MapOf[Code, Cap]
+	db *xsync.Map[Code, Cap]
 }
 
 // Init initializes Caps and makes it fully thread-safe after return.
 // Can be called multiple times for lazy init.
 func (cps *Caps) Init() {
 	if cps.db == nil {
-		cps.db = xsync.NewMapOf[Code, Cap]()
+		cps.db = xsync.NewMap[Code, Cap]()
 	}
 }
 

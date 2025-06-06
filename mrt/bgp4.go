@@ -183,7 +183,7 @@ func (b4 *Bgp4) Parse() error {
 		return ErrSub
 	}
 
-	// parse IP based on AF (NB: the BGPMSG_MINLEN check above)
+	// parse IP based on AF (NB: the BGPMSG_HEADLEN check above)
 	switch af {
 	case afi.AFI_IPV4:
 		if len(buf) < 2*4+msg.HEADLEN {

@@ -8,7 +8,7 @@ import (
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/msg"
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 )
 
 // Line implements one direction of a Pipe: possibly several input processors
@@ -36,7 +36,7 @@ type Line struct {
 	Open atomic.Pointer[msg.Open]
 
 	// UNIX timestamp (seconds) of the first EoR for given AF
-	EoR *xsync.MapOf[afi.AS, int64]
+	EoR *xsync.Map[afi.AS, int64]
 
 	inputs []*Input      // all input processors, [0] is the default .Input
 	seq    atomic.Int64  // last seq number assigned
@@ -48,7 +48,7 @@ type Line struct {
 func (l *Line) attach() error {
 	p := l.Pipe
 	l.done = make(chan struct{})
-	l.EoR = xsync.NewMapOf[afi.AS, int64]()
+	l.EoR = xsync.NewMap[afi.AS, int64]()
 
 	// the default input
 	if err := l.Input.attach(p, l); err != nil {

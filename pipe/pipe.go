@@ -10,7 +10,7 @@ import (
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/msg"
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 	"github.com/rs/zerolog"
 )
 
@@ -30,7 +30,7 @@ type Pipe struct {
 	R       *Line     // line processing messages from L to R
 
 	// generic Key-Value store, always thread-safe
-	KV *xsync.MapOf[string, any]
+	KV *xsync.Map[string, any]
 
 	ctx    context.Context         // parent context for all children
 	cancel context.CancelCauseFunc // cancels ctx
@@ -54,8 +54,8 @@ func NewPipe(ctx context.Context) *Pipe {
 
 	p.Options = DefaultOptions
 
-	p.Caps.Init() // NB: make it thread-safe
-	p.KV = xsync.NewMapOf[string, any]()
+	p.Caps.Init() // NB: makes it thread-safe
+	p.KV = xsync.NewMap[string, any]()
 
 	p.R = &Line{
 		Pipe: p,

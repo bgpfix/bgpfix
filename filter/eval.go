@@ -3,7 +3,7 @@ package filter
 import (
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/msg"
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 )
 
 // Eval efficiently evaluates Filters against a given Msg.
@@ -12,9 +12,9 @@ type Eval struct {
 
 	// optional Pipe context (cleared on Msg change)
 
-	PipeKV   *xsync.MapOf[string, any] // pipe key-value store (can be nil)
-	PipeCaps caps.Caps                 // pipe capabilities (can be nil)
-	PipeTags map[string]string         // pipe message tags (can be nil)
+	PipeKV   *xsync.Map[string, any] // pipe key-value store (can be nil)
+	PipeCaps caps.Caps               // pipe capabilities (can be nil)
+	PipeTags map[string]string       // pipe message tags (can be nil)
 
 	cached int             // msg.Version for which the cache is valid
 	cache  map[string]bool // cached results of evaluated expressions
@@ -42,7 +42,7 @@ func (ev *Eval) SetMsg(m *msg.Msg) {
 
 // SetPipe sets the optional, read-only Pipe context, in a way that
 // hopefully avoids a cyclic import vs. the pipe package.
-func (ev *Eval) SetPipe(kv *xsync.MapOf[string, any], caps caps.Caps, tags map[string]string) {
+func (ev *Eval) SetPipe(kv *xsync.Map[string, any], caps caps.Caps, tags map[string]string) {
 	ev.PipeKV = kv
 	ev.PipeCaps = caps
 	ev.PipeTags = tags

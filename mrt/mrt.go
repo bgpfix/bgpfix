@@ -125,7 +125,7 @@ func (mrt *Mrt) Len() int {
 }
 
 // Use selects the upper layer of given type for active use.
-// Drop mrt.Data, but does not touch the upper layer at all.
+// Drops mrt.Data, but does not touch the upper layer at all.
 // Use Reset() on mrt or the selected layer if needed.
 func (mrt *Mrt) Use(typ Type) *Mrt {
 	mrt.Data = nil
