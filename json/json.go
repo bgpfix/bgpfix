@@ -144,19 +144,19 @@ func UnPrefix(src []byte) (netip.Prefix, error) {
 // Ascii appends ASCII characters from src to JSON string in dst
 func Ascii(dst, src []byte) []byte {
 	for _, c := range src {
-		if c >= 0x20 && c <= 0x7e {
-			dst = append(dst, c)
-		} else {
-			switch c {
-			case '"', '\\':
-				dst = append(dst, '\\', c)
-			case '\r':
-				dst = append(dst, '\\', 'r')
-			case '\n':
-				dst = append(dst, '\\', 'n')
-			case '\t':
-				dst = append(dst, '\\', 't')
-			default:
+		switch c {
+		case '"', '\\':
+			dst = append(dst, '\\', c)
+		case '\r':
+			dst = append(dst, '\\', 'r')
+		case '\n':
+			dst = append(dst, '\\', 'n')
+		case '\t':
+			dst = append(dst, '\\', 't')
+		default:
+			if c >= 0x20 && c <= 0x7e {
+				dst = append(dst, c)
+			} else {
 				dst = append(dst, "\\u00"...)
 				dst = append(dst, hextable[c>>4], hextable[c&0x0f])
 			}

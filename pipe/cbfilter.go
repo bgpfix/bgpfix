@@ -1,60 +1,60 @@
 package pipe
 
-type FilterMode = int
+type CbFilterMode = int
 
 const (
 	// callback filter disabled
-	FILTER_NONE FilterMode = iota
+	CBFILTER_NONE CbFilterMode = iota
 
 	// skip if callback id == value
-	FILTER_EQ
+	CBFILTER_EQ
 
 	// skip if callback id > value
-	FILTER_GT
+	CBFILTER_GT
 
 	// skip if callback id < value
-	FILTER_LT
+	CBFILTER_LT
 
 	// skip if callback id >= value
-	FILTER_GE
+	CBFILTER_GE
 
 	// skip if callback id <= value
-	FILTER_LE
+	CBFILTER_LE
 
 	// skip if callback id != value
-	FILTER_NE
+	CBFILTER_NE
 
 	// skip all callbacks
-	FILTER_ALL
+	CBFILTER_ALL
 )
 
-func filterSkip(li *Input, cb *Callback) bool {
+func cbfilterSkip(li *Input, cb *Callback) bool {
 	cbid := cb.Id
 	if cbid == 0 {
 		return false
 	}
 
-	val, ok := li.FilterValue.(int)
+	val, ok := li.CbFilterValue.(int)
 	if !ok {
 		return false
 	}
 
-	switch li.CallbackFilter {
-	case FILTER_NONE:
+	switch li.CbFilter {
+	case CBFILTER_NONE:
 		return false
-	case FILTER_EQ:
+	case CBFILTER_EQ:
 		return cbid == val
-	case FILTER_GT:
+	case CBFILTER_GT:
 		return cbid > val
-	case FILTER_LT:
+	case CBFILTER_LT:
 		return cbid < val
-	case FILTER_GE:
+	case CBFILTER_GE:
 		return cbid >= val
-	case FILTER_LE:
+	case CBFILTER_LE:
 		return cbid <= val
-	case FILTER_NE:
+	case CBFILTER_NE:
 		return cbid != val
-	case FILTER_ALL:
+	case CBFILTER_ALL:
 		return true
 	}
 

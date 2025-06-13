@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 
 	"github.com/bgpfix/bgpfix/dir"
+	"github.com/bgpfix/bgpfix/filter"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -43,9 +44,10 @@ type Callback struct {
 	Raw  bool // if true, do not parse the message (which may already be parsed, but for other reasons)
 	Post bool // run after non-post callbacks?
 
-	Dir   dir.Dir      // if non-zero, limits the direction
-	Types []msg.Type   // if non-empty, limits message types
-	Func  CallbackFunc // the function to call
+	Dir    dir.Dir        // if non-zero, limits the direction
+	Types  []msg.Type     // if non-empty, limits message types
+	Filter *filter.Filter // if non-nil, skips messages not matching the filter
+	Func   CallbackFunc   // the function to call
 }
 
 // Handler represents a function to call for matching pipe events

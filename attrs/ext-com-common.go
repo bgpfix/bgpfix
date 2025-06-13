@@ -5,7 +5,6 @@ import (
 	"net/netip"
 	"strconv"
 
-	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
 )
 
@@ -23,7 +22,7 @@ func (e *ExtcomRaw) Unmarshal(src uint64) error {
 	return nil
 }
 
-func (e *ExtcomRaw) Marshal(cps caps.Caps) uint64 {
+func (e *ExtcomRaw) Marshal() uint64 {
 	return uint64(e.uint64 & 0x0000ffffffffffff)
 }
 
@@ -63,7 +62,7 @@ func (e *ExtcomASN) Unmarshal(raw uint64) error {
 	return nil
 }
 
-func (e *ExtcomASN) Marshal(cps caps.Caps) uint64 {
+func (e *ExtcomASN) Marshal() uint64 {
 	var raw uint64
 	if e.et.Type()&EXTCOM_AS4 != 0 {
 		raw |= uint64(e.ASN) << 16
@@ -122,7 +121,7 @@ func (e *ExtcomAddr) Unmarshal(raw uint64) error {
 	return nil
 }
 
-func (e *ExtcomAddr) Marshal(cps caps.Caps) uint64 {
+func (e *ExtcomAddr) Marshal() uint64 {
 	var raw uint64
 	if addr := e.Addr.AsSlice(); len(addr) == 4 {
 		raw |= uint64(addr[0]) << 40

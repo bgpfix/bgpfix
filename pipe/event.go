@@ -81,7 +81,7 @@ func (ev *Event) Wait() bool {
 }
 
 // attachEvent initializes the event handler
-func (p *Pipe) attachEvent() {
+func (p *Pipe) attachEvent() error {
 	// copy valid handlers to hds
 	var hds []*Handler
 	for _, hd := range p.Options.Handlers {
@@ -117,6 +117,8 @@ func (p *Pipe) attachEvent() {
 			p.events[typ] = append(p.events[typ], h)
 		}
 	}
+
+	return nil
 }
 
 // Event announces a new event type et to the pipe, with optional arguments.

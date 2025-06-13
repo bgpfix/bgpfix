@@ -10,7 +10,7 @@ import (
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/msg"
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 	"github.com/rs/zerolog"
 )
 
@@ -30,7 +30,7 @@ type Pipe struct {
 	R       *Line     // line processing messages from L to R
 
 	// generic Key-Value store, always thread-safe
-	KV *xsync.MapOf[string, any]
+	KV *xsync.Map[string, any]
 
 	ctx    context.Context         // parent context for all children
 	cancel context.CancelCauseFunc // cancels ctx
@@ -54,8 +54,8 @@ func NewPipe(ctx context.Context) *Pipe {
 
 	p.Options = DefaultOptions
 
-	p.Caps.Init() // NB: make it thread-safe
-	p.KV = xsync.NewMapOf[string, any]()
+	p.Caps.Init() // NB: makes it thread-safe
+	p.KV = xsync.NewMap[string, any]()
 
 	p.R = &Line{
 		Pipe: p,
@@ -87,7 +87,7 @@ func NewPipe(ctx context.Context) *Pipe {
 	return p
 }
 
-func (p *Pipe) attach() {
+func (p *Pipe) attach() error {
 	opts := &p.Options
 
 	if opts.Logger != nil {
@@ -105,11 +105,15 @@ func (p *Pipe) attach() {
 	}
 
 	// attach Inputs to Lines
-	p.L.attach()
-	p.R.attach()
+	if err := p.L.attach(); err != nil {
+		return err
+	}
+	if err := p.R.attach(); err != nil {
+		return err
+	}
 
 	// attach Event handler
-	p.attachEvent()
+	return p.attachEvent()
 }
 
 // checkEstablished is called whenever either direction gets a new KEEPALIVE message,
@@ -160,13 +164,17 @@ func (p *Pipe) checkEstablished(ev *Event) bool {
 }
 
 // Start starts the Pipe in background and returns.
-func (p *Pipe) Start() {
-	if p.started.Swap(true) || p.stopped.Load() {
-		return // already started or stopped
+func (p *Pipe) Start() error {
+	if p.started.Swap(true) {
+		return ErrStarted // already started
+	} else if p.stopped.Load() {
+		return ErrStopped // already stopped
 	}
 
 	// apply options
-	p.attach()
+	if err := p.attach(); err != nil {
+		return err
+	}
 
 	// start line inputs
 	p.L.start()
@@ -192,6 +200,7 @@ func (p *Pipe) Start() {
 	// publish the start event!
 	go p.Event(EVENT_START)
 	p.wgstart.Done()
+	return nil
 }
 
 // Stop stops all inputs and blocks till they finish processing.
@@ -249,7 +258,7 @@ func (p *Pipe) GetMsg() (m *msg.Msg) {
 		return m
 	} else {
 		m = msg.NewMsg() // allocate
-		MsgContext(m)    // add context
+		UseContext(m)    // add context
 		return m
 	}
 }
@@ -262,7 +271,7 @@ func (p *Pipe) PutMsg(m *msg.Msg) {
 	}
 
 	// do not re-use?
-	mx := MsgContext(m)
+	mx := UseContext(m)
 	if mx.Action.Is(ACTION_BORROW) {
 		return
 	}

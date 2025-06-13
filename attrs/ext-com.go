@@ -26,7 +26,7 @@ type ExtcomValue interface {
 	Unmarshal(src uint64) error
 
 	// Marshal returns wire representation of the value
-	Marshal(cps caps.Caps) uint64
+	Marshal() uint64
 
 	// ToJSON appends JSON representation of the value to dst
 	ToJSON(dst []byte) []byte
@@ -188,7 +188,7 @@ func (a *Extcom) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
 			continue
 		}
 
-		u64 := val.Marshal(cps)
+		u64 := val.Marshal()
 		u64 &= 0x0000ffffffffffff // zero the top 2 bytes
 		u64 |= uint64(et) << 48   // set the top 2 bytes to typ
 		dst = msb.AppendUint64(dst, u64)
@@ -284,4 +284,12 @@ func (a *Extcom) Find(et ExtcomType) int {
 		}
 	}
 	return -1
+}
+
+func (a *Extcom) Len() int {
+	if a != nil {
+		return len(a.Value)
+	} else {
+		return 0
+	}
 }

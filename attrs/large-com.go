@@ -22,6 +22,14 @@ func NewLargeCom(at CodeFlags) Attr {
 	return &LargeCom{CodeFlags: at}
 }
 
+func (a *LargeCom) Len() int {
+	if a != nil {
+		return len(a.ASN)
+	} else {
+		return 0
+	}
+}
+
 func (a *LargeCom) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	for len(buf) > 0 {
 		if len(buf) < 12 {
