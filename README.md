@@ -4,7 +4,7 @@
 
 A generic-purpose, high-performance Golang library for [bridging the gaps in BGP](https://twitter.com/ACM_IMC2021/status/1445725066403196928).
 
-**For a stand-alone tool, see [bgpipe: BGP reverse proxy and firewall](https://bgpipe.org/).**
+**For a stand-alone tool, see [bgpipe: a BGP firewall](https://bgpipe.org/).**
 
 # Summary
 
