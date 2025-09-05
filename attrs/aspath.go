@@ -179,6 +179,13 @@ func (a *Aspath) Append(hop []uint32) {
 	}
 }
 
+// Set sets the AS_PATH to be a single segment with given hops
+func (a *Aspath) Set(hops []uint32) {
+	a.Segments = append(a.Segments[:0], AspathSegment{
+		List: slices.Clone(hops),
+	})
+}
+
 // Valid returns true iff the AS_PATH is valid
 func (ap *Aspath) Valid() bool {
 	return ap != nil && len(ap.Segments) > 0 && len(ap.Segments[0].List) > 0
