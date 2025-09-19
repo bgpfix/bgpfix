@@ -146,7 +146,7 @@ func (msg *Msg) Len() int {
 
 // Use selects the upper layer of given type for active use.
 // Calls msg.Edit(), but does not reset the selected upper layer.
-// Use Reset() on msg or the selected layer if needed.
+// Use Reset() on the selected layer if needed.
 func (msg *Msg) Use(typ Type) *Msg {
 	msg.Type = typ
 	msg.Upper = typ

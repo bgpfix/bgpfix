@@ -16,7 +16,7 @@ var (
 
 	// conversion errors
 	ErrNilMessage  = errors.New("nil message")
-	ErrNilLine     = errors.New("nil Line")
+	ErrNilLine     = errors.New("nil Exa")
 	ErrNotUpdate   = errors.New("not an UPDATE message")
 	ErrNextHopSelf = errors.New("next-hop 'self' must be resolved to actual IP before conversion")
 	ErrNoPrefix    = errors.New("no reachable or unreachable prefixes found")

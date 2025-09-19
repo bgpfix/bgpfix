@@ -12,9 +12,10 @@ import (
 	"github.com/bgpfix/bgpfix/nlri"
 )
 
-// ToMsg converts a Line to a bgpfix Msg m.
-func (r *Line) ToMsg(m *msg.Msg) error {
+// ToMsg converts a Exa to a bgpfix Msg m.
+func (r *Exa) ToMsg(m *msg.Msg) error {
 	u := &m.Use(msg.UPDATE).Update
+	u.Reset()
 
 	// Parse the prefix
 	prefix, err := netip.ParsePrefix(r.Prefix)
@@ -39,8 +40,8 @@ func (r *Line) ToMsg(m *msg.Msg) error {
 	return nil
 }
 
-// writeAttrs creates the BGP attributes from Line fields
-func (r *Line) writeAttrs(u *msg.Update) error {
+// writeAttrs creates the BGP attributes from Exa fields
+func (r *Exa) writeAttrs(u *msg.Update) error {
 	// Next hop is required for announcements
 	if r.NextHop != "" {
 		if r.NextHop == "self" {
@@ -96,7 +97,7 @@ func (r *Line) writeAttrs(u *msg.Update) error {
 }
 
 // writeCommunity creates the COMMUNITY attribute using the bgpipe pattern
-func (r *Line) writeCommunity(u *msg.Update) error {
+func (r *Exa) writeCommunity(u *msg.Update) error {
 	comm := u.Attrs.Use(attrs.ATTR_COMMUNITY).(*attrs.Community)
 
 	for _, c := range r.Community {
@@ -131,22 +132,22 @@ func (r *Line) writeCommunity(u *msg.Update) error {
 	return nil
 }
 
-// FromMsg returns an iterator that converts bgpfix Msg (UPDATE) to Lines.
-// For each reachable and unreachable prefix, it yields a Line.
-// The iterator updates the Line r for each prefix.
-func (r *Line) FromMsg(m *msg.Msg) iter.Seq[*Line] {
-	return func(yield func(*Line) bool) {
+// IterMsg returns an iterator that converts bgpfix Msg (UPDATE) to Exa lines.
+// For each reachable and unreachable prefix, it returns an Exa line.
+// The iterator updates the r Exa for each prefix.
+func (r *Exa) IterMsg(m *msg.Msg) iter.Seq[*Exa] {
+	return func(yield func(*Exa) bool) {
 		if m == nil || m.Type != msg.UPDATE {
 			return
 		}
 		u := &m.Update
 
 		// Handle announcements (reachable prefixes)
-		if u.HasReach() {
+		if len(u.Reach) > 0 {
 			r.Reset()
 			r.Action = "announce"
 			r.readMsgAttrs(u)
-			for _, prefix := range u.AllReach() {
+			for _, prefix := range u.Reach {
 				r.Prefix = prefix.String()
 				if !yield(r) {
 					return
@@ -155,10 +156,10 @@ func (r *Line) FromMsg(m *msg.Msg) iter.Seq[*Line] {
 		}
 
 		// Handle withdrawals (unreachable prefixes)
-		if u.HasUnreach() {
+		if len(u.Unreach) > 0 {
 			r.Reset()
 			r.Action = "withdraw"
-			for _, prefix := range u.AllUnreach() {
+			for _, prefix := range u.Unreach {
 				r.Prefix = prefix.String()
 				if !yield(r) {
 					return
@@ -168,17 +169,18 @@ func (r *Line) FromMsg(m *msg.Msg) iter.Seq[*Line] {
 	}
 }
 
-// readMsgAttrs extracts BGP attributes from UPDATE into Line
-func (r *Line) readMsgAttrs(u *msg.Update) {
+// readMsgAttrs extracts BGP attributes from UPDATE into Exa
+func (r *Exa) readMsgAttrs(u *msg.Update) {
 	// no attributes defined?
 	if u.Attrs.Len() == 0 {
 		return
 	}
 
-	// Next hop
-	nh := u.NextHop()
-	if nh.IsValid() {
-		r.NextHop = nh.String()
+	// Next hop - directly check from attributes since we know they're available
+	if nh, ok := u.Attrs.Get(attrs.ATTR_NEXTHOP).(*attrs.IP); ok {
+		if nh.Addr.IsValid() {
+			r.NextHop = nh.Addr.String()
+		}
 	}
 
 	// Origin
@@ -194,8 +196,7 @@ func (r *Line) readMsgAttrs(u *msg.Update) {
 	}
 
 	// AS path
-	aspath := u.AsPath()
-	if aspath != nil && aspath.Valid() {
+	if aspath, ok := u.Attrs.Get(attrs.ATTR_ASPATH).(*attrs.Aspath); ok && aspath.Valid() {
 		var asns []uint32
 		for _, seg := range aspath.Segments {
 			asns = append(asns, seg.List...)
@@ -214,8 +215,7 @@ func (r *Line) readMsgAttrs(u *msg.Update) {
 	}
 
 	// Communities
-	comm := u.Community()
-	if comm != nil && comm.Len() > 0 {
+	if comm, ok := u.Attrs.Get(attrs.ATTR_COMMUNITY).(*attrs.Community); ok && comm.Len() > 0 {
 		var communities []string
 
 		for i := 0; i < comm.Len(); i++ {

@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-// Line represents an ExaBGP route announcement/withdrawal
+// Exa represents an ExaBGP route announcement/withdrawal
 // Focuses on the most commonly used attributes (80/20 approach)
-type Line struct {
+type Exa struct {
 	Str string   // parsed line (optional)
 	Tok []string // all tokens in line (optional)
 
@@ -21,27 +21,38 @@ type Line struct {
 	Community []string // Community values in brackets [no-export] or [123:456]
 }
 
-// NewLine returns a new, empty Line instance
-func NewLine() *Line {
-	return &Line{}
+// NewExa returns a new, empty Exa instance
+func NewExa() *Exa {
+	return &Exa{}
 }
 
-func (r *Line) Reset() {
-	*r = Line{}
+// NewExaLine creates a new Exa and parses the given command line
+func NewExaLine(line string) (*Exa, error) {
+	r := NewExa()
+	if err := r.Parse(line); err != nil {
+		return nil, err
+	} else {
+		return r, nil
+	}
+}
+
+// Reset clears all fields in Exa
+func (r *Exa) Reset() {
+	*r = Exa{}
 }
 
 // ParseRoute parses an ExaBGP route command line
-// Supports: announce route <prefix> next-hop <ip|self> [origin <origin>] [as-path [asn...]]
-//
-//	[med <val>] [local-preference <val>] [community [values...]]
-func (r *Line) Parse(line string) error {
+// Supports:
+// - announce route <prefix> next-hop <ip|self> [origin <origin>] [as-path [asn...]] [med <value>] [local-preference <value>] [community [value...]]
+// - withdraw route <prefix>
+func (r *Exa) Parse(line string) error {
 	r.Str = strings.TrimSpace(line)
 	if r.Str == "" {
 		return ErrEmptyLine
 	}
 
 	r.Tok = strings.Fields(r.Str)
-	if len(r.Tok) < 4 {
+	if len(r.Tok) < 3 {
 		return ErrInvalidFormat
 	}
 
@@ -54,7 +65,16 @@ func (r *Line) Parse(line string) error {
 		return ErrOnlyRoute
 	}
 
-	// Parse remaining r.Tokens
+	// withdraw has no further parameters
+	if r.Action == "withdraw" {
+		if len(r.Tok) > 3 {
+			return ErrInvalidFormat
+		} else {
+			return nil
+		}
+	}
+
+	// Parse remaining r.Tok
 	i := 3
 	for i < len(r.Tok) {
 		switch r.Tok[i] {
@@ -107,8 +127,8 @@ func (r *Line) Parse(line string) error {
 	return nil
 }
 
-// String converts Line back to ExaBGP API format
-func (r *Line) String() string {
+// String converts Exa back to ExaBGP API format
+func (r *Exa) String() string {
 	parts := []string{r.Action, "route", r.Prefix}
 
 	if r.NextHop != "" {
