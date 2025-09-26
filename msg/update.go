@@ -420,19 +420,12 @@ func (u *Update) AddUnreach(prefixes ...nlri.NLRI) {
 
 	var mp *attrs.MPPrefixes
 	prepare_mp := func() {
-		if mp != nil {
-			return
-		}
-
-		mp = u.UnreachMP().Prefixes()
-		if mp == nil {
-			mpr := u.Attrs.Use(attrs.ATTR_MP_UNREACH).(*attrs.MP)
+		mpr := u.Attrs.Use(attrs.ATTR_MP_UNREACH).(*attrs.MP)
+		mp, _ = mpr.Value.(*attrs.MPPrefixes)
+		if mp == nil || mpr.AS != afi.AS_IPV6_UNICAST {
 			mp = attrs.NewMPPrefixes(mpr).(*attrs.MPPrefixes)
-		}
-
-		if mp.AS != afi.AS_IPV6_UNICAST {
-			mp.AS = afi.AS_IPV6_UNICAST
-			mp.Value = attrs.NewMPValue(mp.MP)
+			mpr.AS = afi.AS_IPV6_UNICAST
+			mpr.Value = mp
 		}
 	}
 
@@ -441,7 +434,9 @@ func (u *Update) AddUnreach(prefixes ...nlri.NLRI) {
 		if pfx.Addr().Is4() {
 			u.Unreach = append(u.Unreach, *pfx)
 		} else if pfx.Addr().Is6() {
-			prepare_mp()
+			if mp == nil {
+				prepare_mp()
+			}
 			mp.Prefixes = append(mp.Prefixes, *pfx)
 		} // else ignore
 	}

@@ -12,22 +12,22 @@ import (
 	"github.com/bgpfix/bgpfix/nlri"
 )
 
-// ToMsg converts a Exa to a bgpfix Msg m.
-func (r *Exa) ToMsg(m *msg.Msg) error {
+// ToMsg converts an Exa line r to a bgpfix Msg m.
+func (x *Exa) ToMsg(m *msg.Msg) error {
 	u := &m.Switch(msg.UPDATE).Update
 
 	// Parse the prefix
-	prefix, err := netip.ParsePrefix(r.Prefix)
+	prefix, err := netip.ParsePrefix(x.Prefix)
 	if err != nil {
 		return ErrInvalidPrefix
 	}
 	pfx := nlri.FromPrefix(prefix)
 
 	// Set up the message based on action
-	switch r.Action {
+	switch x.Action {
 	case "announce":
 		u.AddReach(pfx)
-		if err := r.writeAttrs(u); err != nil {
+		if err := x.writeAttrs(u); err != nil {
 			return err
 		}
 	case "withdraw":
@@ -40,10 +40,10 @@ func (r *Exa) ToMsg(m *msg.Msg) error {
 }
 
 // writeAttrs creates the BGP attributes from Exa fields
-func (r *Exa) writeAttrs(u *msg.Update) error {
+func (x *Exa) writeAttrs(u *msg.Update) error {
 	// Next hop is required for announcements
-	if r.NextHop != "" && r.NextHop != "self" {
-		addr, err := netip.ParseAddr(r.NextHop)
+	if x.NextHop != "" && x.NextHop != "self" {
+		addr, err := netip.ParseAddr(x.NextHop)
 		if err != nil {
 			return ErrInvalidNextHop
 		}
@@ -60,9 +60,9 @@ func (r *Exa) writeAttrs(u *msg.Update) error {
 	}
 
 	// Origin attribute
-	if r.Origin != "" {
+	if x.Origin != "" {
 		orig := u.Attrs.Use(attrs.ATTR_ORIGIN).(*attrs.Origin)
-		switch strings.ToUpper(r.Origin) {
+		switch strings.ToUpper(x.Origin) {
 		case "IGP":
 			orig.Origin = 0
 		case "EGP":
@@ -75,23 +75,23 @@ func (r *Exa) writeAttrs(u *msg.Update) error {
 	}
 
 	// AS path
-	if len(r.ASPath) > 0 {
-		u.Attrs.Use(attrs.ATTR_ASPATH).(*attrs.Aspath).Set(r.ASPath)
+	if len(x.ASPath) > 0 {
+		u.Attrs.Use(attrs.ATTR_ASPATH).(*attrs.Aspath).Set(x.ASPath)
 	}
 
 	// MED
-	if r.MED != nil {
-		u.Attrs.Use(attrs.ATTR_MED).(*attrs.U32).Val = *r.MED
+	if x.MED != nil {
+		u.Attrs.Use(attrs.ATTR_MED).(*attrs.U32).Val = *x.MED
 	}
 
 	// Local preference
-	if r.LocalPref != nil {
-		u.Attrs.Use(attrs.ATTR_LOCALPREF).(*attrs.U32).Val = *r.LocalPref
+	if x.LocalPref != nil {
+		u.Attrs.Use(attrs.ATTR_LOCALPREF).(*attrs.U32).Val = *x.LocalPref
 	}
 
 	// Communities
-	if len(r.Community) > 0 {
-		if err := r.writeCommunity(u); err != nil {
+	if len(x.Community) > 0 {
+		if err := x.writeCommunity(u); err != nil {
 			return err
 		}
 	}
@@ -100,10 +100,10 @@ func (r *Exa) writeAttrs(u *msg.Update) error {
 }
 
 // writeCommunity creates the COMMUNITY attribute using the bgpipe pattern
-func (r *Exa) writeCommunity(u *msg.Update) error {
+func (x *Exa) writeCommunity(u *msg.Update) error {
 	comm := u.Attrs.Use(attrs.ATTR_COMMUNITY).(*attrs.Community)
 
-	for _, c := range r.Community {
+	for _, c := range x.Community {
 		switch c {
 		case "no-export":
 			comm.Add(0xFFFF, 0xFF01)
@@ -136,9 +136,8 @@ func (r *Exa) writeCommunity(u *msg.Update) error {
 }
 
 // IterMsg returns an iterator that converts bgpfix Msg (UPDATE) to Exa lines.
-// For each reachable and unreachable prefix, it returns an Exa line.
-// The iterator updates the r Exa for each prefix.
-func (r *Exa) IterMsg(m *msg.Msg) iter.Seq[*Exa] {
+// For each reachable and unreachable prefix, it returns x after updating it.
+func (x *Exa) IterMsg(m *msg.Msg) iter.Seq[*Exa] {
 	return func(yield func(*Exa) bool) {
 		if m == nil || m.Type != msg.UPDATE {
 			return
@@ -147,12 +146,12 @@ func (r *Exa) IterMsg(m *msg.Msg) iter.Seq[*Exa] {
 
 		// Handle announcements (reachable prefixes)
 		if u.HasReach() {
-			r.Reset()
-			r.Action = "announce"
-			r.readMsgAttrs(u)
+			x.Reset()
+			x.Action = "announce"
+			x.readMsgAttrs(u)
 			for _, prefix := range u.AllReach() {
-				r.Prefix = prefix.String()
-				if !yield(r) {
+				x.Prefix = prefix.String()
+				if !yield(x) {
 					return
 				}
 			}
@@ -160,11 +159,11 @@ func (r *Exa) IterMsg(m *msg.Msg) iter.Seq[*Exa] {
 
 		// Handle withdrawals (unreachable prefixes)
 		if u.HasUnreach() {
-			r.Reset()
-			r.Action = "withdraw"
+			x.Reset()
+			x.Action = "withdraw"
 			for _, prefix := range u.AllUnreach() {
-				r.Prefix = prefix.String()
-				if !yield(r) {
+				x.Prefix = prefix.String()
+				if !yield(x) {
 					return
 				}
 			}
@@ -173,7 +172,7 @@ func (r *Exa) IterMsg(m *msg.Msg) iter.Seq[*Exa] {
 }
 
 // readMsgAttrs extracts BGP attributes from UPDATE into Exa
-func (r *Exa) readMsgAttrs(u *msg.Update) {
+func (x *Exa) readMsgAttrs(u *msg.Update) {
 	// no attributes defined?
 	if u.Attrs.Len() == 0 {
 		return
@@ -182,11 +181,11 @@ func (r *Exa) readMsgAttrs(u *msg.Update) {
 	// Next hop - directly check from attributes since we know they're available
 	if nh, ok := u.Attrs.Get(attrs.ATTR_NEXTHOP).(*attrs.IP); ok {
 		if nh.Addr.IsValid() {
-			r.NextHop = nh.Addr.String()
+			x.NextHop = nh.Addr.String()
 		}
 	} else if mp := u.ReachMP().Prefixes(); mp != nil {
 		if mp.NextHop.IsValid() {
-			r.NextHop = mp.NextHop.String()
+			x.NextHop = mp.NextHop.String()
 		}
 	}
 
@@ -194,11 +193,11 @@ func (r *Exa) readMsgAttrs(u *msg.Update) {
 	if orig, ok := u.Attrs.Get(attrs.ATTR_ORIGIN).(*attrs.Origin); ok {
 		switch orig.Origin {
 		case 0:
-			r.Origin = "IGP"
+			x.Origin = "IGP"
 		case 1:
-			r.Origin = "EGP"
+			x.Origin = "EGP"
 		case 2:
-			r.Origin = "INCOMPLETE"
+			x.Origin = "INCOMPLETE"
 		}
 	}
 
@@ -208,17 +207,17 @@ func (r *Exa) readMsgAttrs(u *msg.Update) {
 		for _, seg := range aspath.Segments {
 			asns = append(asns, seg.List...)
 		}
-		r.ASPath = asns
+		x.ASPath = asns
 	}
 
 	// MED
 	if med, ok := u.Attrs.Get(attrs.ATTR_MED).(*attrs.U32); ok {
-		r.MED = &med.Val
+		x.MED = &med.Val
 	}
 
 	// Local preference
 	if lp, ok := u.Attrs.Get(attrs.ATTR_LOCALPREF).(*attrs.U32); ok {
-		r.LocalPref = &lp.Val
+		x.LocalPref = &lp.Val
 	}
 
 	// Communities
@@ -248,6 +247,6 @@ func (r *Exa) readMsgAttrs(u *msg.Update) {
 			}
 		}
 
-		r.Community = communities
+		x.Community = communities
 	}
 }
