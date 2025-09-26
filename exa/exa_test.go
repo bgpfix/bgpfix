@@ -297,7 +297,7 @@ func TestLineString(t *testing.T) {
 func TestIteratorMultiplePrefixes(t *testing.T) {
 	// Create a bgpfix Msg with multiple reachable and unreachable prefixes
 	m := msg.NewMsg()
-	u := &m.Use(msg.UPDATE).Update
+	u := &m.Switch(msg.UPDATE).Update
 
 	// Add multiple reachable prefixes
 	prefix1, _ := netip.ParsePrefix("10.0.0.0/24")

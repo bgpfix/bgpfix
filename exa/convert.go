@@ -14,8 +14,7 @@ import (
 
 // ToMsg converts a Exa to a bgpfix Msg m.
 func (r *Exa) ToMsg(m *msg.Msg) error {
-	u := &m.Use(msg.UPDATE).Update
-	u.Reset()
+	u := &m.Switch(msg.UPDATE).Update
 
 	// Parse the prefix
 	prefix, err := netip.ParsePrefix(r.Prefix)

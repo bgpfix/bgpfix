@@ -101,12 +101,13 @@ func NewMsg() *Msg {
 	return msg
 }
 
-// Reset clears the message
+// Reset clears the message. It does not reset the upper layer.
 func (msg *Msg) Reset() *Msg {
 	msg.Dir = 0
 	msg.Seq = 0
 	msg.Time = time.Time{}
-	msg.Type = 0
+	msg.Type = INVALID
+	msg.Upper = INVALID
 	msg.Version = 0
 
 	msg.Data = nil
@@ -116,14 +117,6 @@ func (msg *Msg) Reset() *Msg {
 	} else {
 		msg.buf = nil
 	}
-
-	switch msg.Upper {
-	case OPEN:
-		msg.Open.Reset()
-	case UPDATE:
-		msg.Update.Reset()
-	}
-	msg.Upper = INVALID
 
 	if cap(msg.json) < 1024*1024 {
 		msg.json = msg.json[:0] // NB: re-use iff < 1MiB
@@ -144,42 +137,47 @@ func (msg *Msg) Len() int {
 	}
 }
 
-// Use selects the upper layer of given type for active use.
-// Calls msg.Edit(), but does not reset the selected upper layer.
-// Use Reset() on the selected layer if needed.
-func (msg *Msg) Use(typ Type) *Msg {
+// Switch selects the upper layer of given type for active use,
+// resets the upper layer, and calls msg.Edit() to signal the change.
+func (msg *Msg) Switch(typ Type) *Msg {
 	msg.Type = typ
 	msg.Upper = typ
+	switch typ {
+	case OPEN:
+		msg.Open.Reset()
+	case UPDATE:
+		msg.Update.Reset()
+	}
 	msg.Edit()
 	return msg
 }
 
 // Edit ditches msg.Data and its internal JSON representation,
-// making the upper layer the only source of information about msg.
+// making the Upper layer the only source of information about msg.
 // It also increments msg.Version, to signal that the message has changed.
 //
-// If cond is non-empty, it will be checked first for any true value.
+// The optional variadic parameter cond allows conditional editing:
+// if cond is provided and none of its values are true, Edit will return early and make no changes.
+// This is useful for callers who want to skip editing unless certain conditions are met.
 //
-// Edit must be called when the upper layer is modified, to signal that
-// both msg.Data and JSON representation must be regenerated when needed.
+// Edit must be called when the Upper layer is modified, to signal that
+// both msg.Data and the JSON representation must be regenerated when needed.
 func (msg *Msg) Edit(cond ...bool) {
 	// check conditions first?
 	if len(cond) > 0 {
-		found := false
-		for _, v := range cond {
-			if v {
-				found = true
-				break
+		for i := range cond {
+			if cond[i] {
+				goto edit
 			}
 		}
-		if !found {
-			return
-		}
+		return // none matched
 	}
 
-	msg.Data = nil
-	msg.json = msg.json[:0]
+edit:
 	msg.Version++
+	msg.Data = nil
+	msg.ref = false
+	msg.json = msg.json[:0]
 }
 
 // CopyData makes msg the owner of msg.Data, copying referenced external data iff needed.
@@ -487,25 +485,27 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 
 		// NB: ignore [3] = wire length
 
-		case 4: // type TODO: better
-			if typ == json.STRING {
+		case 4: // type
+			switch typ {
+			case json.STRING:
 				msg.Type, err = TypeString(json.S(val))
-			} else if typ == json.NUMBER {
+			case json.NUMBER:
 				var v byte
 				v, err = json.UnByte(val)
 				msg.Type = Type(v)
+			default:
+				return ErrValue
 			}
-			if msg.Type != INVALID {
-				msg.Use(msg.Type)
-			}
+			msg.Switch(msg.Type)
 
 		case 5: // upper layer
-			if typ == json.STRING {
+			switch typ {
+			case json.STRING:
 				msg.buf, err = json.UnHex(val, msg.buf[:0])
 				msg.Data = msg.buf
 				msg.ref = false
 				msg.Upper = INVALID
-			} else {
+			case json.OBJECT:
 				switch msg.Type {
 				case OPEN:
 					err = msg.Open.FromJSON(val)
@@ -514,6 +514,10 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 				default:
 					err = ErrTODO // TODO
 				}
+			case json.NULL:
+				// no upper layer data, nothing to do
+			default:
+				return ErrValue
 			}
 
 		case 6: // value
