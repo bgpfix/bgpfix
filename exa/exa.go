@@ -38,7 +38,16 @@ func NewExaLine(line string) (*Exa, error) {
 
 // Reset clears all fields in Exa
 func (r *Exa) Reset() {
-	*r = Exa{}
+	r.Str = ""
+	r.Tok = r.Tok[:0]
+	r.Action = ""
+	r.Prefix = ""
+	r.NextHop = ""
+	r.Origin = ""
+	r.ASPath = r.ASPath[:0]
+	r.MED = nil
+	r.LocalPref = nil
+	r.Community = r.Community[:0]
 }
 
 // ParseRoute parses an ExaBGP route command line
