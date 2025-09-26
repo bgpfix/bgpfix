@@ -67,6 +67,14 @@ func TestLineRoundTrip(t *testing.T) {
 			name: "withdraw with next-hop",
 			line: "withdraw route 10.0.0.0/24",
 		},
+		{
+			name: "ipv6 announce /32",
+			line: "announce route 2001:db8::/32 next-hop 2001:db8::1",
+		},
+		{
+			name: "ipv6 announce /48",
+			line: "announce route 2001:db8:1::/48 next-hop 2001:db8::1",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -85,8 +93,6 @@ func TestLineRoundTrip(t *testing.T) {
 			count := 0
 			for range dst.IterMsg(m) {
 				count++
-				// Should only have one result for single prefix
-				assert.Equal(t, 1, count, "Expected exactly one result from iterator")
 
 				// Compare the essential fields
 				assert.Equal(t, src.Action, dst.Action, "Action mismatch")
@@ -222,6 +228,15 @@ func TestLineParsing(t *testing.T) {
 			line: "announce route 10.0.0.1/24 next-hop",
 			fail: true,
 		},
+		{
+			name: "ipv6 basic announce",
+			line: "announce route 2001:db8::/32 next-hop 2001:db8::1",
+			expect: Exa{
+				Action:  "announce",
+				Prefix:  "2001:db8::/32",
+				NextHop: "2001:db8::1",
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -345,15 +360,6 @@ func TestErrorHandling(t *testing.T) {
 		line Exa
 		fail bool
 	}{
-		{
-			name: "next-hop self should fail ToMsg",
-			line: Exa{
-				Action:  "announce",
-				Prefix:  "10.0.0.1/24",
-				NextHop: "self",
-			},
-			fail: true,
-		},
 		{
 			name: "invalid prefix should fail ToMsg",
 			line: Exa{

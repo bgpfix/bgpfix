@@ -26,10 +26,10 @@ func (r *Exa) ToMsg(m *msg.Msg) error {
 	// Set up the message based on action
 	switch r.Action {
 	case "announce":
+		u.AddReach(pfx)
 		if err := r.writeAttrs(u); err != nil {
 			return err
 		}
-		u.AddReach(pfx)
 	case "withdraw":
 		u.AddUnreach(pfx)
 	default:
@@ -42,17 +42,21 @@ func (r *Exa) ToMsg(m *msg.Msg) error {
 // writeAttrs creates the BGP attributes from Exa fields
 func (r *Exa) writeAttrs(u *msg.Update) error {
 	// Next hop is required for announcements
-	if r.NextHop != "" {
-		if r.NextHop == "self" {
-			return ErrNextHopSelf
-		}
-
+	if r.NextHop != "" && r.NextHop != "self" {
 		addr, err := netip.ParseAddr(r.NextHop)
 		if err != nil {
 			return ErrInvalidNextHop
 		}
 
-		u.Attrs.Use(attrs.ATTR_NEXTHOP).(*attrs.IP).Addr = addr
+		if addr.Is6() {
+			mp := u.ReachMP().Prefixes()
+			if mp == nil {
+				return ErrInvalidNextHop
+			}
+			mp.NextHop = addr
+		} else {
+			u.Attrs.Use(attrs.ATTR_NEXTHOP).(*attrs.IP).Addr = addr
+		}
 	}
 
 	// Origin attribute
@@ -142,11 +146,11 @@ func (r *Exa) IterMsg(m *msg.Msg) iter.Seq[*Exa] {
 		u := &m.Update
 
 		// Handle announcements (reachable prefixes)
-		if len(u.Reach) > 0 {
+		if u.HasReach() {
 			r.Reset()
 			r.Action = "announce"
 			r.readMsgAttrs(u)
-			for _, prefix := range u.Reach {
+			for _, prefix := range u.AllReach() {
 				r.Prefix = prefix.String()
 				if !yield(r) {
 					return
@@ -155,10 +159,10 @@ func (r *Exa) IterMsg(m *msg.Msg) iter.Seq[*Exa] {
 		}
 
 		// Handle withdrawals (unreachable prefixes)
-		if len(u.Unreach) > 0 {
+		if u.HasUnreach() {
 			r.Reset()
 			r.Action = "withdraw"
-			for _, prefix := range u.Unreach {
+			for _, prefix := range u.AllUnreach() {
 				r.Prefix = prefix.String()
 				if !yield(r) {
 					return
@@ -179,6 +183,10 @@ func (r *Exa) readMsgAttrs(u *msg.Update) {
 	if nh, ok := u.Attrs.Get(attrs.ATTR_NEXTHOP).(*attrs.IP); ok {
 		if nh.Addr.IsValid() {
 			r.NextHop = nh.Addr.String()
+		}
+	} else if mp := u.ReachMP().Prefixes(); mp != nil {
+		if mp.NextHop.IsValid() {
+			r.NextHop = mp.NextHop.String()
 		}
 	}
 
