@@ -150,6 +150,7 @@ func (x *Exa) IterMsg(m *msg.Msg) iter.Seq[*Exa] {
 			x.Action = "announce"
 			x.readMsgAttrs(u)
 			for _, prefix := range u.AllReach() {
+				x.Str = "" // force update
 				x.Prefix = prefix.String()
 				if !yield(x) {
 					return
@@ -162,6 +163,7 @@ func (x *Exa) IterMsg(m *msg.Msg) iter.Seq[*Exa] {
 			x.Reset()
 			x.Action = "withdraw"
 			for _, prefix := range u.AllUnreach() {
+				x.Str = "" // force update
 				x.Prefix = prefix.String()
 				if !yield(x) {
 					return
