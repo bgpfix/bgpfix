@@ -51,6 +51,8 @@ func (o *Open) Reset() {
 
 // Parse parses o.Msg.Data as BGP OPEN
 func (o *Open) Parse() error {
+	o.Reset()
+
 	buf := o.Msg.Data
 	if len(buf) < OPEN_MINLEN {
 		return ErrShort

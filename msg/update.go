@@ -45,6 +45,7 @@ func (u *Update) Reset() {
 	clear(u.cache)
 }
 
+// recache makes sure we can still use the cache values (or drops the cache)
 func (u *Update) recache() bool {
 	if u == nil || u.Msg.Upper != UPDATE {
 		return false
@@ -61,6 +62,8 @@ func (u *Update) recache() bool {
 // Parse parses msg.Data as BGP UPDATE,
 // in the context of BGP capabilities cps, which can be empty.
 func (u *Update) Parse(cps caps.Caps) error {
+	u.Reset()
+
 	buf := u.Msg.Data
 	if len(buf) < UPDATE_MINLEN {
 		return ErrShort
@@ -97,7 +100,7 @@ func (u *Update) Parse(cps caps.Caps) error {
 		}
 	}
 
-	// witdrawn routes
+	// withdrawn routes
 	if len(withdrawn) > 0 {
 		var err error
 		u.Unreach, err = nlri.Unmarshal(u.Unreach, withdrawn, afi.AS_IPV4_UNICAST, cps, u.Msg.Dir)
@@ -342,6 +345,39 @@ func (u *Update) HasReach() bool {
 	return len(u.AllReach()) > 0
 }
 
+// AddReach adds all reachable prefixes to u.
+// NB: it will purge non-IPv6 MP_REACH attribute if needed
+func (u *Update) AddReach(prefixes ...nlri.NLRI) {
+	if len(prefixes) == 0 {
+		return
+	} else {
+		delete(u.cache, "allreach")
+	}
+
+	var mp *attrs.MPPrefixes
+	prepare_mp := func() {
+		mpr := u.Attrs.Use(attrs.ATTR_MP_REACH).(*attrs.MP)
+		mp, _ = mpr.Value.(*attrs.MPPrefixes)
+		if mp == nil || mpr.AS != afi.AS_IPV6_UNICAST {
+			mp = attrs.NewMPPrefixes(mpr).(*attrs.MPPrefixes)
+			mpr.AS = afi.AS_IPV6_UNICAST
+			mpr.Value = mp
+		}
+	}
+
+	for i := range prefixes {
+		pfx := &prefixes[i]
+		if pfx.Addr().Is4() {
+			u.Reach = append(u.Reach, *pfx)
+		} else if pfx.Addr().Is6() {
+			if mp == nil {
+				prepare_mp()
+			}
+			mp.Prefixes = append(mp.Prefixes, *pfx)
+		} // else ignore
+	}
+}
+
 // AllUnreach returns all unreachable prefixes, including those in MP-BGP attributes.
 // Uses cached value if available. Do not modify the returned slice.
 func (u *Update) AllUnreach() []nlri.NLRI {
@@ -373,6 +409,39 @@ func (u *Update) AllUnreach() []nlri.NLRI {
 // HasUnreach returns true iff u withdraws unreachable NLRI (for any address family).
 func (u *Update) HasUnreach() bool {
 	return len(u.AllUnreach()) > 0
+}
+
+// AddUnreach adds all unreachable prefixes to u.
+// NB: it will purge non-IPv6 MP_UNREACH attribute if needed
+func (u *Update) AddUnreach(prefixes ...nlri.NLRI) {
+	if len(prefixes) == 0 {
+		return
+	} else {
+		delete(u.cache, "allunreach")
+	}
+
+	var mp *attrs.MPPrefixes
+	prepare_mp := func() {
+		mpr := u.Attrs.Use(attrs.ATTR_MP_UNREACH).(*attrs.MP)
+		mp, _ = mpr.Value.(*attrs.MPPrefixes)
+		if mp == nil || mpr.AS != afi.AS_IPV6_UNICAST {
+			mp = attrs.NewMPPrefixes(mpr).(*attrs.MPPrefixes)
+			mpr.AS = afi.AS_IPV6_UNICAST
+			mpr.Value = mp
+		}
+	}
+
+	for i := range prefixes {
+		pfx := &prefixes[i]
+		if pfx.Addr().Is4() {
+			u.Unreach = append(u.Unreach, *pfx)
+		} else if pfx.Addr().Is6() {
+			if mp == nil {
+				prepare_mp()
+			}
+			mp.Prefixes = append(mp.Prefixes, *pfx)
+		} // else ignore
+	}
 }
 
 // AsPath returns the AS path from u, or nil if not defined.
