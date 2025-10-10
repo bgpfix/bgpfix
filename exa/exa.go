@@ -37,46 +37,46 @@ func NewExaLine(line string) (*Exa, error) {
 }
 
 // Reset clears all fields in Exa
-func (r *Exa) Reset() {
-	r.Str = ""
-	r.Tok = r.Tok[:0]
-	r.Action = ""
-	r.Prefix = ""
-	r.NextHop = ""
-	r.Origin = ""
-	r.ASPath = r.ASPath[:0]
-	r.MED = nil
-	r.LocalPref = nil
-	r.Community = r.Community[:0]
+func (x *Exa) Reset() {
+	x.Str = ""
+	x.Tok = x.Tok[:0]
+	x.Action = ""
+	x.Prefix = ""
+	x.NextHop = ""
+	x.Origin = ""
+	x.ASPath = x.ASPath[:0]
+	x.MED = nil
+	x.LocalPref = nil
+	x.Community = x.Community[:0]
 }
 
 // ParseRoute parses an ExaBGP route command line
 // Supports:
 // - announce route <prefix> next-hop <ip|self> [origin <origin>] [as-path [asn...]] [med <value>] [local-preference <value>] [community [value...]]
 // - withdraw route <prefix>
-func (r *Exa) Parse(line string) error {
-	r.Str = strings.TrimSpace(line)
-	if r.Str == "" {
+func (x *Exa) Parse(line string) error {
+	x.Str = strings.TrimSpace(line)
+	if x.Str == "" {
 		return ErrEmptyLine
 	}
 
-	r.Tok = strings.Fields(r.Str)
-	if len(r.Tok) < 3 {
+	x.Tok = strings.Fields(x.Str)
+	if len(x.Tok) < 3 {
 		return ErrInvalidFormat
 	}
 
 	// Basic validation
-	r.Action = r.Tok[0]
-	r.Prefix = r.Tok[2]
-	if r.Action != "announce" && r.Action != "withdraw" {
+	x.Action = x.Tok[0]
+	x.Prefix = x.Tok[2]
+	if x.Action != "announce" && x.Action != "withdraw" {
 		return ErrInvalidAction
-	} else if r.Tok[1] != "route" {
+	} else if x.Tok[1] != "route" {
 		return ErrOnlyRoute
 	}
 
 	// withdraw has no further parameters
-	if r.Action == "withdraw" {
-		if len(r.Tok) > 3 {
+	if x.Action == "withdraw" {
+		if len(x.Tok) > 3 {
 			return ErrInvalidFormat
 		} else {
 			return nil
@@ -85,47 +85,47 @@ func (r *Exa) Parse(line string) error {
 
 	// Parse remaining r.Tok
 	i := 3
-	for i < len(r.Tok) {
-		switch r.Tok[i] {
+	for i < len(x.Tok) {
+		switch x.Tok[i] {
 		case "next-hop":
-			if i+1 >= len(r.Tok) {
+			if i+1 >= len(x.Tok) {
 				return ErrMissingValue
 			}
-			r.NextHop = r.Tok[i+1]
+			x.NextHop = x.Tok[i+1]
 			i += 2
 		case "origin":
-			if i+1 >= len(r.Tok) {
+			if i+1 >= len(x.Tok) {
 				return ErrMissingValue
 			}
-			r.Origin = r.Tok[i+1]
+			x.Origin = x.Tok[i+1]
 			i += 2
 		case "as-path":
 			// Parse AS path: as-path [ 65001 65002 ]
-			aspath, consumed := parseAspath(r.Tok[i+1:])
-			r.ASPath = aspath
+			aspath, consumed := parseAspath(x.Tok[i+1:])
+			x.ASPath = aspath
 			i += consumed + 1
 		case "med":
-			if i+1 >= len(r.Tok) {
+			if i+1 >= len(x.Tok) {
 				return ErrMissingValue
 			}
-			if val, err := strconv.ParseUint(r.Tok[i+1], 10, 32); err == nil {
+			if val, err := strconv.ParseUint(x.Tok[i+1], 10, 32); err == nil {
 				med := uint32(val)
-				r.MED = &med
+				x.MED = &med
 			}
 			i += 2
 		case "local-preference":
-			if i+1 >= len(r.Tok) {
+			if i+1 >= len(x.Tok) {
 				return ErrMissingValue
 			}
-			if val, err := strconv.ParseUint(r.Tok[i+1], 10, 32); err == nil {
+			if val, err := strconv.ParseUint(x.Tok[i+1], 10, 32); err == nil {
 				lp := uint32(val)
-				r.LocalPref = &lp
+				x.LocalPref = &lp
 			}
 			i += 2
 		case "community":
 			// Parse community: community [ no-export ] or community [ 666:666 ]
-			communities, consumed := parseCommunity(r.Tok[i+1:])
-			r.Community = communities
+			communities, consumed := parseCommunity(x.Tok[i+1:])
+			x.Community = communities
 			i += consumed + 1
 		default:
 			// Skip unknown r.Tokens
@@ -137,36 +137,44 @@ func (r *Exa) Parse(line string) error {
 }
 
 // String converts Exa back to ExaBGP API format
-func (r *Exa) String() string {
-	parts := []string{r.Action, "route", r.Prefix}
-
-	if r.NextHop != "" {
-		parts = append(parts, "next-hop", r.NextHop)
+func (x *Exa) String() string {
+	if len(x.Str) > 0 {
+		return x.Str
 	}
 
-	if r.Origin != "" {
-		parts = append(parts, "origin", r.Origin)
+	x.Tok = append(x.Tok[:0], x.Action, "route", x.Prefix)
+
+	if x.NextHop != "" {
+		x.Tok = append(x.Tok, "next-hop", x.NextHop)
 	}
 
-	if len(r.ASPath) > 0 {
-		asPathStr := formatAspath(r.ASPath)
-		parts = append(parts, "as-path", asPathStr)
+	if x.Origin != "" {
+		x.Tok = append(x.Tok, "origin", x.Origin)
 	}
 
-	if r.MED != nil {
-		parts = append(parts, "med", strconv.FormatUint(uint64(*r.MED), 10))
+	if len(x.ASPath) > 0 {
+		x.Tok = append(x.Tok, "as-path", "[")
+		for _, asn := range x.ASPath {
+			x.Tok = append(x.Tok, strconv.FormatUint(uint64(asn), 10))
+		}
+		x.Tok = append(x.Tok, "]")
 	}
 
-	if r.LocalPref != nil {
-		parts = append(parts, "local-preference", strconv.FormatUint(uint64(*r.LocalPref), 10))
+	if x.MED != nil {
+		x.Tok = append(x.Tok, "med", strconv.FormatUint(uint64(*x.MED), 10))
 	}
 
-	if len(r.Community) > 0 {
-		communityStr := formatCommunity(r.Community)
-		parts = append(parts, "community", communityStr)
+	if x.LocalPref != nil {
+		x.Tok = append(x.Tok, "local-preference", strconv.FormatUint(uint64(*x.LocalPref), 10))
 	}
 
-	return strings.Join(parts, " ")
+	if len(x.Community) > 0 {
+		communityStr := formatCommunity(x.Community)
+		x.Tok = append(x.Tok, "community", communityStr)
+	}
+
+	x.Str = strings.Join(x.Tok, " ")
+	return x.Str
 }
 
 // parseAspath parses AS path from tokens like: [ 65001 65002 ]
@@ -189,19 +197,6 @@ func parseAspath(tokens []string) ([]uint32, int) {
 	}
 
 	return asns, consumed
-}
-
-// formatAspath formats AS path as ExaBGP expects: [ 65001 65002 ]
-func formatAspath(asns []uint32) string {
-	if len(asns) == 0 {
-		return "[ ]"
-	}
-
-	var parts []string
-	for _, asn := range asns {
-		parts = append(parts, strconv.FormatUint(uint64(asn), 10))
-	}
-	return "[ " + strings.Join(parts, " ") + " ]"
 }
 
 // parseCommunity parses community from tokens like: [ no-export ] or [ 666:666 ]
