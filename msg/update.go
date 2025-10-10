@@ -62,6 +62,8 @@ func (u *Update) recache() bool {
 // Parse parses msg.Data as BGP UPDATE,
 // in the context of BGP capabilities cps, which can be empty.
 func (u *Update) Parse(cps caps.Caps) error {
+	u.Reset()
+
 	buf := u.Msg.Data
 	if len(buf) < UPDATE_MINLEN {
 		return ErrShort
