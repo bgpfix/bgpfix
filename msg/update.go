@@ -100,7 +100,7 @@ func (u *Update) Parse(cps caps.Caps) error {
 		}
 	}
 
-	// witdrawn routes
+	// withdrawn routes
 	if len(withdrawn) > 0 {
 		var err error
 		u.Unreach, err = nlri.Unmarshal(u.Unreach, withdrawn, afi.AS_IPV4_UNICAST, cps, u.Msg.Dir)
