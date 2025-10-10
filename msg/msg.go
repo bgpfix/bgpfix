@@ -178,6 +178,7 @@ edit:
 	msg.Data = nil
 	msg.ref = false
 	msg.json = msg.json[:0]
+	msg.Version++
 }
 
 // CopyData makes msg the owner of msg.Data, copying referenced external data iff needed.
