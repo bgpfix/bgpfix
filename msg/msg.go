@@ -412,28 +412,18 @@ func (msg *Msg) GetJSON() []byte {
 
 	// [2] time
 	dst = append(dst, msg.Time.Format(JSON_TIME)...)
-	dst = append(dst, `",`...)
 
-	// [3] length (w/out the header)
-	if msg.Data == nil && msg.Type != KEEPALIVE {
-		dst = append(dst, `-1`...)
-	} else {
-		dst = strconv.AppendUint(dst, uint64(len(msg.Data)), 10)
-	}
-
-	// [4] type
-	dst = append(dst, `,"`...)
+	// [3] type
+	dst = append(dst, `","`...)
 	dst = append(dst, msg.Type.String()...) // TODO: or number
 	dst = append(dst, `",`...)
 
-	// [5] data (or upper layer)
+	// [4] upper layer (optional)
 	switch msg.Upper {
 	case OPEN:
 		dst = msg.Open.ToJSON(dst)
 	case UPDATE:
 		dst = msg.Update.ToJSON(dst)
-	case KEEPALIVE:
-		dst = append(dst, json.Null...)
 	case NOTIFY:
 		dst = append(dst, '"')
 		dst = json.Ascii(dst, msg.Data[2:]) // FIXME
@@ -442,7 +432,7 @@ func (msg *Msg) GetJSON() []byte {
 		dst = json.Hex(dst, msg.Data)
 	}
 
-	// [6] value
+	// [5] value
 	dst = append(dst, ',')
 	if msg.Value != nil {
 		dst = msg.Value.ToJSON(dst)
@@ -484,9 +474,7 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 				msg.Time, err = time.Parse(JSON_TIME, json.S(val))
 			}
 
-		// NB: ignore [3] = wire length
-
-		case 4: // type
+		case 3: // type
 			switch typ {
 			case json.STRING:
 				msg.Type, err = TypeString(json.S(val))
@@ -499,7 +487,7 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 			}
 			msg.Switch(msg.Type)
 
-		case 5: // upper layer
+		case 4: // upper layer
 			switch typ {
 			case json.STRING:
 				msg.buf, err = json.UnHex(val, msg.buf[:0])
@@ -521,7 +509,7 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 				return ErrValue
 			}
 
-		case 6: // value
+		case 5: // value
 			if msg.Value != nil && len(val) > 0 {
 				err = msg.Value.FromJSON(val)
 			}
