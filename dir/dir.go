@@ -45,7 +45,7 @@ func DirString(s string) (Dir, error) {
 		return DIR_L, nil
 	case "R", "r":
 		return DIR_R, nil
-	case "LR", "lr", "Lr", "lR":
+	case "LR", "lr", "Lr", "lR", "RL", "rl", "Rl", "rL":
 		return DIR_LR, nil
 	default:
 		return 0, ErrValue
