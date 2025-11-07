@@ -5,7 +5,8 @@ import (
 	"strings"
 )
 
-// IsExaBytes checks if the given byte slice looks like an ExaBGP command line
+// IsExaBytes checks if the given byte slice looks like an ExaBGP command line.
+// Requires at least 8 bytes to check for "announce" or "withdraw".
 func IsExaBytes(line []byte) bool {
 	line = bytes.TrimSpace(line)
 	switch {
@@ -20,7 +21,8 @@ func IsExaBytes(line []byte) bool {
 	}
 }
 
-// IsExaString checks if the given byte slice looks like an ExaBGP command line
+// IsExaString checks if the given byte slice looks like an ExaBGP command line.
+// Requires at least 8 bytes to check for "announce" or "withdraw".
 func IsExaString(line string) bool {
 	line = strings.TrimSpace(line)
 	switch {

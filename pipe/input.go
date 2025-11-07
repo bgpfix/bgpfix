@@ -409,13 +409,13 @@ func (in *Input) WriteMsg(m *msg.Msg) (write_error error) {
 	in.prepare(m)
 
 	// safe write to in.In
+	write_error = ErrInClosed
 	defer func() {
-		if recover() != nil {
-			write_error = ErrInClosed
+		if write_error != nil {
+			recover()
 			in.Pipe.PutMsg(m)
 		}
 	}()
 	in.In <- m
-
 	return nil
 }

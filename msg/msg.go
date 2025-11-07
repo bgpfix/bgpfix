@@ -70,8 +70,11 @@ const (
 )
 
 const (
+	// BGP marker length, per rfc4271
+	MARKLEN = 16
+
 	// BGP header length, per rfc4271/4.1
-	HEADLEN = 19 // = marker(16) + length(2) + type(1)
+	HEADLEN = MARKLEN + 3 // = marker(16) + length(2) + type(1)
 
 	// BGP maximum message length, per rfc4271
 	MAXLEN = 4096
