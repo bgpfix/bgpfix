@@ -424,6 +424,8 @@ func (msg *Msg) GetJSON() []byte {
 		dst = msg.Open.ToJSON(dst)
 	case UPDATE:
 		dst = msg.Update.ToJSON(dst)
+	case KEEPALIVE:
+		dst = append(dst, json.Null...)
 	case NOTIFY:
 		dst = append(dst, '"')
 		dst = json.Ascii(dst, msg.Data[2:]) // FIXME
@@ -437,7 +439,7 @@ func (msg *Msg) GetJSON() []byte {
 	if msg.Value != nil {
 		dst = msg.Value.ToJSON(dst)
 	} else {
-		dst = append(dst, `null`...)
+		dst = append(dst, json.Null...)
 	}
 
 	// done!
@@ -467,7 +469,9 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 			msg.Dir, err = dir.DirString(json.S(val))
 
 		case 1: // seq number
-			msg.Seq, err = strconv.ParseInt(json.S(val), 10, 64)
+			if typ == json.NUMBER && len(val) > 0 {
+				msg.Seq, err = strconv.ParseInt(json.S(val), 10, 64)
+			}
 
 		case 2: // time
 			if typ == json.STRING && len(val) > 0 {

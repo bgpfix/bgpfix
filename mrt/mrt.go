@@ -89,7 +89,7 @@ func NewMrt() *Mrt {
 	return mrt
 }
 
-// Reset clears the message
+// Reset clears the message. It does not reset the upper layer.
 func (mrt *Mrt) Reset() *Mrt {
 	mrt.ref = false
 	if cap(mrt.buf) < 1024*1024 {
@@ -102,11 +102,6 @@ func (mrt *Mrt) Reset() *Mrt {
 	mrt.Type = 0
 	mrt.Sub = 0
 	mrt.Data = nil
-
-	switch mrt.Upper {
-	case BGP4MP, BGP4MP_ET:
-		mrt.Bgp4.Reset()
-	}
 	mrt.Upper = INVALID
 
 	return mrt
@@ -124,13 +119,16 @@ func (mrt *Mrt) Len() int {
 	}
 }
 
-// Use selects the upper layer of given type for active use.
-// Drops mrt.Data, but does not touch the upper layer at all.
-// Use Reset() on mrt or the selected layer if needed.
-func (mrt *Mrt) Use(typ Type) *Mrt {
+// Switch selects the upper layer of given type for active use and resets it.
+// Drops mrt.Data and resets the upper layer.
+func (mrt *Mrt) Switch(typ Type) *Mrt {
 	mrt.Data = nil
 	mrt.Type = typ
 	mrt.Upper = typ
+	switch typ {
+	case BGP4MP, BGP4MP_ET:
+		mrt.Bgp4.Reset()
+	}
 	return mrt
 }
 

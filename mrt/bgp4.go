@@ -40,7 +40,7 @@ type Bgp4 struct {
 	Interface uint16     // interface index
 	PeerIP    netip.Addr // peer IP address
 	LocalIP   netip.Addr // local IP address
-	Data      []byte     // BGP message, referenced
+	MsgData   []byte     // raw BGP message, referenced
 }
 
 // Init initializes b4 to use parent mrt
@@ -50,7 +50,7 @@ func (b4 *Bgp4) Init(mrt *Mrt) {
 
 // Reset prepares b4 for re-use
 func (b4 *Bgp4) Reset() {
-	b4.Data = nil
+	b4.MsgData = nil
 }
 
 // FromMsg copies BGP message m into BGP4MP message b4.
@@ -67,7 +67,7 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg) error {
 	if err != nil {
 		return err
 	}
-	b4.Data = bb.Bytes()
+	b4.MsgData = bb.Bytes()
 
 	// update parent Mrt
 	mrt := b4.Mrt
@@ -116,11 +116,11 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg) error {
 
 // ToMsg reads MRT-BGP4MP message b4 into BGP message m, referencing data.
 func (b4 *Bgp4) ToMsg(m *msg.Msg, set_tags bool) error {
-	off, err := m.FromBytes(b4.Data)
+	off, err := m.FromBytes(b4.MsgData)
 	switch {
 	case err != nil:
 		return err
-	case off != len(b4.Data):
+	case off != len(b4.MsgData):
 		return ErrLength
 	}
 
@@ -204,7 +204,7 @@ func (b4 *Bgp4) Parse() error {
 	}
 
 	// reference the raw BGP message
-	b4.Data = buf
+	b4.MsgData = buf
 
 	// done
 	mrt.Upper = mrt.Type
@@ -265,7 +265,7 @@ func (b4 *Bgp4) Marshal() error {
 	}
 
 	// write BGP raw data
-	buf = append(buf, b4.Data...)
+	buf = append(buf, b4.MsgData...)
 
 	// done
 	mrt.Upper = mrt.Type
