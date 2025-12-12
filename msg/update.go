@@ -124,7 +124,6 @@ func (u *Update) ParseAttrs(cps caps.Caps) error {
 		ats  attrs.Attrs     // parsed attributes
 	)
 
-	ats.Init()
 	for len(raw) > 0 {
 		if len(raw) < 3 {
 			return ErrAttrs
@@ -242,7 +241,7 @@ func (u *Update) ToJSON(dst []byte) []byte {
 	}
 
 	dst = append(dst, `"attrs":`...)
-	if u.Attrs.Valid() {
+	if u.Attrs.Len() > 0 {
 		dst = u.Attrs.ToJSON(dst)
 	} else {
 		dst = json.Hex(dst, u.RawAttrs)

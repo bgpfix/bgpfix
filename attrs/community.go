@@ -20,6 +20,11 @@ func NewCommunity(at CodeFlags) Attr {
 	return &Community{CodeFlags: at}
 }
 
+func (a *Community) Reset() {
+	a.ASN = a.ASN[:0]
+	a.Value = a.Value[:0]
+}
+
 func (a *Community) Len() int {
 	if a != nil {
 		return len(a.ASN)
@@ -29,6 +34,11 @@ func (a *Community) Len() int {
 }
 
 func (a *Community) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
+	exp := len(buf) / 4
+	if len(a.ASN) == 0 && cap(a.ASN) < exp {
+		a.ASN = make([]uint16, 0, exp)
+		a.Value = make([]uint16, 0, exp)
+	}
 	for len(buf) > 0 {
 		if len(buf) < 4 {
 			return ErrLength

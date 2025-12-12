@@ -414,7 +414,7 @@ func (msg *Msg) GetJSON() []byte {
 	dst = append(dst, `,"`...)
 
 	// [2] time
-	dst = append(dst, msg.Time.Format(JSON_TIME)...)
+	dst = msg.Time.AppendFormat(dst, JSON_TIME)
 
 	// [3] type
 	dst = append(dst, `","`...)

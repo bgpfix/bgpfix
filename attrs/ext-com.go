@@ -98,6 +98,11 @@ func NewExtcom(at CodeFlags) Attr {
 	return &Extcom{CodeFlags: at}
 }
 
+func (a *Extcom) Reset() {
+	a.Type = a.Type[:0]
+	a.Value = a.Value[:0]
+}
+
 // NewExtcomValue returns a new ExtcomValue for given ExtcomType
 func NewExtcomValue(et ExtcomType) ExtcomValue {
 	var ev ExtcomValue
@@ -157,6 +162,11 @@ func (et *ExtcomType) FromJSON(src []byte) error {
 }
 
 func (a *Extcom) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
+	exp := len(buf) / 8
+	if len(a.Type) == 0 && cap(a.Type) < exp {
+		a.Type = make([]ExtcomType, 0, exp)
+		a.Value = make([]ExtcomValue, 0, exp)
+	}
 	for len(buf) > 0 {
 		if len(buf) < 8 {
 			return ErrLength

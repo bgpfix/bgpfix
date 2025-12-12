@@ -23,6 +23,12 @@ func NewMPPrefixes(mp *MP) MPValue {
 	return &MPPrefixes{MP: mp}
 }
 
+func (a *MPPrefixes) Reset() {
+	a.NextHop = netip.Addr{}
+	a.LinkLocal = netip.Addr{}
+	a.Prefixes = a.Prefixes[:0]
+}
+
 // Count returns the number of prefixes in a, if non-nil
 func (a *MPPrefixes) Count() int {
 	if a == nil {

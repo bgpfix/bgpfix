@@ -29,6 +29,12 @@ type MPFlowspec struct {
 	Rules     []FlowRule // see RFC8955 Fig1
 }
 
+func (a *MPFlowspec) Reset() {
+	a.NextHop = netip.Addr{}
+	a.LinkLocal = netip.Addr{}
+	a.Rules = a.Rules[:0]
+}
+
 // FlowRule represents a Flowspec rule, which is a set of type-value components
 type FlowRule map[FlowType]FlowValue
 

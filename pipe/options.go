@@ -289,7 +289,7 @@ func (o *Options) AddInput(dst dir.Dir, tpl ...*Input) *Input {
 
 	// input
 	if in.In == nil {
-		in.In = make(chan *msg.Msg, 10)
+		in.In = make(chan *msg.Msg, 100)
 	}
 
 	// dir
