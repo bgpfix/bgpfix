@@ -61,18 +61,18 @@ func NewPipe(ctx context.Context) *Pipe {
 		Pipe: p,
 		Dir:  dir.DIR_R,
 		Input: Input{
-			In: make(chan *msg.Msg, 10),
+			In: make(chan *msg.Msg, 100),
 		},
-		Out: make(chan *msg.Msg, 10),
+		Out: make(chan *msg.Msg, 100),
 	}
 
 	p.L = &Line{
 		Pipe: p,
 		Dir:  dir.DIR_L,
 		Input: Input{
-			In: make(chan *msg.Msg, 10),
+			In: make(chan *msg.Msg, 100),
 		},
-		Out: make(chan *msg.Msg, 10),
+		Out: make(chan *msg.Msg, 100),
 	}
 
 	// NB: add internal handlers
@@ -81,7 +81,7 @@ func NewPipe(ctx context.Context) *Pipe {
 			Func: p.checkEstablished,
 		}},
 	}
-	p.evch = make(chan *Event, 10)
+	p.evch = make(chan *Event, 100)
 
 	p.wgstart.Add(1)
 	return p
@@ -176,6 +176,10 @@ func (p *Pipe) Start() error {
 		return err
 	}
 
+	// start the event handler
+	p.evwg.Add(1)
+	go p.eventHandler(&p.evwg)
+
 	// start line inputs
 	p.L.start()
 	p.R.start()
@@ -186,10 +190,6 @@ func (p *Pipe) Start() error {
 		p.R.Wait()
 		p.Stop()
 	}()
-
-	// start the event handler
-	p.evwg.Add(1)
-	go p.eventHandler(&p.evwg)
 
 	// stop the pipe on context cancel
 	go func() {
@@ -211,6 +211,9 @@ func (p *Pipe) Stop() {
 	if p.stopped.Swap(true) || !p.started.Load() {
 		return // already stopped, or not started yet
 	}
+
+	// make sure Start() has finished
+	p.wgstart.Wait()
 
 	// publish the event (ignore the global context)
 	go p.sendEvent(&Event{Type: EVENT_STOP}, nil, false)
