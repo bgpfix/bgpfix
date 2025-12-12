@@ -24,7 +24,14 @@ type AspathSegment struct {
 }
 
 func NewAspath(at CodeFlags) Attr {
-	return &Aspath{CodeFlags: at}
+	return &Aspath{
+		CodeFlags: at,
+		Segments:  make([]AspathSegment, 0, 1),
+	}
+}
+
+func (a *Aspath) Reset() {
+	a.Segments = a.Segments[:0]
 }
 
 // Clone creates a deep copy of the Aspath object.
@@ -224,6 +231,7 @@ func (a *Aspath) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 
 		// read ASNs
 		todo := buf[2:]
+		seg.List = make([]uint32, 0, len(todo)/asnlen)
 		for len(todo) >= asnlen {
 			if asnlen == 4 {
 				seg.List = append(seg.List, msb.Uint32(todo))

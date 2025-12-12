@@ -19,6 +19,10 @@ type MP struct {
 
 // MP attribute Value
 type MPValue interface {
+	// Reset resets the value to its initial state,
+	// making it ready for reuse.
+	Reset()
+
 	// Afi returns the AFI of the parent
 	Afi() afi.AFI
 
@@ -51,6 +55,13 @@ var MPNewFuncs = map[afi.AS]MPNewFunc{
 
 func NewMP(at CodeFlags) Attr {
 	return &MP{CodeFlags: at}
+}
+
+func (mp *MP) Reset() {
+	mp.AS = 0
+	mp.NH = mp.NH[:0]
+	mp.Data = mp.Data[:0]
+	mp.Value = nil
 }
 
 // NewMPValue returns a new MPValue for parent mp,

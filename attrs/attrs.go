@@ -7,7 +7,6 @@ package attrs
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/bgpfix/bgpfix/binary"
 	"github.com/bgpfix/bgpfix/json"
@@ -20,57 +19,30 @@ var msb = binary.Msb
 //
 // Attrs and its values are not thread-safe.
 type Attrs struct {
-	db map[Code]Attr
-}
-
-// Init initializes Attrs. Can be called multiple times for lazy init.
-func (ats *Attrs) Init() {
-	if ats.db == nil {
-		ats.db = map[Code]Attr{}
-	}
-}
-
-// Valid returns true iff Attrs has already been initialized
-func (ats *Attrs) Valid() bool {
-	return ats.db != nil
+	use [256]bool // indicates whether attribute code is used
+	db  [256]Attr // map of attribute code to attribute value
+	len int       // number of attributes
 }
 
 // Reset resets Attrs back to initial state.
 func (ats *Attrs) Reset() {
-	ats.db = nil
-}
-
-// Clear drops all attributes.
-func (ats *Attrs) Clear() {
-	if ats.Valid() {
-		clear(ats.db)
+	ats.use = [256]bool{}
+	for _, at := range ats.db {
+		if at != nil {
+			at.Reset()
+		}
 	}
+	ats.len = 0
 }
 
 // Len returns the number of attributes
 func (ats *Attrs) Len() int {
-	if ats.Valid() {
-		return len(ats.db)
-	} else {
-		return 0
-	}
-}
-
-// SetFrom sets all attributes from src, overwriting ats[ac] for existing attribute codes
-func (ats *Attrs) SetFrom(src Attrs) {
-	if !src.Valid() {
-		return
-	}
-
-	ats.Init()
-	for ac, at := range ats.db {
-		ats.db[ac] = at
-	}
+	return ats.len
 }
 
 // Get returns ats[ac] or nil if not possible.
 func (ats *Attrs) Get(ac Code) Attr {
-	if ats.Valid() {
+	if ats.use[ac] {
 		return ats.db[ac]
 	} else {
 		return nil
@@ -79,67 +51,63 @@ func (ats *Attrs) Get(ac Code) Attr {
 
 // Has returns true iff ats[ac] is set and non-nil
 func (ats *Attrs) Has(ac Code) bool {
-	return ats.Get(ac) != nil
-}
-
-// Drop drops ats[ac].
-func (ats *Attrs) Drop(ac Code) {
-	if ats.Valid() {
-		delete(ats.db, ac)
-	}
+	return ats.use[ac]
 }
 
 // Set overwrites ats[ac] with value.
 func (ats *Attrs) Set(ac Code, value Attr) {
-	ats.Init()
-	ats.db[ac] = value
+	if !ats.use[ac] {
+		if value != nil {
+			ats.use[ac] = true
+			ats.len++
+			ats.db[ac] = value
+		} // else: no-op
+	} else { // = already used
+		if value == nil {
+			ats.use[ac] = false
+			ats.len--
+			ats.db[ac].Reset()
+		} else {
+			ats.db[ac] = value
+		}
+	}
+}
+
+// Drop drops ats[ac]
+func (ats *Attrs) Drop(ac Code) {
+	ats.Set(ac, nil)
 }
 
 // Use returns ats[ac] if its already set and non-nil.
 // Otherwise, it adds a new instance for ac with default flags.
 func (ats *Attrs) Use(ac Code) Attr {
-	// already there?
-	if ats.Valid() {
-		if at, ok := ats.db[ac]; ok && at != nil {
-			return at
-		}
-	} else {
-		ats.Init()
+	if ats.use[ac] {
+		// already used
+		return ats.db[ac]
+	} else if at := ats.db[ac]; at != nil {
+		// re-use existing instance
+		ats.len++
+		ats.use[ac] = true
+		return at
+	} else { // = at == nil
+		// create new, store, and return
+		ats.len++
+		at = NewAttr(ac)
+		ats.db[ac] = at
+		ats.use[ac] = true
+		return at
 	}
-
-	// create, store, and return
-	at := NewAttr(ac)
-	ats.db[ac] = at
-	return at
 }
 
 // Each executes cb for each attribute in ats,
 // in an ascending order of attribute codes.
 func (ats *Attrs) Each(cb func(i int, ac Code, at Attr)) {
-	if !ats.Valid() {
-		return
-	}
-
-	// dump ats into todo
-	type attcode struct {
-		ac Code
-		at Attr
-	}
-	var todo []attcode
-	for ac, at := range ats.db {
-		if at != nil {
-			todo = append(todo, attcode{ac, at})
+	i := 0
+	for ac, used := range ats.use {
+		if used {
+			cb(i, Code(ac), ats.db[ac])
+			i++
 		}
-	}
-
-	// sort todo
-	sort.Slice(todo, func(i, j int) bool {
-		return todo[i].ac < todo[j].ac
-	})
-
-	// run
-	for i, c := range todo {
-		cb(i, c.ac, c.at)
 	}
 }
 
@@ -148,7 +116,7 @@ func (ats *Attrs) MarshalJSON() ([]byte, error) {
 }
 
 func (ats *Attrs) ToJSON(dst []byte) []byte {
-	if !ats.Valid() {
+	if ats.len == 0 {
 		return append(dst, "{}"...)
 	}
 

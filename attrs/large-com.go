@@ -22,6 +22,12 @@ func NewLargeCom(at CodeFlags) Attr {
 	return &LargeCom{CodeFlags: at}
 }
 
+func (a *LargeCom) Reset() {
+	a.ASN = a.ASN[:0]
+	a.Value1 = a.Value1[:0]
+	a.Value2 = a.Value2[:0]
+}
+
 func (a *LargeCom) Len() int {
 	if a != nil {
 		return len(a.ASN)
@@ -31,6 +37,12 @@ func (a *LargeCom) Len() int {
 }
 
 func (a *LargeCom) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
+	exp := len(buf) / 12
+	if len(a.ASN) == 0 && cap(a.ASN) < exp {
+		a.ASN = make([]uint32, 0, exp)
+		a.Value1 = make([]uint32, 0, exp)
+		a.Value2 = make([]uint32, 0, exp)
+	}
 	for len(buf) > 0 {
 		if len(buf) < 12 {
 			return ErrLength

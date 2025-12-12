@@ -11,6 +11,10 @@ import (
 
 // Attr represents a particular BGP path attribute
 type Attr interface {
+	// Reset resets the attribute to its initial state,
+	// making it ready for reuse.
+	Reset()
+
 	// Code returns attribute code
 	Code() Code
 
@@ -92,7 +96,7 @@ const (
 type NewFunc func(cf CodeFlags) Attr
 
 // NewFuncs maps attribute codes to their NewFunc
-var NewFuncs = map[Code]NewFunc{
+var NewFuncs = [256]NewFunc{
 	ATTR_ORIGIN:          NewOrigin,
 	ATTR_ASPATH:          NewAspath,
 	ATTR_AS4PATH:         NewAspath,
@@ -111,7 +115,7 @@ var NewFuncs = map[Code]NewFunc{
 }
 
 // DefaultFlags gives the default flags for attribute codes, in addition to ATTR_OPTIONAL
-var DefaultFlags = map[Code]Flags{
+var DefaultFlags = [256]Flags{
 	ATTR_COMMUNITY:       ATTR_TRANSITIVE,
 	ATTR_EXT_COMMUNITY:   ATTR_TRANSITIVE,
 	ATTR_LARGE_COMMUNITY: ATTR_TRANSITIVE,
@@ -129,8 +133,8 @@ func NewAttr(ac Code) Attr {
 	}
 
 	// select the new func, default to raw
-	newfunc, ok := NewFuncs[ac]
-	if !ok {
+	newfunc := NewFuncs[ac]
+	if newfunc == nil {
 		newfunc = NewRaw
 	}
 

@@ -20,6 +20,10 @@ func NewRaw(at CodeFlags) Attr {
 	return &Raw{CodeFlags: at}
 }
 
+func (a *Raw) Reset() {
+	a.Raw = a.Raw[:0]
+}
+
 func (a *Raw) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	if len(buf) > 0 {
 		a.Raw = append(a.Raw, buf...) // copy
@@ -58,6 +62,10 @@ type Origin struct {
 
 func NewOrigin(at CodeFlags) Attr {
 	return &Origin{CodeFlags: at}
+}
+
+func (a *Origin) Reset() {
+	a.Origin = 0
 }
 
 func (a *Origin) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
@@ -112,6 +120,10 @@ func NewU32(at CodeFlags) Attr {
 	return &U32{CodeFlags: at}
 }
 
+func (a *U32) Reset() {
+	a.Val = 0
+}
+
 func (a *U32) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	if len(buf) != 4 {
 		return ErrLength
@@ -144,6 +156,11 @@ type Aggregator struct {
 
 func NewAggregator(at CodeFlags) Attr {
 	return &Aggregator{CodeFlags: at}
+}
+
+func (a *Aggregator) Reset() {
+	a.ASN = 0
+	a.Addr = netip.Addr{}
 }
 
 func (a *Aggregator) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
@@ -222,6 +239,10 @@ func NewIP6(at CodeFlags) Attr {
 	return &IP{CodeFlags: at, IPv6: true}
 }
 
+func (a *IP) Reset() {
+	a.Addr = netip.Addr{}
+}
+
 func (a *IP) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	switch {
 	case !a.IPv6 && len(buf) == 4:
@@ -271,6 +292,10 @@ func NewIPList4(at CodeFlags) Attr {
 
 func NewIPList6(at CodeFlags) Attr {
 	return &IPList{CodeFlags: at, IPv6: true}
+}
+
+func (a *IPList) Reset() {
+	a.Addr = a.Addr[:0]
 }
 
 func (a *IPList) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
