@@ -8,7 +8,7 @@ import (
 )
 
 // Code represents BGP capability code
-type Code byte
+type Code uint16
 
 // capability codes
 const (
@@ -33,6 +33,8 @@ const (
 	CAP_BFD                    Code = 74
 	CAP_VERSION                Code = 75
 	CAP_PRE_ROUTE_REFRESH      Code = 128
+
+	CAP_AS_GUESS Code = 0xff + 1 // pseudo-capability: guess ASN size
 )
 
 //go:generate go run github.com/dmarkham/enumer -type=Code -trimprefix CAP_

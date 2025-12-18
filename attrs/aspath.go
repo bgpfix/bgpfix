@@ -198,11 +198,13 @@ func (ap *Aspath) Valid() bool {
 	return ap != nil && len(ap.Segments) > 0 && len(ap.Segments[0].List) > 0
 }
 
-func (a *Aspath) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
+func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, dir dir.Dir) error {
 	// support an actually common case: empty AS_PATH
-	if len(buf) == 0 {
+	if len(raw) == 0 {
 		return nil
 	}
+	buf := raw
+	sgl := len(a.Segments)
 
 	// asn length
 	asnlen := 2
@@ -226,7 +228,15 @@ func (a *Aspath) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 		// total length?
 		tl := 2 + asnlen*int(buf[1])
 		if len(buf) < tl {
-			return ErrSegLen
+			// can retry with 2-byte ASNs?
+			if asnlen == 4 && a.Code() == ATTR_ASPATH && cps.Has(caps.CAP_AS_GUESS) {
+				asnlen = 2
+				buf = raw
+				a.Segments = a.Segments[:sgl]
+				continue
+			}
+
+			return fmt.Errorf("%w: %d < 2+%d*%d", ErrSegLen, len(buf), asnlen, buf[1])
 		}
 
 		// read ASNs
