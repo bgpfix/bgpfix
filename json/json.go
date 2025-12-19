@@ -235,8 +235,11 @@ func ArrayEach(src []byte, cb func(key int, val []byte, typ Type) error) (reterr
 func ObjectEach(src []byte, cb func(key string, val []byte, typ Type) error) (reterr error) {
 	var panikey []byte
 
-	if len(src) == 0 {
+	// sanity checks
+	if l := len(src); l == 0 {
 		return nil
+	} else if l < 2 || src[0] != '{' || src[l-1] != '}' {
+		return fmt.Errorf("invalid JSON object")
 	}
 
 	// convert panics into returned error
@@ -275,6 +278,13 @@ func ObjectPaths(src []byte, cb func(pid int, val []byte, typ Type) error, paths
 	var panikey []string
 	panitop := []string{"top-level"}
 
+	// sanity checks
+	if l := len(src); l == 0 {
+		return nil
+	} else if l < 2 || src[0] != '{' || src[l-1] != '}' {
+		return fmt.Errorf("invalid JSON object")
+	}
+
 	// convert panics into returned error
 	defer func() {
 		switch v := recover().(type) {
@@ -289,7 +299,7 @@ func ObjectPaths(src []byte, cb func(pid int, val []byte, typ Type) error, paths
 		}
 	}()
 
-	off := jsp.EachKey(src, func(pid int, val []byte, typ Type, valerr error) {
+	jsp.EachKey(src, func(pid int, val []byte, typ Type, valerr error) {
 		// get panikey if possible
 		if pid >= 0 && pid < len(paths) {
 			panikey = paths[pid]
@@ -311,11 +321,7 @@ func ObjectPaths(src []byte, cb func(pid int, val []byte, typ Type) error, paths
 		}
 	}, paths...)
 
-	if off < 0 {
-		return fmt.Errorf("object paths not found")
-	} else {
-		return nil
-	}
+	return nil
 }
 
 // Get returns raw JSON value located at given key path, or nil if not found or error.
