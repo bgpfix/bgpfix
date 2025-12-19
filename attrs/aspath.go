@@ -212,31 +212,52 @@ func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, dir dir.Dir) error {
 		asnlen = 4
 	}
 
-	for len(buf) >= 2 {
+	// can retry with 2-byte ASNs?
+	retry2 := func() bool {
+		if asnlen == 4 && a.Code() == ATTR_ASPATH && cps.Has(caps.CAP_AS_GUESS) {
+			asnlen = 2
+			buf = raw
+			a.Segments = a.Segments[:sgl]
+			return true
+		} else {
+			return false
+		}
+	}
+
+	for len(buf) > 0 {
 		var seg AspathSegment
 
-		// is AS_SET?
+		// makes sense?
+		if len(buf) < 2 || buf[1] == 0 {
+			if retry2() {
+				continue
+			} else {
+				return ErrLength
+			}
+		}
+
+		// type: is AS_SET?
 		switch buf[0] {
 		case 1:
 			seg.IsSet = true // is AS_SET
 		case 2:
-			// is AS_SEQUENCE
+			seg.IsSet = false // is AS_SEQUENCE
 		default:
-			return fmt.Errorf("%w: %d", ErrSegType, buf[0])
+			if retry2() {
+				continue
+			} else {
+				return fmt.Errorf("%w: %d", ErrSegType, buf[0])
+			}
 		}
 
-		// total length?
+		// hops: total length makes sense?
 		tl := 2 + asnlen*int(buf[1])
 		if len(buf) < tl {
-			// can retry with 2-byte ASNs?
-			if asnlen == 4 && a.Code() == ATTR_ASPATH && cps.Has(caps.CAP_AS_GUESS) {
-				asnlen = 2
-				buf = raw
-				a.Segments = a.Segments[:sgl]
+			if retry2() {
 				continue
+			} else {
+				return fmt.Errorf("%w: %d < 2+%d*%d", ErrSegLen, len(buf), asnlen, buf[1])
 			}
-
-			return fmt.Errorf("%w: %d < 2+%d*%d", ErrSegLen, len(buf), asnlen, buf[1])
 		}
 
 		// read ASNs
