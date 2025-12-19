@@ -170,7 +170,12 @@ func (a *Aggregator) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 		asnlen = 4
 	}
 
-	if len(buf) != asnlen+4 {
+	for len(buf) != asnlen+4 {
+		// can retry with 2-byte ASNs?
+		if asnlen == 4 && a.Code() == ATTR_AGGREGATOR && cps.Has(caps.CAP_AS_GUESS) {
+			asnlen = 2
+			continue
+		}
 		return ErrLength
 	}
 

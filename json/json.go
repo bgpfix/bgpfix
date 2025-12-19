@@ -235,6 +235,13 @@ func ArrayEach(src []byte, cb func(key int, val []byte, typ Type) error) (reterr
 func ObjectEach(src []byte, cb func(key string, val []byte, typ Type) error) (reterr error) {
 	var panikey []byte
 
+	// sanity checks
+	if l := len(src); l == 0 {
+		return nil
+	} else if l < 2 || src[0] != '{' || src[l-1] != '}' {
+		return fmt.Errorf("invalid JSON object")
+	}
+
 	// convert panics into returned error
 	defer func() {
 		switch v := recover().(type) {
@@ -263,6 +270,58 @@ func ObjectEach(src []byte, cb func(key string, val []byte, typ Type) error) (re
 		}
 		return nil
 	})
+}
+
+// ObjectPaths calls cb for each of the specified keys in the src object.
+// If the callback returns or panics with an error, ObjectPaths immediately returns it.
+func ObjectPaths(src []byte, cb func(pid int, val []byte, typ Type) error, paths ...[]string) (reterr error) {
+	var panikey []string
+	panitop := []string{"top-level"}
+
+	// sanity checks
+	if l := len(src); l == 0 {
+		return nil
+	} else if l < 2 || src[0] != '{' || src[l-1] != '}' {
+		return fmt.Errorf("invalid JSON object")
+	}
+
+	// convert panics into returned error
+	defer func() {
+		switch v := recover().(type) {
+		case nil:
+			break
+		case error:
+			reterr = fmt.Errorf("%s: %w", panikey, v)
+		case string:
+			reterr = fmt.Errorf("%s: %s", panikey, v)
+		default:
+			reterr = fmt.Errorf("%s: %v", panikey, v)
+		}
+	}()
+
+	jsp.EachKey(src, func(pid int, val []byte, typ Type, valerr error) {
+		// get panikey if possible
+		if pid >= 0 && pid < len(paths) {
+			panikey = paths[pid]
+		} else {
+			panikey = panitop
+		}
+
+		// null or error?
+		if valerr != nil {
+			panic(valerr) // will be caught
+		} else if pid < 0 || typ == NULL {
+			return // silent skip
+		}
+
+		// call cb, may panic
+		err := cb(pid, val, typ)
+		if err != nil {
+			panic(err) // will be caught
+		}
+	}, paths...)
+
+	return nil
 }
 
 // Get returns raw JSON value located at given key path, or nil if not found or error.
