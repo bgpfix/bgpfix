@@ -510,30 +510,30 @@ func (u *Update) NextHop() (nh netip.Addr) {
 	return nh
 }
 
-// Origin returns the ATTR_ORIGIN value, or 0 if not defined.
-func (u *Update) Origin() byte {
+// Origin returns the ATTR_ORIGIN value
+func (u *Update) Origin() (origin byte, ok bool) {
 	if a, ok := u.Attrs.Get(attrs.ATTR_ORIGIN).(*attrs.Origin); ok {
-		return a.Origin
+		return a.Origin, true
 	} else {
-		return 0
+		return 0, false
 	}
 }
 
-// Med returns the ATTR_MED value, or 0 if not defined.
-func (u *Update) Med() uint32 {
+// Med returns the ATTR_MED value
+func (u *Update) Med() (med uint32, ok bool) {
 	if a, ok := u.Attrs.Get(attrs.ATTR_MED).(*attrs.U32); ok {
-		return a.Val
+		return a.Val, true
 	} else {
-		return 0
+		return 0, false
 	}
 }
 
-// LocalPref returns the ATTR_LOCALPREF value, or 0 if not defined.
-func (u *Update) LocalPref() uint32 {
+// LocalPref returns the ATTR_LOCALPREF value
+func (u *Update) LocalPref() (localpref uint32, ok bool) {
 	if a, ok := u.Attrs.Get(attrs.ATTR_LOCALPREF).(*attrs.U32); ok {
-		return a.Val
+		return a.Val, true
 	} else {
-		return 0
+		return 0, false
 	}
 }
 
