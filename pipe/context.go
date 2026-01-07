@@ -35,6 +35,15 @@ func GetContext(m *msg.Msg) *Context {
 	return mx
 }
 
+// GetTags returns message tags inside m, iff they exist (or nil).
+func GetTags(m *msg.Msg) map[string]string {
+	if mx, ok := m.Value.(*Context); ok {
+		return mx.tags
+	} else {
+		return nil
+	}
+}
+
 // Reset resets pc to empty state
 func (mx *Context) Reset() {
 	if mx == nil {
@@ -64,7 +73,7 @@ func (mx *Context) UseTags() map[string]string {
 	return mx.tags
 }
 
-// GetTags returns message Tags inside mx, iff they exist (or nil).
+// GetTags returns message tags inside mx, iff they exist (or nil).
 func (mx *Context) GetTags() map[string]string {
 	if mx == nil {
 		return nil
