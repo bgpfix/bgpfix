@@ -193,8 +193,8 @@ func (a *Aspath) Set(hops []uint32) {
 	})
 }
 
-// Valid returns true iff the AS_PATH is valid
-func (ap *Aspath) Valid() bool {
+// IsValid returns true iff the AS_PATH is valid
+func (ap *Aspath) IsValid() bool {
 	return ap != nil && len(ap.Segments) > 0 && len(ap.Segments[0].List) > 0
 }
 
