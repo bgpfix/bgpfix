@@ -453,7 +453,7 @@ func (u *Update) AsPath() (aspath *attrs.Aspath) {
 
 	// AS_PATH must be present and valid
 	ap, ok := u.Attrs.Get(attrs.ATTR_ASPATH).(*attrs.Aspath)
-	if !ok || !ap.Valid() {
+	if !ok || !ap.IsValid() {
 		u.cache["aspath"] = nil
 		return nil // empty
 	}
@@ -508,6 +508,33 @@ func (u *Update) NextHop() (nh netip.Addr) {
 
 	u.cache["nexthop"] = nh
 	return nh
+}
+
+// Origin returns the ATTR_ORIGIN value, or 0 if not defined.
+func (u *Update) Origin() byte {
+	if a, ok := u.Attrs.Get(attrs.ATTR_ORIGIN).(*attrs.Origin); ok {
+		return a.Origin
+	} else {
+		return 0
+	}
+}
+
+// Med returns the ATTR_MED value, or 0 if not defined.
+func (u *Update) Med() uint32 {
+	if a, ok := u.Attrs.Get(attrs.ATTR_MED).(*attrs.U32); ok {
+		return a.Val
+	} else {
+		return 0
+	}
+}
+
+// LocalPref returns the ATTR_LOCALPREF value, or 0 if not defined.
+func (u *Update) LocalPref() uint32 {
+	if a, ok := u.Attrs.Get(attrs.ATTR_LOCALPREF).(*attrs.U32); ok {
+		return a.Val
+	} else {
+		return 0
+	}
 }
 
 // Community returns the community attribute, or nil if not defined.
