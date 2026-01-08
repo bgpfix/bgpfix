@@ -41,7 +41,7 @@ func (ev *Eval) SetMsg(m *msg.Msg) {
 }
 
 // SetPipe sets the optional, read-only Pipe context, in a way that
-// hopefully avoids a cyclic import vs. the pipe package.
+// avoids a cyclic import vs. the pipe package.
 func (ev *Eval) SetPipe(kv *xsync.Map[string, any], caps caps.Caps, tags map[string]string) {
 	ev.PipeKV = kv
 	ev.PipeCaps = caps

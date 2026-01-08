@@ -177,7 +177,6 @@ func (msg *Msg) Edit(cond ...bool) {
 	}
 
 edit:
-	msg.Version++
 	msg.Data = nil
 	msg.ref = false
 	msg.json = msg.json[:0]
