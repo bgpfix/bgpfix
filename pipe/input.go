@@ -2,7 +2,6 @@ package pipe
 
 import (
 	"io"
-	"maps"
 	"slices"
 	"time"
 
@@ -12,16 +11,17 @@ import (
 	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/filter"
 	"github.com/bgpfix/bgpfix/msg"
+	"golang.org/x/time/rate"
 )
 
-// Input processes incoming BGP messages through Callbacks
-// and (optionally) writes the result to attached Line.
+// Input processes incoming BGP messages (in given direction)
+// through many Callbacks and optionally writes the result to attached Line.
 type Input struct {
 	Pipe *Pipe // attached to this Pipe (nil before pipe start)
 	Line *Line // attached to this Line (nil before pipe start)
 
-	Id   int     // optional id
-	Name string  // optional name
+	Id   int     // optional input id
+	Name string  // optional input name
 	Dir  dir.Dir // input direction
 
 	// In is the input for incoming messages.
@@ -38,6 +38,12 @@ type Input struct {
 
 	// Filter is an optional message filter for this Input
 	Filter *filter.Filter
+
+	// LimitRate is an optional rate limiter for this Input
+	LimitRate *rate.Limiter
+
+	// LimitSkip, if true, skips messages that exceed the LimitRate (instead of blocking)
+	LimitSkip bool
 
 	ibuf []byte          // input buffer
 	cbs  [16][]*Callback // callbacks for given message type
@@ -157,11 +163,13 @@ func (in *Input) prepare(m *msg.Msg) *Context {
 
 func (in *Input) process() {
 	var (
-		p        = in.Pipe
-		l        = in.Line
-		closed   bool
-		eor_todo map[afi.AS]bool
-		eval     = filter.NewEval(true)
+		p           = in.Pipe
+		l           = in.Line
+		closed      bool
+		eval        = filter.NewEval(true)
+		last_update int64
+		eor_done    bool
+		eor_todo    int
 	)
 	defer close(in.done)
 
@@ -184,6 +192,21 @@ input:
 			if !eval.Run(in.Filter) {
 				p.PutMsg(m)
 				continue input
+			}
+		}
+
+		// input rate limiter?
+		if in.LimitRate != nil {
+			if in.LimitSkip {
+				if !in.LimitRate.Allow() {
+					p.PutMsg(m)
+					continue input
+				}
+			} else {
+				if err := in.LimitRate.Wait(p.ctx); err != nil {
+					p.PutMsg(m)
+					continue input
+				}
 			}
 		}
 
@@ -213,6 +236,20 @@ input:
 			// evaluate a message filter?
 			if cb.Filter != nil && !eval.Run(cb.Filter) {
 				continue // skip m for this callback
+			}
+
+			// callback rate limiter?
+			if cb.LimitRate != nil {
+				if cb.LimitSkip {
+					if !cb.LimitRate.Allow() {
+						continue // skip m for this callback
+					}
+				} else {
+					if err := cb.LimitRate.Wait(p.ctx); err != nil {
+						p.PutMsg(m)
+						continue input
+					}
+				}
 			}
 
 			// run the callback, block until done
@@ -254,13 +291,32 @@ input:
 			}
 
 		case msg.UPDATE:
-			oldt := l.LastUpdate.Load()
-			if t > oldt && l.LastUpdate.CompareAndSwap(oldt, t) {
-				p.Event(EVENT_UPDATE, m.Dir, t)
+			// new UNIX timestamp for UPDATE?
+			if t > last_update { // local check to reduce atomic ops
+				last_update = t
+				oldt := l.LastUpdate.Load()
+				if t > oldt && l.LastUpdate.CompareAndSwap(oldt, t) {
+					p.Event(EVENT_UPDATE, m.Dir, t)
+				}
+			}
+
+			// do End-of-RIB detection?
+			if eor_done {
+				break
+			} else if eor_todo == 0 {
+				if c, ok := p.Caps.Get(caps.CAP_MP).(*caps.MP); ok {
+					eor_todo = len(c.Proto)
+				}
 			}
 
 			// an End-of-RIB marker?
 			if m.Len() < 32 && m.Parse(p.Caps) == nil {
+				// already seen for all AFs? (AS_INVALID marks all AFs seen)
+				if _, loaded := l.EoR.Load(afi.AS_INVALID); loaded || eor_todo == 0 {
+					eor_done = true
+					break
+				}
+
 				// get Address Family
 				as := afi.AS_IPV4_UNICAST
 				if m.Len() == msg.HEADLEN+msg.UPDATE_MINLEN {
@@ -273,29 +329,18 @@ input:
 					as = unreach.AS
 				}
 
-				// already seen?
+				// already seen this AF?
 				if _, loaded := l.EoR.LoadOrStore(as, t); loaded {
 					break
-				} else { // it's new, announce
+				} else { // it's new AF, announce
 					p.Event(EVENT_EOR_AF, m.Dir, as.Afi(), as.Safi())
 				}
 
-				// tick afi off our todo list
-				if eor_todo == nil {
-					eor_todo = make(map[afi.AS]bool)
-					if c, ok := p.Caps.Get(caps.CAP_MP).(*caps.MP); ok {
-						maps.Copy(eor_todo, c.Proto)
-					} else {
-						eor_todo[afi.AS_IPV4_UNICAST] = true
+				// seen as many EoRs as in Caps for the first time?
+				if eor_done = l.EoR.Size() >= eor_todo; eor_done {
+					if _, loaded := l.EoR.LoadOrStore(afi.AS_INVALID, t); !loaded {
+						p.Event(EVENT_EOR, m.Dir)
 					}
-				} else if len(eor_todo) == 0 {
-					break // already seen all required AFs
-				}
-
-				// satisfies all AFs in p.Caps?
-				delete(eor_todo, as)
-				if len(eor_todo) == 0 {
-					p.Event(EVENT_EOR, m.Dir)
 				}
 			}
 		}

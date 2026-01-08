@@ -12,6 +12,7 @@ import (
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/time/rate"
 )
 
 // Default BGP pipe options
@@ -44,10 +45,13 @@ type Callback struct {
 	Raw  bool // if true, do not parse the message (which may already be parsed, but for other reasons)
 	Post bool // run after non-post callbacks?
 
-	Dir    dir.Dir        // if non-zero, limits the direction
-	Types  []msg.Type     // if non-empty, limits message types
-	Filter *filter.Filter // if non-nil, skips messages not matching the filter
-	Func   CallbackFunc   // the function to call
+	Dir       dir.Dir        // if non-zero, limits the direction
+	Types     []msg.Type     // if non-empty, limits message types
+	Filter    *filter.Filter // if non-nil, skips messages not matching the filter
+	LimitRate *rate.Limiter  // if non-nil, limits the rate of callback invocations
+	LimitSkip bool           // if true, skips the message when rate limit exceeded (else blocks)
+
+	Func CallbackFunc // the function to call
 }
 
 // Handler represents a function to call for matching pipe events
