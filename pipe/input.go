@@ -42,7 +42,7 @@ type Input struct {
 	// LimitRate is an optional rate limiter for this Input
 	LimitRate *rate.Limiter
 
-	// LimitSkip, if true, skips messages that exceed the LimitRate (instead of blocking)
+	// LimitSkip, if true, drops messages that exceed the LimitRate (instead of delaying)
 	LimitSkip bool
 
 	ibuf []byte          // input buffer

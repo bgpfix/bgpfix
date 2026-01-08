@@ -49,7 +49,7 @@ type Callback struct {
 	Types     []msg.Type     // if non-empty, limits message types
 	Filter    *filter.Filter // if non-nil, skips messages not matching the filter
 	LimitRate *rate.Limiter  // if non-nil, limits the rate of callback invocations
-	LimitSkip bool           // if true, skips the message when rate limit exceeded (else blocks)
+	LimitSkip bool           // if true, skips the callback when over the rate limit (else delays)
 
 	Func CallbackFunc // the function to call
 }
