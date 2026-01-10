@@ -411,7 +411,7 @@ func (u *Update) HasUnreach() bool {
 }
 
 // AddUnreach adds all unreachable prefixes to u.
-// NB: it will purge non-IPv6 MP_UNREACH attribute if needed
+// NB: it might purge existing MP_UNREACH attribute value if needed
 func (u *Update) AddUnreach(prefixes ...nlri.NLRI) {
 	if len(prefixes) == 0 {
 		return
@@ -419,27 +419,38 @@ func (u *Update) AddUnreach(prefixes ...nlri.NLRI) {
 		delete(u.cache, "allunreach")
 	}
 
-	var mp *attrs.MPPrefixes
-	prepare_mp := func() {
-		mpr := u.Attrs.Use(attrs.ATTR_MP_UNREACH).(*attrs.MP)
-		mp, _ = mpr.Value.(*attrs.MPPrefixes)
-		if mp == nil || mpr.AS != afi.AS_IPV6_UNICAST {
-			mp = attrs.NewMPPrefixes(mpr).(*attrs.MPPrefixes)
-			mpr.AS = afi.AS_IPV6_UNICAST
-			mpr.Value = mp
+	// need to use MP?
+	var mp *attrs.MP
+	var mpp *attrs.MPPrefixes
+	if u.Attrs.Has(attrs.ATTR_MP_REACH) || u.Attrs.Has(attrs.ATTR_MP_UNREACH) {
+		mp = u.Attrs.Use(attrs.ATTR_MP_UNREACH).(*attrs.MP)
+		mpp, _ = mp.Value.(*attrs.MPPrefixes)
+	}
+
+	check_mp := func(as afi.AS) {
+		if mpp == nil || mp.AS != as {
+			mpp = attrs.NewMPPrefixes(mp).(*attrs.MPPrefixes)
+			mp.AS = as
+			mp.Value = mpp
 		}
 	}
 
 	for i := range prefixes {
 		pfx := &prefixes[i]
 		if pfx.Addr().Is4() {
-			u.Unreach = append(u.Unreach, *pfx)
-		} else if pfx.Addr().Is6() {
+			// can skip BGP-MP?
 			if mp == nil {
-				prepare_mp()
+				u.Unreach = append(u.Unreach, *pfx)
+				continue
 			}
-			mp.Prefixes = append(mp.Prefixes, *pfx)
-		} // else ignore
+			check_mp(afi.AS_IPV4_UNICAST)
+		} else if pfx.Addr().Is6() {
+			check_mp(afi.AS_IPV6_UNICAST)
+		} else {
+			continue // ignore
+		}
+
+		mpp.Prefixes = append(mpp.Prefixes, *pfx)
 	}
 }
 

@@ -158,6 +158,7 @@ func (msg *Msg) Switch(typ Type) *Msg {
 // Edit ditches msg.Data and its internal JSON representation,
 // making the Upper layer the only source of information about msg.
 // It also increments msg.Version, to signal that the message has changed.
+// Returns true if any changes were made.
 //
 // The optional variadic parameter cond allows conditional editing:
 // if cond is provided and none of its values are true, Edit will return early and make no changes.
@@ -165,7 +166,7 @@ func (msg *Msg) Switch(typ Type) *Msg {
 //
 // Edit must be called when the Upper layer is modified, to signal that
 // both msg.Data and the JSON representation must be regenerated when needed.
-func (msg *Msg) Edit(cond ...bool) {
+func (msg *Msg) Edit(cond ...bool) bool {
 	// check conditions first?
 	if len(cond) > 0 {
 		for i := range cond {
@@ -173,7 +174,7 @@ func (msg *Msg) Edit(cond ...bool) {
 				goto edit
 			}
 		}
-		return // none matched
+		return false // none matched
 	}
 
 edit:
@@ -181,6 +182,7 @@ edit:
 	msg.ref = false
 	msg.json = msg.json[:0]
 	msg.Version++
+	return true
 }
 
 // CopyData makes msg the owner of msg.Data, copying referenced external data iff needed.

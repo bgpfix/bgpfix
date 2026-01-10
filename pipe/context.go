@@ -35,6 +35,11 @@ func GetContext(m *msg.Msg) *Context {
 	return mx
 }
 
+// UseTags returns message tags inside m, creating them first if needed.
+func UseTags(m *msg.Msg) map[string]string {
+	return UseContext(m).UseTags()
+}
+
 // GetTags returns message tags inside m, iff they exist (or nil).
 func GetTags(m *msg.Msg) map[string]string {
 	if mx, ok := m.Value.(*Context); ok {
