@@ -26,12 +26,12 @@ type Attrs struct {
 
 // Reset resets Attrs back to initial state.
 func (ats *Attrs) Reset() {
-	ats.use = [256]bool{}
-	for _, at := range ats.db {
-		if at != nil {
+	for ac, at := range ats.db {
+		if ats.use[ac] && at != nil {
 			at.Reset()
 		}
 	}
+	ats.use = [256]bool{}
 	ats.len = 0
 }
 
