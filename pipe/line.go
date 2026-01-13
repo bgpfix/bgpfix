@@ -88,7 +88,7 @@ func (l *Line) start() {
 // or aborts if the Pipe context is cancelled (returns false).
 func (l *Line) Wait() bool {
 	select {
-	case <-l.Pipe.ctx.Done():
+	case <-l.Pipe.Ctx.Done():
 		return false
 	case <-l.done:
 		return true

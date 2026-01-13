@@ -164,6 +164,7 @@ func (in *Input) prepare(m *msg.Msg) *Context {
 func (in *Input) process() {
 	var (
 		p           = in.Pipe
+		ctx         = p.Ctx
 		l           = in.Line
 		closed      bool
 		eval        = filter.NewEval(true)
@@ -203,7 +204,7 @@ input:
 					continue input
 				}
 			} else {
-				if err := in.LimitRate.Wait(p.ctx); err != nil {
+				if err := in.LimitRate.Wait(p.Ctx); err != nil {
 					p.PutMsg(m)
 					continue input
 				}
@@ -245,7 +246,7 @@ input:
 						continue // skip m for this callback
 					}
 				} else {
-					if err := cb.LimitRate.Wait(p.ctx); err != nil {
+					if err := cb.LimitRate.Wait(p.Ctx); err != nil {
 						p.PutMsg(m)
 						continue input
 					}
@@ -260,11 +261,12 @@ input:
 			mx.Callback = nil
 
 			// what's next?
-			if mx.Action.IsDrop() {
+			if ctx.Err() != nil {
+				return // pipe is stopping
+			} else if mx.Action.IsDrop() {
 				p.PutMsg(m)
 				continue input // next message
-			}
-			if mx.Action.IsAccept() {
+			} else if mx.Action.IsAccept() {
 				break // take it as-is
 			}
 		}
@@ -364,7 +366,7 @@ func (in *Input) Close() {
 // or aborts if the Pipe context is cancelled (returns false).
 func (in *Input) Wait() bool {
 	select {
-	case <-in.Pipe.ctx.Done():
+	case <-in.Pipe.Ctx.Done():
 		return false
 	case <-in.done:
 		return true

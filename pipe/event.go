@@ -73,7 +73,7 @@ func (ev *Event) String() string {
 // or aborts if the Pipe context is cancelled (returns false).
 func (ev *Event) Wait() bool {
 	select {
-	case <-ev.Pipe.ctx.Done():
+	case <-ev.Pipe.Ctx.Done():
 		return false
 	case <-ev.done:
 		return true
@@ -82,40 +82,54 @@ func (ev *Event) Wait() bool {
 
 // attachEvent initializes the event handler
 func (p *Pipe) attachEvent() error {
-	// copy valid handlers to hds
-	var hds []*Handler
+	// p.events first pass: add non-wildcard handlers, collect wildcards
+	var wildcards []*Handler
 	for _, hd := range p.Options.Handlers {
-		if hd != nil && hd.Func != nil {
-			hds = append(hds, hd)
+		// is valid?
+		if hd == nil || hd.Func == nil {
+			continue
+		} else if len(hd.Types) == 0 {
+			wildcards = append(wildcards, hd)
+			continue
+		}
+
+		// add to p.events
+		types := slices.Clone(hd.Types)
+		slices.Sort(types)
+		for _, typ := range slices.Compact(types) {
+			if typ == "*" {
+				wildcards = append(wildcards, hd)
+			} else {
+				p.events[typ] = append(p.events[typ], hd)
+			}
 		}
 	}
 
-	// sort hds
-	slices.SortStableFunc(hds, func(a, b *Handler) int {
-		if a.Pre != b.Pre {
-			if a.Pre {
-				return -1
-			} else {
-				return 1
-			}
-		}
-		if a.Post != b.Post {
-			if a.Post {
-				return 1
-			} else {
-				return -1
-			}
-		}
-		return a.Order - b.Order
-	})
+	// p.events second pass: add wildcards
+	for typ, hds := range p.events {
+		p.events[typ] = append(hds, wildcards...)
+	}
+	p.events["*"] = wildcards
 
-	// rewrite event handlers to p.events
-	for _, h := range hds {
-		types := slices.Clone(h.Types)
-		slices.Sort(types)
-		for _, typ := range slices.Compact(types) {
-			p.events[typ] = append(p.events[typ], h)
-		}
+	// p.events final pass: sort all handlers
+	for _, hds := range p.events {
+		slices.SortStableFunc(hds, func(a, b *Handler) int {
+			if a.Pre != b.Pre {
+				if a.Pre {
+					return -1
+				} else {
+					return 1
+				}
+			}
+			if a.Post != b.Post {
+				if a.Post {
+					return 1
+				} else {
+					return -1
+				}
+			}
+			return a.Order - b.Order
+		})
 	}
 
 	return nil
@@ -173,7 +187,7 @@ func (p *Pipe) Event(et string, args ...any) *Event {
 		ev.Value = vals
 	}
 
-	sent := p.sendEvent(ev, p.ctx, false)
+	sent := p.sendEvent(ev, p.Ctx, false)
 	if !sent {
 		close(ev.done)
 	}
@@ -187,6 +201,7 @@ func (p *Pipe) sendEvent(ev *Event, ctx context.Context, noblock bool) (sent boo
 
 	ev.Pipe = p
 	ev.Time = time.Now().UTC()
+	ev.Seq = p.evseq.Add(1)
 
 	var ctxchan <-chan struct{}
 	if ctx != nil {
@@ -214,29 +229,17 @@ func (p *Pipe) sendEvent(ev *Event, ctx context.Context, noblock bool) (sent boo
 
 // eventHandler reads p.evch and broadcasts events to handlers
 func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
+	ctx := p.Ctx
 	if wg != nil {
 		defer wg.Done()
 	}
 
-	var (
-		seq uint64
-		hs  []*Handler      // handlers to run for given event
-		whs = p.events["*"] // wildcard handlers - for any event type
-	)
-
 	for ev := range p.evch {
-		// metadata
-		if ev.Seq == 0 {
-			seq++
-			ev.Seq = seq
-		}
-		if ev.Time.IsZero() {
-			ev.Time = time.Now().UTC()
-		}
-
 		// prepare the handlers
-		hs = append(hs[:0], p.events[ev.Type]...) // TODO: append whs to p.events before?
-		hs = append(hs, whs...)
+		hs := p.events[ev.Type]
+		if len(hs) == 0 {
+			hs = p.events["*"]
+		}
 
 		// call handlers
 		for _, h := range hs {
@@ -257,7 +260,9 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 			ev.Handler = nil
 
 			// what's next?
-			if ev.Action&(ACTION_DROP|ACTION_ACCEPT) != 0 {
+			if ctx.Err() != nil {
+				return // pipe is stopping
+			} else if ev.Action&(ACTION_DROP|ACTION_ACCEPT) != 0 {
 				break // skip other handlers
 			}
 		}
