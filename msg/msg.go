@@ -181,6 +181,14 @@ edit:
 	msg.Data = nil
 	msg.ref = false
 	msg.json = msg.json[:0]
+
+	switch msg.Upper {
+	case OPEN:
+		msg.Open.ParamsRaw = nil
+	case UPDATE:
+		msg.Update.AttrsRaw = nil
+	}
+
 	msg.Version++
 	return true
 }

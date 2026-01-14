@@ -16,11 +16,11 @@ import (
 type Update struct {
 	Msg *Msg // parent BGP message
 
-	Reach    []nlri.NLRI // reachable IPv4 unicast
-	Unreach  []nlri.NLRI // unreachable IPv4 unicast
-	RawAttrs []byte      // raw attributes, referencing Msg.Data
+	Reach   []nlri.NLRI // reachable IPv4 unicast
+	Unreach []nlri.NLRI // unreachable IPv4 unicast
 
-	Attrs attrs.Attrs // parsed attributes
+	AttrsRaw []byte      // raw attributes, referencing Msg.Data
+	Attrs    attrs.Attrs // parsed attributes
 
 	cached int            // msg.Version for which the cache is valid
 	cache  map[string]any // cached message attributes
@@ -39,7 +39,7 @@ func (u *Update) Init(m *Msg) {
 func (u *Update) Reset() {
 	u.Unreach = u.Unreach[:0]
 	u.Reach = u.Reach[:0]
-	u.RawAttrs = nil
+	u.AttrsRaw = nil
 	u.Attrs.Reset()
 	u.cached = 0
 	clear(u.cache)
@@ -110,7 +110,7 @@ func (u *Update) Parse(cps caps.Caps) error {
 	}
 
 	// take it
-	u.RawAttrs = ats
+	u.AttrsRaw = ats
 	u.Msg.Upper = UPDATE
 	return nil
 }
@@ -118,7 +118,7 @@ func (u *Update) Parse(cps caps.Caps) error {
 // ParseAttrs parses all attributes from RawAttrs into Attrs.
 func (u *Update) ParseAttrs(cps caps.Caps) error {
 	var (
-		raw  = u.RawAttrs    // all attributes
+		raw  = u.AttrsRaw    // all attributes
 		atyp attrs.CodeFlags // attribute type
 		alen uint16          // attribute length
 		ats  attrs.Attrs     // parsed attributes
@@ -170,14 +170,14 @@ func (u *Update) ParseAttrs(cps caps.Caps) error {
 // MarshalAttrs marshals u.Attrs into u.RawAttrs
 func (u *Update) MarshalAttrs(cps caps.Caps) error {
 	// NB: avoid u.RawAttrs[:0] as it might be referencing another slice
-	u.RawAttrs = nil
+	u.AttrsRaw = nil
 
 	// marshal one-by-one
 	var raw []byte
 	u.Attrs.Each(func(i int, ac attrs.Code, at attrs.Attr) {
 		raw = at.Marshal(raw, cps, u.Msg.Dir)
 	})
-	u.RawAttrs = raw
+	u.AttrsRaw = raw
 	return nil
 }
 
@@ -196,11 +196,11 @@ func (u *Update) Marshal(cps caps.Caps) error {
 	}
 
 	// attributes
-	if len(u.RawAttrs) > math.MaxUint16 {
-		return fmt.Errorf("Marshal: too long Attributes: %w (%d)", ErrLength, len(u.RawAttrs))
+	if len(u.AttrsRaw) > math.MaxUint16 {
+		return fmt.Errorf("Marshal: too long Attributes: %w (%d)", ErrLength, len(u.AttrsRaw))
 	}
-	buf = msb.AppendUint16(buf, uint16(len(u.RawAttrs)))
-	buf = append(buf, u.RawAttrs...)
+	buf = msb.AppendUint16(buf, uint16(len(u.AttrsRaw)))
+	buf = append(buf, u.AttrsRaw...)
 
 	// announced routes
 	buf = nlri.Marshal(buf, u.Reach, afi.AS_IPV4_UNICAST, cps, msg.Dir)
@@ -221,30 +221,37 @@ func (u *Update) String() string {
 
 // ToJSON appends JSON representation of u to dst (may be nil)
 func (u *Update) ToJSON(dst []byte) []byte {
+	comma := false
 	dst = append(dst, '{')
 
 	if len(u.Reach) > 0 {
 		dst = append(dst, `"reach":`...)
 		dst = nlri.ToJSON(dst, u.Reach)
+		comma = true
 	}
 
 	if len(u.Unreach) > 0 {
-		if len(u.Reach) > 0 {
+		if comma {
 			dst = append(dst, ',')
+		} else {
+			comma = true
 		}
 		dst = append(dst, `"unreach":`...)
 		dst = nlri.ToJSON(dst, u.Unreach)
 	}
 
-	if len(u.Reach) > 0 || len(u.Unreach) > 0 {
-		dst = append(dst, ',')
-	}
-
-	dst = append(dst, `"attrs":`...)
-	if u.Attrs.Len() > 0 {
-		dst = u.Attrs.ToJSON(dst)
-	} else {
-		dst = json.Hex(dst, u.RawAttrs)
+	if al := u.Attrs.Len() > 0; al || len(u.AttrsRaw) > 0 {
+		if comma {
+			dst = append(dst, ',')
+		} else {
+			comma = true
+		}
+		dst = append(dst, `"attrs":`...)
+		if al {
+			dst = u.Attrs.ToJSON(dst)
+		} else {
+			dst = json.Hex(dst, u.AttrsRaw)
+		}
 	}
 
 	dst = append(dst, '}')
@@ -261,7 +268,7 @@ func (u *Update) FromJSON(src []byte) error {
 			u.Unreach, err = nlri.FromJSON(val, u.Unreach[:0])
 		case "attrs":
 			if typ == json.STRING {
-				u.RawAttrs, err = json.UnHex(val, u.RawAttrs[:0])
+				u.AttrsRaw, err = json.UnHex(val, u.AttrsRaw[:0])
 			} else {
 				err = u.Attrs.FromJSON(val)
 			}
