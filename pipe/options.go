@@ -59,7 +59,6 @@ type Handler struct {
 	Name    string       // optional name
 	Order   int          // the lower the order, the sooner handler is run
 	Enabled *atomic.Bool // if non-nil, disables the handler unless true
-	Dropped bool         // if true, permanently drops (unregisters) the handler
 
 	Pre  bool // run before non-pre handlers?
 	Post bool // run after non-post handlers?
@@ -195,30 +194,25 @@ func (h *Handler) String() string {
 	return fmt.Sprintf("EV%d:%s", h.Id, h.Name)
 }
 
-// Enable sets h.Enabled to true and returns true. If h.Enabled is nil, returns false.
+// Enable enables the handler and returns the previous state.
 func (h *Handler) Enable() bool {
 	if h == nil || h.Enabled == nil {
-		return false
-	} else {
-		h.Enabled.Store(true)
 		return true
+	} else {
+		return h.Enabled.Swap(true)
 	}
 }
 
-// Disable sets h.Enabled to false and returns true. If h.Enabled is nil, returns false.
+// Disable disables the handler and returns the previous state.
 func (h *Handler) Disable() bool {
-	if h == nil || h.Enabled == nil {
+	if h == nil {
 		return false
+	} else if h.Enabled == nil {
+		var v atomic.Bool
+		h.Enabled = &v
+		return true // no h.Enabled means was enabled
 	} else {
-		h.Enabled.Store(false)
-		return true
-	}
-}
-
-// Drop drops the handler, permanently unregistering it from running
-func (h *Handler) Drop() {
-	if h != nil {
-		h.Dropped = true
+		return h.Enabled.Swap(false)
 	}
 }
 
