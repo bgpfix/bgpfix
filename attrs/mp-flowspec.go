@@ -372,26 +372,26 @@ func (f *FlowRaw) FromJSON(src []byte) (err error) {
 }
 
 // FlowPrefix4 holds IPv4 prefix
-type FlowPrefix4 struct{ nlri.NLRI }
+type FlowPrefix4 struct{ Prefix nlri.Prefix }
 
 func NewFlowPrefix4(_ FlowType) FlowValue {
 	return &FlowPrefix4{}
 }
 
 func (f *FlowPrefix4) Unmarshal(buf []byte, cps caps.Caps) (int, error) {
-	return f.NLRI.Unmarshal(buf, false, false)
+	return f.Prefix.Unmarshal(buf, false, false)
 }
 
 func (f *FlowPrefix4) Marshal(dst []byte, cps caps.Caps) []byte {
-	return f.NLRI.Marshal(dst, false)
+	return f.Prefix.Marshal(dst, false)
 }
 
 func (f *FlowPrefix4) ToJSON(dst []byte) []byte {
-	return json.Prefix(dst, f.Prefix)
+	return json.Prefix(dst, f.Prefix.Prefix)
 }
 
 func (f *FlowPrefix4) FromJSON(src []byte) (err error) {
-	f.Prefix, err = json.UnPrefix(src)
+	f.Prefix.Prefix, err = json.UnPrefix(src)
 	return err
 }
 

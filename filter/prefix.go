@@ -40,7 +40,7 @@ func (e *Expr) prefixEval(ev *Eval) bool {
 	upd := &ev.Msg.Update
 
 	// collect prefixes
-	var prefixes []nlri.NLRI
+	var prefixes []nlri.Prefix
 	switch e.Attr {
 	case ATTR_REACH:
 		prefixes = upd.AllReach()
@@ -56,9 +56,9 @@ func (e *Expr) prefixEval(ev *Eval) bool {
 	}
 
 	// check checks specific prefix value
-	ref := e.Val.(nlri.NLRI)
+	ref := e.Val.(nlri.Prefix)
 	ra, rb := ref.Addr().Unmap(), ref.Bits()
-	check := func(pfx *nlri.NLRI) bool {
+	check := func(pfx *nlri.Prefix) bool {
 		pa, pb := pfx.Addr().Unmap(), pfx.Bits()
 		if ra.Is4() != pa.Is4() {
 			return false // different address families never match

@@ -16,7 +16,7 @@ type MPPrefixes struct {
 
 	NextHop   netip.Addr // only for ATTR_MP_REACH
 	LinkLocal netip.Addr // only for IPv6 NextHop, if given
-	Prefixes  []nlri.NLRI
+	Prefixes  []nlri.Prefix
 }
 
 func NewMPPrefixes(mp *MP) MPValue {

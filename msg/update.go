@@ -16,8 +16,8 @@ import (
 type Update struct {
 	Msg *Msg // parent BGP message
 
-	Reach   []nlri.NLRI // reachable IPv4 unicast
-	Unreach []nlri.NLRI // unreachable IPv4 unicast
+	Reach   []nlri.Prefix // reachable IPv4 unicast
+	Unreach []nlri.Prefix // unreachable IPv4 unicast
 
 	AttrsRaw []byte      // raw attributes, referencing Msg.Data
 	Attrs    attrs.Attrs // parsed attributes
@@ -320,12 +320,12 @@ func (u *Update) AfiSafi() afi.AS {
 
 // AllReach returns all reachable prefixes, including those in MP-BGP attributes.
 // Uses cached value if available. Do not modify the returned slice.
-func (u *Update) AllReach() []nlri.NLRI {
+func (u *Update) AllReach() []nlri.Prefix {
 	if !u.recache() {
 		return nil
 	}
 
-	all, ok := u.cache["allreach"].([]nlri.NLRI)
+	all, ok := u.cache["allreach"].([]nlri.Prefix)
 	if ok {
 		return all
 	}
@@ -337,7 +337,7 @@ func (u *Update) AllReach() []nlri.NLRI {
 	} else if len(u.Reach) == 0 {
 		all = mp.Prefixes
 	} else {
-		all = make([]nlri.NLRI, 0, len(u.Reach)+len(mp.Prefixes))
+		all = make([]nlri.Prefix, 0, len(u.Reach)+len(mp.Prefixes))
 		all = append(all, u.Reach...)
 		all = append(all, mp.Prefixes...)
 	}
@@ -353,7 +353,7 @@ func (u *Update) HasReach() bool {
 
 // AddReach adds all reachable prefixes to u.
 // NB: it will purge non-IPv6 MP_REACH attribute if needed
-func (u *Update) AddReach(prefixes ...nlri.NLRI) {
+func (u *Update) AddReach(prefixes ...nlri.Prefix) {
 	if len(prefixes) == 0 {
 		return
 	} else {
@@ -386,12 +386,12 @@ func (u *Update) AddReach(prefixes ...nlri.NLRI) {
 
 // AllUnreach returns all unreachable prefixes, including those in MP-BGP attributes.
 // Uses cached value if available. Do not modify the returned slice.
-func (u *Update) AllUnreach() []nlri.NLRI {
+func (u *Update) AllUnreach() []nlri.Prefix {
 	if !u.recache() {
 		return nil
 	}
 
-	all, ok := u.cache["allunreach"].([]nlri.NLRI)
+	all, ok := u.cache["allunreach"].([]nlri.Prefix)
 	if ok {
 		return all
 	}
@@ -403,7 +403,7 @@ func (u *Update) AllUnreach() []nlri.NLRI {
 	} else if len(u.Unreach) == 0 {
 		all = mp.Prefixes
 	} else {
-		all = make([]nlri.NLRI, 0, len(u.Unreach)+len(mp.Prefixes))
+		all = make([]nlri.Prefix, 0, len(u.Unreach)+len(mp.Prefixes))
 		all = append(all, u.Unreach...)
 		all = append(all, mp.Prefixes...)
 	}
@@ -419,7 +419,7 @@ func (u *Update) HasUnreach() bool {
 
 // AddUnreach adds all unreachable prefixes to u.
 // NB: it might purge existing MP_UNREACH attribute value if needed
-func (u *Update) AddUnreach(prefixes ...nlri.NLRI) {
+func (u *Update) AddUnreach(prefixes ...nlri.Prefix) {
 	if len(prefixes) == 0 {
 		return
 	} else {

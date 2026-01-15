@@ -14,43 +14,36 @@ import (
 
 var msb = binary.Msb
 
-// NLRI is Network Layer Reachability Information (RFC4271),
-// extended to support ADD_PATH (RFC7911).
-type NLRI struct {
+// Prefix is Network Layer Reachability Information (RFC4271),
+// extended to support ADD_PATH (RFC7911) and possibly other features.
+type Prefix struct {
 	netip.Prefix // the IP prefix
 
-	Options Options // controls optional features
-	Val     uint32  // additional NLRI value, eg. the ADD_PATH Path Identifier
+	Add any // additional NLRI value, eg. the ADD_PATH Path Identifier
 }
 
-type Options = byte
-
-const (
-	_           Options = iota
-	OPT_VALUE           // Val holds some arbitrary value (user-controlled)
-	OPT_ADDPATH         // Val holds ADD_PATH
-)
+type PrefixAddPath uint32
 
 // FromAddr returns normalized address ip wrapped in NLRI
-func FromAddr(ip netip.Addr) NLRI {
+func FromAddr(ip netip.Addr) Prefix {
 	var p netip.Prefix
 	if ip.Is4() {
 		p, _ = ip.Prefix(32)
 	} else {
 		p, _ = ip.Unmap().Prefix(128)
 	}
-	return NLRI{Prefix: p}
+	return Prefix{Prefix: p}
 }
 
 // FromPrefix returns normalized prefix p wrapped in NLRI
-func FromPrefix(p netip.Prefix) NLRI {
+func FromPrefix(p netip.Prefix) Prefix {
 	p, _ = p.Addr().Unmap().Prefix(p.Bits())
-	return NLRI{Prefix: p}
+	return Prefix{Prefix: p}
 }
 
 // FromString parses either a prefix or an address in string format,
 // and returns it normalized and wrapped in NLRI.
-func FromString(s string) (n NLRI, e error) {
+func FromString(s string) (n Prefix, e error) {
 	// min. length is 7 (eg. "1.1.1.1")
 	if len(s) < 7 {
 		return n, ErrLength
@@ -75,7 +68,7 @@ func FromString(s string) (n NLRI, e error) {
 
 // FindParent returns the first index i into parents
 // where parents[i] fully covers p, or -1 if not found.
-func (p *NLRI) FindParent(parents []NLRI) int {
+func (p *Prefix) FindParent(parents []Prefix) int {
 	addr, bits := p.Addr(), p.Bits()
 
 	for i := range parents {
@@ -98,16 +91,16 @@ func (p *NLRI) FindParent(parents []NLRI) int {
 }
 
 // ToJSON appends JSON representation of prefixes in src to dst
-func ToJSON(dst []byte, src []NLRI) []byte {
+func ToJSON(dst []byte, src []Prefix) []byte {
 	dst = append(dst, '[')
 	for i := range src {
 		p := &src[i]
 		if i > 0 {
 			dst = append(dst, ',')
 		}
-		if p.Options == OPT_ADDPATH {
+		if ap, ok := p.Add.(PrefixAddPath); ok {
 			dst = append(dst, `"#`...)
-			dst = json.Uint32(dst, p.Val)
+			dst = json.Uint32(dst, uint32(ap))
 			dst = append(dst, '#')
 		} else {
 			dst = append(dst, '"')
@@ -119,10 +112,10 @@ func ToJSON(dst []byte, src []NLRI) []byte {
 }
 
 // FromJSON parses JSON representation of prefixes in src into dst
-func FromJSON(src []byte, dst []NLRI) ([]NLRI, error) {
+func FromJSON(src []byte, dst []Prefix) ([]Prefix, error) {
 	err := json.ArrayEach(src, func(key int, buf []byte, typ json.Type) error {
 		var (
-			nlri NLRI
+			nlri Prefix
 			err  error
 			s    = json.S(buf)
 		)
@@ -141,8 +134,7 @@ func FromJSON(src []byte, dst []NLRI) ([]NLRI, error) {
 			if err != nil {
 				return err
 			}
-			nlri.Options = OPT_ADDPATH
-			nlri.Val = uint32(val)
+			nlri.Add = PrefixAddPath(val)
 			s = after
 		}
 
@@ -158,17 +150,16 @@ func FromJSON(src []byte, dst []NLRI) ([]NLRI, error) {
 }
 
 // Unmarshal unmarshals src into prefix p
-func (p *NLRI) Unmarshal(src []byte, ipv6, addpath bool) (n int, err error) {
+func (p *Prefix) Unmarshal(src []byte, ipv6, addpath bool) (n int, err error) {
 	// reset options, just in case
-	p.Options = 0
+	p.Add = nil
 
 	// parse ADD_PATH Path Identifier?
 	if addpath {
 		if len(src) < 5 {
 			return n, ErrLength
 		}
-		p.Options = OPT_ADDPATH
-		p.Val = msb.Uint32(src[0:4])
+		p.Add = PrefixAddPath(msb.Uint32(src[0:4]))
 		src = src[4:]
 		n += 4
 	}
@@ -202,7 +193,7 @@ func (p *NLRI) Unmarshal(src []byte, ipv6, addpath bool) (n int, err error) {
 }
 
 // Unmarshal unmarshals IP prefixes from src into dst
-func Unmarshal(dst []NLRI, src []byte, as afi.AS, cps caps.Caps, dir dir.Dir) ([]NLRI, error) {
+func Unmarshal(dst []Prefix, src []byte, as afi.AS, cps caps.Caps, dir dir.Dir) ([]Prefix, error) {
 	var (
 		ipv6    = as.IsIPv6()
 		addpath = cps.AddPathEnabled(as, dir)
@@ -213,7 +204,7 @@ func Unmarshal(dst []NLRI, src []byte, as afi.AS, cps caps.Caps, dir dir.Dir) ([
 		if cap(dst) > l {
 			dst = dst[:l+1]
 		} else {
-			dst = append(dst, NLRI{})
+			dst = append(dst, Prefix{})
 		}
 		p := &dst[l]
 
@@ -229,16 +220,20 @@ func Unmarshal(dst []NLRI, src []byte, as afi.AS, cps caps.Caps, dir dir.Dir) ([
 }
 
 // Marshal marshals prefix p to dst
-func (p *NLRI) Marshal(dst []byte, addpath bool) []byte {
+func (p *Prefix) Marshal(dst []byte, addpath bool) []byte {
 	if addpath {
-		if p.Options == OPT_ADDPATH {
-			dst = msb.AppendUint32(dst, p.Val)
+		if ap, ok := p.Add.(PrefixAddPath); ok {
+			dst = msb.AppendUint32(dst, uint32(ap))
 		} else {
 			dst = msb.AppendUint32(dst, 0)
 		}
 	}
 
 	l := p.Bits()
+	if l <= 0 {
+		return append(dst, 0) // write 0-length prefix
+	}
+
 	b := l / 8
 	if l%8 != 0 {
 		b++
@@ -249,7 +244,7 @@ func (p *NLRI) Marshal(dst []byte, addpath bool) []byte {
 }
 
 // Marshal marshals prefixes in src to dst
-func Marshal(dst []byte, src []NLRI, as afi.AS, cps caps.Caps, dir dir.Dir) []byte {
+func Marshal(dst []byte, src []Prefix, as afi.AS, cps caps.Caps, dir dir.Dir) []byte {
 	var (
 		ipv6    = as.IsIPv6()
 		addpath = cps.AddPathEnabled(as, dir)
