@@ -19,10 +19,10 @@ var msb = binary.Msb
 type Prefix struct {
 	netip.Prefix // the IP prefix
 
-	Add any // additional NLRI value, eg. the ADD_PATH Path Identifier
+	Add any // additional value, eg. the ADD_PATH Path Identifier
 }
 
-type PrefixAddPath uint32
+type PathId uint32
 
 // FromAddr returns normalized address ip wrapped in NLRI
 func FromAddr(ip netip.Addr) Prefix {
@@ -98,9 +98,9 @@ func ToJSON(dst []byte, src []Prefix) []byte {
 		if i > 0 {
 			dst = append(dst, ',')
 		}
-		if ap, ok := p.Add.(PrefixAddPath); ok {
+		if pi, ok := p.Add.(PathId); ok {
 			dst = append(dst, `"#`...)
-			dst = json.Uint32(dst, uint32(ap))
+			dst = json.Uint32(dst, uint32(pi))
 			dst = append(dst, '#')
 		} else {
 			dst = append(dst, '"')
@@ -134,7 +134,7 @@ func FromJSON(src []byte, dst []Prefix) ([]Prefix, error) {
 			if err != nil {
 				return err
 			}
-			nlri.Add = PrefixAddPath(val)
+			nlri.Add = PathId(val)
 			s = after
 		}
 
@@ -159,7 +159,7 @@ func (p *Prefix) Unmarshal(src []byte, ipv6, addpath bool) (n int, err error) {
 		if len(src) < 5 {
 			return n, ErrLength
 		}
-		p.Add = PrefixAddPath(msb.Uint32(src[0:4]))
+		p.Add = PathId(msb.Uint32(src[0:4]))
 		src = src[4:]
 		n += 4
 	}
@@ -222,8 +222,8 @@ func Unmarshal(dst []Prefix, src []byte, as afi.AS, cps caps.Caps, dir dir.Dir) 
 // Marshal marshals prefix p to dst
 func (p *Prefix) Marshal(dst []byte, addpath bool) []byte {
 	if addpath {
-		if ap, ok := p.Add.(PrefixAddPath); ok {
-			dst = msb.AppendUint32(dst, uint32(ap))
+		if pi, ok := p.Add.(PathId); ok {
+			dst = msb.AppendUint32(dst, uint32(pi))
 		} else {
 			dst = msb.AppendUint32(dst, 0)
 		}

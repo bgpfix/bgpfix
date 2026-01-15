@@ -1,6 +1,6 @@
 // Package dir represents BGP message direction.
 //
-// Exported to a separate package in order to avoid loops.
+// Exported to a separate package in order to avoid dependency loops.
 package dir
 
 // BGP message direction
