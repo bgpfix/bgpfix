@@ -240,7 +240,7 @@ func (b4 *Bgp4) Marshal() error {
 
 	// write AF, peer IP, local IP
 	peerip := b4.PeerIP.AsSlice()
-	localip := b4.PeerIP.AsSlice()
+	localip := b4.LocalIP.AsSlice()
 	switch {
 	case b4.PeerIP.Is6() || b4.LocalIP.Is6():
 		buf = msb.AppendUint16(buf, uint16(afi.AFI_IPV6))
