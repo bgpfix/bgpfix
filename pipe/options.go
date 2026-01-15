@@ -33,7 +33,9 @@ type Options struct {
 	Inputs    []*Input    // input processors
 }
 
-// Callback represents a function to call for matching BGP messages
+// Callback represents a function to call for matching BGP messages.
+// In general, Callbacks can be executed concurrently for different messages,
+// but are always executed sequentially for the same message, in given order.
 type Callback struct {
 	Id      int          // optional callback id number (zero means none)
 	Name    string       // optional name
@@ -53,7 +55,9 @@ type Callback struct {
 	Func CallbackFunc // the function to call
 }
 
-// Handler represents a function to call for matching pipe events
+// Handler represents a function to call for matching pipe events.
+// In general, Handlers can be executed concurrently for different events,
+// but are always executed sequentially for the same event, in given order.
 type Handler struct {
 	Id      int          // optional handler id number (zero means none)
 	Name    string       // optional name
