@@ -100,7 +100,7 @@ func ToJSON(dst []byte, src []Prefix) []byte {
 		}
 		if pi, ok := p.Add.(PathId); ok {
 			dst = append(dst, `"#`...)
-			dst = json.Uint32(dst, uint32(pi))
+			dst = json.Uint32(dst, pi)
 			dst = append(dst, '#')
 		} else {
 			dst = append(dst, '"')
@@ -223,7 +223,7 @@ func Unmarshal(dst []Prefix, src []byte, as afi.AS, cps caps.Caps, dir dir.Dir) 
 func (p *Prefix) Marshal(dst []byte, addpath bool) []byte {
 	if addpath {
 		if pi, ok := p.Add.(PathId); ok {
-			dst = msb.AppendUint32(dst, uint32(pi))
+			dst = msb.AppendUint32(dst, pi)
 		} else {
 			dst = msb.AppendUint32(dst, 0)
 		}
