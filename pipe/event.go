@@ -249,9 +249,7 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 		// call handlers
 		for _, h := range hs {
 			// skip handler?
-			if h == nil || h.Dropped {
-				continue // dropped
-			} else if h.Dir != 0 && h.Dir&ev.Dir == 0 {
+			if h.Dir != 0 && h.Dir&ev.Dir == 0 {
 				continue // different direction
 			} else if h.Enabled != nil && !h.Enabled.Load() {
 				continue // disabled
@@ -260,14 +258,14 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 			// run the handler, block until done
 			ev.Handler = h
 			if !h.Func(ev) {
-				h.Drop()
+				h.Disable()
 			}
 			ev.Handler = nil
 
 			// what's next?
 			if ctx.Err() != nil {
 				return // pipe is stopping
-			} else if ev.Action&(ACTION_DROP|ACTION_ACCEPT) != 0 {
+			} else if ev.Action.Has(ACTION_DROP | ACTION_ACCEPT) {
 				break // skip other handlers
 			}
 		}

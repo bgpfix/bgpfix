@@ -250,10 +250,10 @@ input:
 			if ctx.Err() != nil {
 				p.PutMsg(m)
 				return // pipe is stopping
-			} else if mx.Action.IsDrop() {
+			} else if mx.Action.HasDrop() {
 				p.PutMsg(m)
 				continue input // next message
-			} else if mx.Action.IsAccept() {
+			} else if mx.Action.HasAccept() {
 				break // take it as-is
 			}
 		}

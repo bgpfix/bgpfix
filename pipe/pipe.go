@@ -279,7 +279,7 @@ func (p *Pipe) PutMsg(m *msg.Msg) {
 
 	// do not re-use?
 	mx := UseContext(m)
-	if mx.Action.Is(ACTION_BORROW) {
+	if mx.Action.Has(ACTION_BORROW) {
 		return
 	}
 
