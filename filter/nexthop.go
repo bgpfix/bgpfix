@@ -50,7 +50,7 @@ func (e *Expr) nexthopEval(ev *Eval) bool {
 	}
 
 	// check
-	ref := e.Val.(nlri.NLRI)
+	ref := e.Val.(nlri.Prefix)
 	ra := ref.Addr()
 	if ra.Is4() != nh.Is4() {
 		return false // different address families never match

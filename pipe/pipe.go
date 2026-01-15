@@ -3,6 +3,7 @@ package pipe
 
 import (
 	"context"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -32,8 +33,8 @@ type Pipe struct {
 	// generic Key-Value store, always thread-safe
 	KV *xsync.Map[string, any]
 
-	ctx    context.Context         // parent context for all children
-	cancel context.CancelCauseFunc // cancels ctx
+	Ctx    context.Context         // context for all children
+	Cancel context.CancelCauseFunc // cancels ctx
 
 	started atomic.Bool    // true iff Start() called
 	stopped atomic.Bool    // true iff Stop() called
@@ -42,6 +43,7 @@ type Pipe struct {
 	evch   chan *Event           // pipe event input
 	evwg   sync.WaitGroup        // event handler routine
 	events map[string][]*Handler // maps events to their handlers
+	evseq  atomic.Uint64         // last event seq number assigned
 
 	msgpool *sync.Pool // pool for new messages
 }
@@ -50,7 +52,7 @@ type Pipe struct {
 // To start/stop the pipe, call Start() and Stop().
 func NewPipe(ctx context.Context) *Pipe {
 	p := &Pipe{}
-	p.ctx, p.cancel = context.WithCancelCause(ctx)
+	p.Ctx, p.Cancel = context.WithCancelCause(ctx)
 
 	p.Options = DefaultOptions
 
@@ -176,9 +178,11 @@ func (p *Pipe) Start() error {
 		return err
 	}
 
-	// start the event handler
-	p.evwg.Add(1)
-	go p.eventHandler(&p.evwg)
+	// start the event handlers
+	for range runtime.GOMAXPROCS(0) {
+		p.evwg.Add(1)
+		go p.eventHandler(&p.evwg)
+	}
 
 	// start line inputs
 	p.L.start()
@@ -193,7 +197,7 @@ func (p *Pipe) Start() error {
 
 	// stop the pipe on context cancel
 	go func() {
-		<-p.ctx.Done()
+		<-p.Ctx.Done()
 		p.Stop()
 	}()
 
@@ -225,14 +229,14 @@ func (p *Pipe) Stop() {
 	// yank the cable out of blocked calls (give it 1 sec)
 	go func() {
 		<-time.After(time.Second)
-		p.cancel(ErrStopped)
+		p.Cancel(ErrStopped)
 	}()
 
 	// wait for input handlers
 	p.L.Wait()
 	p.R.Wait()
 
-	// stop the event handler and wait for it to finish
+	// stop the event handlers and wait for them to finish
 	close(p.evch)
 	p.evwg.Wait()
 }
@@ -275,7 +279,7 @@ func (p *Pipe) PutMsg(m *msg.Msg) {
 
 	// do not re-use?
 	mx := UseContext(m)
-	if mx.Action.Is(ACTION_BORROW) {
+	if mx.Action.Has(ACTION_BORROW) {
 		return
 	}
 

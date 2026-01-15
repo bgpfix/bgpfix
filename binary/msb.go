@@ -6,7 +6,7 @@ import (
 	"io"
 )
 
-var Msb msb = msb{
+var Msb = msb{
 	binary.BigEndian,
 	binary.BigEndian,
 }

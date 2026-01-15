@@ -41,7 +41,7 @@ func (ev *Eval) SetMsg(m *msg.Msg) {
 }
 
 // SetPipe sets the optional, read-only Pipe context, in a way that
-// hopefully avoids a cyclic import vs. the pipe package.
+// avoids a cyclic import vs. the pipe package.
 func (ev *Eval) SetPipe(kv *xsync.Map[string, any], caps caps.Caps, tags map[string]string) {
 	ev.PipeKV = kv
 	ev.PipeCaps = caps
@@ -77,7 +77,7 @@ func (ev *Eval) exprEval(first *Expr) (result bool) {
 			res = false // no need to run
 		case ev.cache != nil:
 			if res, cache_ok = ev.cache[e.String]; cache_ok {
-				break // use cached result
+				break // use cached result in res
 			}
 			fallthrough
 		default:
@@ -94,11 +94,11 @@ func (ev *Eval) exprEval(first *Expr) (result bool) {
 		is_and := prev_and || e.And // left or right is AND?
 		if res {
 			if !is_and {
-				return true
+				return true // one True in OR chain is enough to succeed
 			}
 		} else {
 			if is_and {
-				return false
+				return false // one False in AND chain is enough to fail
 			}
 		}
 		prev_and = e.And

@@ -204,7 +204,7 @@ func (x *Exa) readMsgAttrs(u *msg.Update) {
 	}
 
 	// AS path
-	if aspath, ok := u.Attrs.Get(attrs.ATTR_ASPATH).(*attrs.Aspath); ok && aspath.Valid() {
+	if aspath, ok := u.Attrs.Get(attrs.ATTR_ASPATH).(*attrs.Aspath); ok && aspath.IsValid() {
 		var asns []uint32
 		for _, seg := range aspath.Segments {
 			asns = append(asns, seg.List...)

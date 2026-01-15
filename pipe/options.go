@@ -12,6 +12,7 @@ import (
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/time/rate"
 )
 
 // Default BGP pipe options
@@ -32,31 +33,36 @@ type Options struct {
 	Inputs    []*Input    // input processors
 }
 
-// Callback represents a function to call for matching BGP messages
+// Callback represents a function to call for matching BGP messages.
+// In general, Callbacks can be executed concurrently for different messages,
+// but are always executed sequentially for the same message, in given order.
 type Callback struct {
 	Id      int          // optional callback id number (zero means none)
 	Name    string       // optional name
 	Order   int          // the lower the order, the sooner callback is run
 	Enabled *atomic.Bool // if non-nil, disables the callback unless true
-	Dropped bool         // if true, permanently drops (unregisters) the callback
 
 	Pre  bool // run before non-pre callbacks?
 	Raw  bool // if true, do not parse the message (which may already be parsed, but for other reasons)
 	Post bool // run after non-post callbacks?
 
-	Dir    dir.Dir        // if non-zero, limits the direction
-	Types  []msg.Type     // if non-empty, limits message types
-	Filter *filter.Filter // if non-nil, skips messages not matching the filter
-	Func   CallbackFunc   // the function to call
+	Dir       dir.Dir          // if non-zero, limits the direction
+	Types     []msg.Type       // if non-empty, limits message types
+	Filter    []*filter.Filter // skip messages not matching all filters
+	LimitRate *rate.Limiter    // if non-nil, limits the rate of callback invocations
+	LimitSkip bool             // if true, skips the callback when over the rate limit (else delays)
+
+	Func CallbackFunc // the function to call
 }
 
-// Handler represents a function to call for matching pipe events
+// Handler represents a function to call for matching pipe events.
+// In general, Handlers can be executed concurrently for different events,
+// but are always executed sequentially for the same event, in given order.
 type Handler struct {
 	Id      int          // optional handler id number (zero means none)
 	Name    string       // optional name
 	Order   int          // the lower the order, the sooner handler is run
 	Enabled *atomic.Bool // if non-nil, disables the handler unless true
-	Dropped bool         // if true, permanently drops (unregisters) the handler
 
 	Pre  bool // run before non-pre handlers?
 	Post bool // run after non-post handlers?
@@ -100,30 +106,25 @@ func (o *Options) AddCallback(cbf CallbackFunc, tpl ...*Callback) *Callback {
 	return &cb
 }
 
-// Enable sets cb.Enabled to true and returns true. If cb.Enabled is nil, returns false.
+// Enable enables the callback and returns the previous state.
 func (cb *Callback) Enable() bool {
 	if cb == nil || cb.Enabled == nil {
-		return false
-	} else {
-		cb.Enabled.Store(true)
 		return true
+	} else {
+		return cb.Enabled.Swap(true)
 	}
 }
 
-// Disable sets cb.Enabled to false and returns true. If cb.Enabled is nil, returns false.
+// Disable disables the callback and returns the previous state.
 func (cb *Callback) Disable() bool {
-	if cb == nil || cb.Enabled == nil {
+	if cb == nil {
 		return false
+	} else if cb.Enabled == nil {
+		var v atomic.Bool
+		cb.Enabled = &v
+		return true // no cb.Enabled means was enabled
 	} else {
-		cb.Enabled.Store(false)
-		return true
-	}
-}
-
-// Drop drops the callback, permanently unregistering it from running
-func (cb *Callback) Drop() {
-	if cb != nil {
-		cb.Dropped = true
+		return cb.Enabled.Swap(false)
 	}
 }
 
@@ -197,30 +198,25 @@ func (h *Handler) String() string {
 	return fmt.Sprintf("EV%d:%s", h.Id, h.Name)
 }
 
-// Enable sets h.Enabled to true and returns true. If h.Enabled is nil, returns false.
+// Enable enables the handler and returns the previous state.
 func (h *Handler) Enable() bool {
 	if h == nil || h.Enabled == nil {
-		return false
-	} else {
-		h.Enabled.Store(true)
 		return true
+	} else {
+		return h.Enabled.Swap(true)
 	}
 }
 
-// Disable sets h.Enabled to false and returns true. If h.Enabled is nil, returns false.
+// Disable disables the handler and returns the previous state.
 func (h *Handler) Disable() bool {
-	if h == nil || h.Enabled == nil {
+	if h == nil {
 		return false
+	} else if h.Enabled == nil {
+		var v atomic.Bool
+		h.Enabled = &v
+		return true // no h.Enabled means was enabled
 	} else {
-		h.Enabled.Store(false)
-		return true
-	}
-}
-
-// Drop drops the handler, permanently unregistering it from running
-func (h *Handler) Drop() {
-	if h != nil {
-		h.Dropped = true
+		return h.Enabled.Swap(false)
 	}
 }
 

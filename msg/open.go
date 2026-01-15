@@ -17,8 +17,9 @@ type Open struct {
 	ASN        uint16     // 2-byte local ASN
 	HoldTime   uint16     // proposed hold time
 	Identifier netip.Addr // router identifier
-	Params     []byte     // raw Optional Parameters
-	ParamsExt  bool       // true iff Params use extended length
+
+	ParamsRaw []byte // raw Optional Parameters, referencing Msg.Data
+	ParamsExt bool   // true iff Params use extended length
 
 	Caps caps.Caps // BGP capabilities, usually parsed from Params
 }
@@ -44,7 +45,7 @@ func (o *Open) Init(m *Msg) {
 
 // Reset prepares o for re-use
 func (o *Open) Reset() {
-	o.Params = nil
+	o.ParamsRaw = nil
 	o.ParamsExt = false
 	o.Caps.Reset()
 }
@@ -83,7 +84,7 @@ func (o *Open) Parse() error {
 			return ErrParams
 		}
 
-		o.Params = params
+		o.ParamsRaw = params
 		o.ParamsExt = ext
 	}
 
@@ -94,11 +95,11 @@ func (o *Open) Parse() error {
 // ParseCaps parses all capability codes from Params to Caps
 func (o *Open) ParseCaps() error {
 	var (
-		params = o.Params // all parameters
-		ptyp   byte       // parameter type
-		plen   int        // parameter length
-		pval   []byte     // parameter value
-		cps    caps.Caps  // parsed capabilities
+		params = o.ParamsRaw // all parameters
+		ptyp   byte          // parameter type
+		plen   int           // parameter length
+		pval   []byte        // parameter value
+		cps    caps.Caps     // parsed capabilities
 	)
 
 	// parse params one-by-one, in practice there's only the
@@ -195,7 +196,7 @@ func (o *Open) GetASN() int {
 // Marshal marshals o to o.Msg.Data.
 func (o *Open) Marshal() error {
 	// check params length
-	switch plen := len(o.Params); {
+	switch plen := len(o.ParamsRaw); {
 	case plen > math.MaxUint16:
 		return fmt.Errorf("Marshal: Params too long: %w (%d)", ErrLength, plen)
 	case plen > math.MaxUint8 && !o.ParamsExt:
@@ -212,11 +213,11 @@ func (o *Open) Marshal() error {
 	// optional parameters
 	if o.ParamsExt {
 		buf = append(buf, 255, PARAM_EXTLEN)
-		buf = msb.AppendUint16(buf, uint16(len(o.Params)))
+		buf = msb.AppendUint16(buf, uint16(len(o.ParamsRaw)))
 	} else {
-		buf = append(buf, byte(len(o.Params)))
+		buf = append(buf, byte(len(o.ParamsRaw)))
 	}
-	buf = append(buf, o.Params...)
+	buf = append(buf, o.ParamsRaw...)
 
 	// done
 	msg.Type = OPEN
@@ -227,10 +228,10 @@ func (o *Open) Marshal() error {
 	return nil
 }
 
-// MarshalCaps marshals o.Caps into o.Params. Sets o.ParamsExt.
+// MarshalCaps marshals o.Caps into o.ParamsRaw. Updates o.ParamsExt.
 func (o *Open) MarshalCaps() error {
-	// NB: avoid o.Params[:0] as it might be referencing another slice
-	o.Params = nil
+	// NB: avoid o.ParamsRaw[:0] as it might be referencing another slice
+	o.ParamsRaw = nil
 
 	// marshal one-by-one
 	var raw []byte
@@ -255,8 +256,8 @@ func (o *Open) MarshalCaps() error {
 		o.ParamsExt = false // avoid if not neccessary
 	}
 
-	// encode as new o.Params
-	p := o.Params
+	// encode as new o.ParamsRaw
+	p := o.ParamsRaw
 	p = append(p, PARAM_CAPS)
 	if o.ParamsExt {
 		p = msb.AppendUint16(p, uint16(len(raw)))
@@ -264,7 +265,7 @@ func (o *Open) MarshalCaps() error {
 		p = append(p, byte(len(raw)))
 	}
 	p = append(p, raw...)
-	o.Params = p
+	o.ParamsRaw = p
 
 	return nil
 }
@@ -293,7 +294,7 @@ func (o *Open) ToJSON(dst []byte) []byte {
 		dst = o.Caps.ToJSON(dst)
 	} else {
 		dst = append(dst, `,"params":`...)
-		dst = json.Hex(dst, o.Params)
+		dst = json.Hex(dst, o.ParamsRaw)
 	}
 
 	dst = append(dst, '}')
@@ -324,7 +325,7 @@ func (o *Open) FromJSON(src []byte) error {
 			err = o.Caps.FromJSON(val)
 
 		case "params":
-			o.Params, err = json.UnHex(val, o.Params[:0])
+			o.ParamsRaw, err = json.UnHex(val, o.ParamsRaw[:0])
 
 		}
 		return err

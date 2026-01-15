@@ -167,7 +167,11 @@ func Ascii(dst, src []byte) []byte {
 
 // S returns string from byte slice, in an unsafe way
 func S(buf []byte) string {
-	return unsafe.String(&buf[0], len(buf))
+	if len(buf) == 0 {
+		return ""
+	} else {
+		return unsafe.String(&buf[0], len(buf))
+	}
 }
 
 // B returns byte slice from string, in an unsafe way
@@ -186,7 +190,9 @@ func Q(buf []byte) []byte {
 
 // SQ returns string from byte slice, unquoting if necessary
 func SQ(buf []byte) string {
-	if l := len(buf); l > 1 && buf[0] == '"' && buf[l-1] == '"' {
+	if l := len(buf); l == 0 {
+		return ""
+	} else if l >= 2 && buf[0] == '"' && buf[l-1] == '"' {
 		buf = buf[1 : l-1]
 	}
 	return unsafe.String(&buf[0], len(buf))

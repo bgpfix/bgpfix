@@ -107,9 +107,9 @@ func (a *Extcom) Reset() {
 func NewExtcomValue(et ExtcomType) ExtcomValue {
 	var ev ExtcomValue
 	if newfunc, ok := ExtcomNewFuncs[et.Value()]; ok {
-		ev = newfunc(et.Value())
+		ev = newfunc(et)
 	} else if newfunc, ok := ExtcomNewFuncs[et.Type()]; ok {
-		ev = newfunc(et.Type())
+		ev = newfunc(et)
 	} else {
 		ev = NewExtcomRaw(et)
 	}

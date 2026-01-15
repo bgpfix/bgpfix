@@ -19,19 +19,19 @@ var msb = binary.Msb
 //
 // Attrs and its values are not thread-safe.
 type Attrs struct {
-	use [256]bool // indicates whether attribute code is used
-	db  [256]Attr // map of attribute code to attribute value
-	len int       // number of attributes
+	use  [256]bool // indicates whether attribute code is used
+	attr [256]Attr // map of attribute code to attribute value
+	len  int       // number of attributes used
 }
 
 // Reset resets Attrs back to initial state.
 func (ats *Attrs) Reset() {
-	ats.use = [256]bool{}
-	for _, at := range ats.db {
-		if at != nil {
-			at.Reset()
+	for ac, use := range ats.use {
+		if use {
+			ats.attr[ac].Reset()
 		}
 	}
+	ats.use = [256]bool{}
 	ats.len = 0
 }
 
@@ -43,7 +43,7 @@ func (ats *Attrs) Len() int {
 // Get returns ats[ac] or nil if not possible.
 func (ats *Attrs) Get(ac Code) Attr {
 	if ats.use[ac] {
-		return ats.db[ac]
+		return ats.attr[ac]
 	} else {
 		return nil
 	}
@@ -60,15 +60,15 @@ func (ats *Attrs) Set(ac Code, value Attr) {
 		if value != nil {
 			ats.use[ac] = true
 			ats.len++
-			ats.db[ac] = value
+			ats.attr[ac] = value
 		} // else: no-op
 	} else { // = already used
 		if value == nil {
 			ats.use[ac] = false
 			ats.len--
-			ats.db[ac].Reset()
+			ats.attr[ac].Reset()
 		} else {
-			ats.db[ac] = value
+			ats.attr[ac] = value
 		}
 	}
 }
@@ -78,13 +78,28 @@ func (ats *Attrs) Drop(ac Code) {
 	ats.Set(ac, nil)
 }
 
+// Filter drops all attributes except those in ac
+func (ats *Attrs) Filter(ac ...Code) {
+	keep := make(map[int]bool, len(ac))
+	for _, c := range ac {
+		keep[int(c)] = true
+	}
+	for ac, use := range ats.use {
+		if use && !keep[ac] {
+			ats.use[ac] = false
+			ats.len--
+			ats.attr[ac].Reset()
+		}
+	}
+}
+
 // Use returns ats[ac] if its already set and non-nil.
 // Otherwise, it adds a new instance for ac with default flags.
 func (ats *Attrs) Use(ac Code) Attr {
 	if ats.use[ac] {
 		// already used
-		return ats.db[ac]
-	} else if at := ats.db[ac]; at != nil {
+		return ats.attr[ac]
+	} else if at := ats.attr[ac]; at != nil {
 		// re-use existing instance
 		ats.len++
 		ats.use[ac] = true
@@ -93,7 +108,7 @@ func (ats *Attrs) Use(ac Code) Attr {
 		// create new, store, and return
 		ats.len++
 		at = NewAttr(ac)
-		ats.db[ac] = at
+		ats.attr[ac] = at
 		ats.use[ac] = true
 		return at
 	}
@@ -105,7 +120,7 @@ func (ats *Attrs) Each(cb func(i int, ac Code, at Attr)) {
 	i := 0
 	for ac, used := range ats.use {
 		if used {
-			cb(i, Code(ac), ats.db[ac])
+			cb(i, Code(ac), ats.attr[ac])
 			i++
 		}
 	}

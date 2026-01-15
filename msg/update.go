@@ -16,11 +16,11 @@ import (
 type Update struct {
 	Msg *Msg // parent BGP message
 
-	Reach    []nlri.NLRI // reachable IPv4 unicast
-	Unreach  []nlri.NLRI // unreachable IPv4 unicast
-	RawAttrs []byte      // raw attributes, referencing Msg.Data
+	Reach   []nlri.Prefix // reachable IPv4 unicast
+	Unreach []nlri.Prefix // unreachable IPv4 unicast
 
-	Attrs attrs.Attrs // parsed attributes
+	AttrsRaw []byte      // raw attributes, referencing Msg.Data
+	Attrs    attrs.Attrs // parsed attributes
 
 	cached int            // msg.Version for which the cache is valid
 	cache  map[string]any // cached message attributes
@@ -39,7 +39,7 @@ func (u *Update) Init(m *Msg) {
 func (u *Update) Reset() {
 	u.Unreach = u.Unreach[:0]
 	u.Reach = u.Reach[:0]
-	u.RawAttrs = nil
+	u.AttrsRaw = nil
 	u.Attrs.Reset()
 	u.cached = 0
 	clear(u.cache)
@@ -110,15 +110,15 @@ func (u *Update) Parse(cps caps.Caps) error {
 	}
 
 	// take it
-	u.RawAttrs = ats
+	u.AttrsRaw = ats
 	u.Msg.Upper = UPDATE
 	return nil
 }
 
-// ParseAttrs parses all attributes from RawAttrs into Attrs.
+// ParseAttrs parses all attributes from AttrsRaw into Attrs.
 func (u *Update) ParseAttrs(cps caps.Caps) error {
 	var (
-		raw  = u.RawAttrs    // all attributes
+		raw  = u.AttrsRaw    // all attributes
 		atyp attrs.CodeFlags // attribute type
 		alen uint16          // attribute length
 		ats  attrs.Attrs     // parsed attributes
@@ -167,17 +167,17 @@ func (u *Update) ParseAttrs(cps caps.Caps) error {
 	return nil
 }
 
-// MarshalAttrs marshals u.Attrs into u.RawAttrs
+// MarshalAttrs marshals u.Attrs into u.AttrsRaw
 func (u *Update) MarshalAttrs(cps caps.Caps) error {
-	// NB: avoid u.RawAttrs[:0] as it might be referencing another slice
-	u.RawAttrs = nil
+	// NB: avoid u.AttrsRaw[:0] as it might be referencing another slice
+	u.AttrsRaw = nil
 
 	// marshal one-by-one
 	var raw []byte
 	u.Attrs.Each(func(i int, ac attrs.Code, at attrs.Attr) {
 		raw = at.Marshal(raw, cps, u.Msg.Dir)
 	})
-	u.RawAttrs = raw
+	u.AttrsRaw = raw
 	return nil
 }
 
@@ -196,11 +196,11 @@ func (u *Update) Marshal(cps caps.Caps) error {
 	}
 
 	// attributes
-	if len(u.RawAttrs) > math.MaxUint16 {
-		return fmt.Errorf("Marshal: too long Attributes: %w (%d)", ErrLength, len(u.RawAttrs))
+	if len(u.AttrsRaw) > math.MaxUint16 {
+		return fmt.Errorf("Marshal: too long Attributes: %w (%d)", ErrLength, len(u.AttrsRaw))
 	}
-	buf = msb.AppendUint16(buf, uint16(len(u.RawAttrs)))
-	buf = append(buf, u.RawAttrs...)
+	buf = msb.AppendUint16(buf, uint16(len(u.AttrsRaw)))
+	buf = append(buf, u.AttrsRaw...)
 
 	// announced routes
 	buf = nlri.Marshal(buf, u.Reach, afi.AS_IPV4_UNICAST, cps, msg.Dir)
@@ -221,30 +221,37 @@ func (u *Update) String() string {
 
 // ToJSON appends JSON representation of u to dst (may be nil)
 func (u *Update) ToJSON(dst []byte) []byte {
+	comma := false
 	dst = append(dst, '{')
 
 	if len(u.Reach) > 0 {
 		dst = append(dst, `"reach":`...)
 		dst = nlri.ToJSON(dst, u.Reach)
+		comma = true
 	}
 
 	if len(u.Unreach) > 0 {
-		if len(u.Reach) > 0 {
+		if comma {
 			dst = append(dst, ',')
+		} else {
+			comma = true
 		}
 		dst = append(dst, `"unreach":`...)
 		dst = nlri.ToJSON(dst, u.Unreach)
 	}
 
-	if len(u.Reach) > 0 || len(u.Unreach) > 0 {
-		dst = append(dst, ',')
-	}
-
-	dst = append(dst, `"attrs":`...)
-	if u.Attrs.Len() > 0 {
-		dst = u.Attrs.ToJSON(dst)
-	} else {
-		dst = json.Hex(dst, u.RawAttrs)
+	if u.Attrs.Len() > 0 || len(u.AttrsRaw) > 0 {
+		if comma {
+			dst = append(dst, ',')
+		} else {
+			comma = true
+		}
+		dst = append(dst, `"attrs":`...)
+		if u.Attrs.Len() > 0 {
+			dst = u.Attrs.ToJSON(dst)
+		} else {
+			dst = json.Hex(dst, u.AttrsRaw)
+		}
 	}
 
 	dst = append(dst, '}')
@@ -261,7 +268,7 @@ func (u *Update) FromJSON(src []byte) error {
 			u.Unreach, err = nlri.FromJSON(val, u.Unreach[:0])
 		case "attrs":
 			if typ == json.STRING {
-				u.RawAttrs, err = json.UnHex(val, u.RawAttrs[:0])
+				u.AttrsRaw, err = json.UnHex(val, u.AttrsRaw[:0])
 			} else {
 				err = u.Attrs.FromJSON(val)
 			}
@@ -313,12 +320,12 @@ func (u *Update) AfiSafi() afi.AS {
 
 // AllReach returns all reachable prefixes, including those in MP-BGP attributes.
 // Uses cached value if available. Do not modify the returned slice.
-func (u *Update) AllReach() []nlri.NLRI {
+func (u *Update) AllReach() []nlri.Prefix {
 	if !u.recache() {
 		return nil
 	}
 
-	all, ok := u.cache["allreach"].([]nlri.NLRI)
+	all, ok := u.cache["allreach"].([]nlri.Prefix)
 	if ok {
 		return all
 	}
@@ -330,7 +337,7 @@ func (u *Update) AllReach() []nlri.NLRI {
 	} else if len(u.Reach) == 0 {
 		all = mp.Prefixes
 	} else {
-		all = make([]nlri.NLRI, 0, len(u.Reach)+len(mp.Prefixes))
+		all = make([]nlri.Prefix, 0, len(u.Reach)+len(mp.Prefixes))
 		all = append(all, u.Reach...)
 		all = append(all, mp.Prefixes...)
 	}
@@ -346,7 +353,7 @@ func (u *Update) HasReach() bool {
 
 // AddReach adds all reachable prefixes to u.
 // NB: it will purge non-IPv6 MP_REACH attribute if needed
-func (u *Update) AddReach(prefixes ...nlri.NLRI) {
+func (u *Update) AddReach(prefixes ...nlri.Prefix) {
 	if len(prefixes) == 0 {
 		return
 	} else {
@@ -379,12 +386,12 @@ func (u *Update) AddReach(prefixes ...nlri.NLRI) {
 
 // AllUnreach returns all unreachable prefixes, including those in MP-BGP attributes.
 // Uses cached value if available. Do not modify the returned slice.
-func (u *Update) AllUnreach() []nlri.NLRI {
+func (u *Update) AllUnreach() []nlri.Prefix {
 	if !u.recache() {
 		return nil
 	}
 
-	all, ok := u.cache["allunreach"].([]nlri.NLRI)
+	all, ok := u.cache["allunreach"].([]nlri.Prefix)
 	if ok {
 		return all
 	}
@@ -396,7 +403,7 @@ func (u *Update) AllUnreach() []nlri.NLRI {
 	} else if len(u.Unreach) == 0 {
 		all = mp.Prefixes
 	} else {
-		all = make([]nlri.NLRI, 0, len(u.Unreach)+len(mp.Prefixes))
+		all = make([]nlri.Prefix, 0, len(u.Unreach)+len(mp.Prefixes))
 		all = append(all, u.Unreach...)
 		all = append(all, mp.Prefixes...)
 	}
@@ -411,35 +418,46 @@ func (u *Update) HasUnreach() bool {
 }
 
 // AddUnreach adds all unreachable prefixes to u.
-// NB: it will purge non-IPv6 MP_UNREACH attribute if needed
-func (u *Update) AddUnreach(prefixes ...nlri.NLRI) {
+// NB: it might purge existing MP_UNREACH attribute value if needed
+func (u *Update) AddUnreach(prefixes ...nlri.Prefix) {
 	if len(prefixes) == 0 {
 		return
 	} else {
 		delete(u.cache, "allunreach")
 	}
 
-	var mp *attrs.MPPrefixes
-	prepare_mp := func() {
-		mpr := u.Attrs.Use(attrs.ATTR_MP_UNREACH).(*attrs.MP)
-		mp, _ = mpr.Value.(*attrs.MPPrefixes)
-		if mp == nil || mpr.AS != afi.AS_IPV6_UNICAST {
-			mp = attrs.NewMPPrefixes(mpr).(*attrs.MPPrefixes)
-			mpr.AS = afi.AS_IPV6_UNICAST
-			mpr.Value = mp
+	// need to use MP?
+	var mp *attrs.MP
+	var mpp *attrs.MPPrefixes
+	if u.Attrs.Has(attrs.ATTR_MP_REACH) || u.Attrs.Has(attrs.ATTR_MP_UNREACH) {
+		mp = u.Attrs.Use(attrs.ATTR_MP_UNREACH).(*attrs.MP)
+		mpp, _ = mp.Value.(*attrs.MPPrefixes)
+	}
+
+	check_mp := func(as afi.AS) {
+		if mpp == nil || mp.AS != as {
+			mpp = attrs.NewMPPrefixes(mp).(*attrs.MPPrefixes)
+			mp.AS = as
+			mp.Value = mpp
 		}
 	}
 
 	for i := range prefixes {
 		pfx := &prefixes[i]
 		if pfx.Addr().Is4() {
-			u.Unreach = append(u.Unreach, *pfx)
-		} else if pfx.Addr().Is6() {
+			// can skip BGP-MP?
 			if mp == nil {
-				prepare_mp()
+				u.Unreach = append(u.Unreach, *pfx)
+				continue
 			}
-			mp.Prefixes = append(mp.Prefixes, *pfx)
-		} // else ignore
+			check_mp(afi.AS_IPV4_UNICAST)
+		} else if pfx.Addr().Is6() {
+			check_mp(afi.AS_IPV6_UNICAST)
+		} else {
+			continue // ignore
+		}
+
+		mpp.Prefixes = append(mpp.Prefixes, *pfx)
 	}
 }
 
@@ -453,7 +471,7 @@ func (u *Update) AsPath() (aspath *attrs.Aspath) {
 
 	// AS_PATH must be present and valid
 	ap, ok := u.Attrs.Get(attrs.ATTR_ASPATH).(*attrs.Aspath)
-	if !ok || !ap.Valid() {
+	if !ok || !ap.IsValid() {
 		u.cache["aspath"] = nil
 		return nil // empty
 	}
@@ -508,6 +526,33 @@ func (u *Update) NextHop() (nh netip.Addr) {
 
 	u.cache["nexthop"] = nh
 	return nh
+}
+
+// Origin returns the ATTR_ORIGIN value
+func (u *Update) Origin() (origin byte, ok bool) {
+	if a, ok := u.Attrs.Get(attrs.ATTR_ORIGIN).(*attrs.Origin); ok {
+		return a.Origin, true
+	} else {
+		return 0, false
+	}
+}
+
+// Med returns the ATTR_MED value
+func (u *Update) Med() (med uint32, ok bool) {
+	if a, ok := u.Attrs.Get(attrs.ATTR_MED).(*attrs.U32); ok {
+		return a.Val, true
+	} else {
+		return 0, false
+	}
+}
+
+// LocalPref returns the ATTR_LOCALPREF value
+func (u *Update) LocalPref() (localpref uint32, ok bool) {
+	if a, ok := u.Attrs.Get(attrs.ATTR_LOCALPREF).(*attrs.U32); ok {
+		return a.Val, true
+	} else {
+		return 0, false
+	}
 }
 
 // Community returns the community attribute, or nil if not defined.

@@ -16,7 +16,7 @@ type MPPrefixes struct {
 
 	NextHop   netip.Addr // only for ATTR_MP_REACH
 	LinkLocal netip.Addr // only for IPv6 NextHop, if given
-	Prefixes  []nlri.NLRI
+	Prefixes  []nlri.Prefix
 }
 
 func NewMPPrefixes(mp *MP) MPValue {
@@ -29,8 +29,8 @@ func (a *MPPrefixes) Reset() {
 	a.Prefixes = a.Prefixes[:0]
 }
 
-// Count returns the number of prefixes in a, if non-nil
-func (a *MPPrefixes) Count() int {
+// Len returns the number of prefixes in a, if non-nil
+func (a *MPPrefixes) Len() int {
 	if a == nil {
 		return 0
 	} else {

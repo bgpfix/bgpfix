@@ -42,17 +42,17 @@ func (e *ExtcomRaw) FromJSON(src []byte) error {
 
 // 2- or 4-byte ASN-specific value
 type ExtcomASN struct {
-	et    ExtcomType
+	ExtcomType
 	ASN   uint32
 	Value uint32
 }
 
 func NewExtcomASN(et ExtcomType) ExtcomValue {
-	return &ExtcomASN{et: et}
+	return &ExtcomASN{ExtcomType: et}
 }
 
 func (e *ExtcomASN) Unmarshal(raw uint64) error {
-	if e.et.Type()&EXTCOM_AS4 != 0 {
+	if e.Type()&EXTCOM_AS4 != 0 {
 		e.ASN = uint32(raw >> 16)
 		e.Value = uint32(raw & 0xffff)
 	} else {
@@ -64,7 +64,7 @@ func (e *ExtcomASN) Unmarshal(raw uint64) error {
 
 func (e *ExtcomASN) Marshal() uint64 {
 	var raw uint64
-	if e.et.Type()&EXTCOM_AS4 != 0 {
+	if e.Type()&EXTCOM_AS4 != 0 {
 		raw |= uint64(e.ASN) << 16
 		raw |= uint64(e.Value & 0xffff)
 	} else {
