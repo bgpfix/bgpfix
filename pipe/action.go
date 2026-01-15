@@ -48,13 +48,13 @@ func (ac *Action) Add(a Action) {
 	*ac |= a
 }
 
-// Is returns true iff a is set in ac
-func (ac Action) Is(a Action) bool {
+// Has returns true iff a is set in ac
+func (ac Action) Has(a Action) bool {
 	return ac&a != 0
 }
 
-// IsBorrow returns true iff ACTION_BORROW is set in ac
-func (ac Action) IsBorrow() bool {
+// HasBorrow returns true iff ACTION_BORROW is set in ac
+func (ac Action) HasBorrow() bool {
 	return ac&ACTION_BORROW != 0
 }
 
@@ -63,8 +63,8 @@ func (ac *Action) Borrow() {
 	*ac |= ACTION_BORROW
 }
 
-// IsAccept returns true iff ACTION_ACCEPT is set in ac
-func (ac Action) IsAccept() bool {
+// HasAccept returns true iff ACTION_ACCEPT is set in ac
+func (ac Action) HasAccept() bool {
 	return ac&ACTION_ACCEPT != 0
 }
 
@@ -73,8 +73,8 @@ func (ac *Action) Accept() {
 	*ac |= ACTION_ACCEPT
 }
 
-// IsDrop returns true iff ACTION_DROP is set in ac
-func (ac Action) IsDrop() bool {
+// HasDrop returns true iff ACTION_DROP is set in ac
+func (ac Action) HasDrop() bool {
 	return ac&ACTION_DROP != 0
 }
 
@@ -83,14 +83,16 @@ func (ac *Action) Drop() {
 	*ac |= ACTION_DROP
 }
 
-// IsNot returns true iff a is NOT set in ac
-func (ac Action) Not(a Action) bool {
+// HasNot returns true iff a is NOT set in ac
+func (ac Action) HasNot(a Action) bool {
 	return ac&a == 0
 }
 
 // ActionClear clears all action flags but ACTION_BORROW in m and returns it.
 func ActionClear(m *msg.Msg) *msg.Msg {
-	UseContext(m).Action.Clear()
+	if mx := GetContext(m); mx != nil {
+		mx.Action.Clear()
+	}
 	return m
 }
 
@@ -100,9 +102,13 @@ func ActionBorrow(m *msg.Msg) *msg.Msg {
 	return m
 }
 
-// ActionIsBorrow returns true if ACTION_BORROW is set in m.
-func ActionIsBorrow(m *msg.Msg) bool {
-	return UseContext(m).Action.Is(ACTION_BORROW)
+// ActionHasBorrow returns true if ACTION_BORROW is set in m.
+func ActionHasBorrow(m *msg.Msg) bool {
+	if mx := GetContext(m); mx != nil {
+		return mx.Action.Has(ACTION_BORROW)
+	} else {
+		return false
+	}
 }
 
 // ActionDrop adds ACTION_DROP to m and returns it.
@@ -111,9 +117,13 @@ func ActionDrop(m *msg.Msg) *msg.Msg {
 	return m
 }
 
-// ActionIsDrop returns true if ACTION_DROP is set in m.
-func ActionIsDrop(m *msg.Msg) bool {
-	return UseContext(m).Action.Is(ACTION_DROP)
+// ActionHasDrop returns true if ACTION_DROP is set in m.
+func ActionHasDrop(m *msg.Msg) bool {
+	if mx := GetContext(m); mx != nil {
+		return mx.Action.Has(ACTION_DROP)
+	} else {
+		return false
+	}
 }
 
 // ActionAccept adds ACTION_ACCEPT to m and returns it.
@@ -122,9 +132,13 @@ func ActionAccept(m *msg.Msg) *msg.Msg {
 	return m
 }
 
-// ActionIsAccept returns true if ACTION_ACCEPT is set in m.
-func ActionIsAccept(m *msg.Msg) bool {
-	return UseContext(m).Action.Is(ACTION_ACCEPT)
+// ActionHasAccept returns true if ACTION_ACCEPT is set in m.
+func ActionHasAccept(m *msg.Msg) bool {
+	if mx := GetContext(m); mx != nil {
+		return mx.Action.Has(ACTION_ACCEPT)
+	} else {
+		return false
+	}
 }
 
 // ToJSON appends JSON representation to dst
