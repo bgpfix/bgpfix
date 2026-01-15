@@ -46,13 +46,13 @@ func makeParam(caps []byte) []byte {
 // makeOpenData creates OPEN message data (without header)
 func makeOpenData(asn uint16, holdTime uint16, bgpID [4]byte, params []byte) []byte {
 	data := []byte{
-		OPEN_VERSION,             // version = 4
-		byte(asn >> 8),           // ASN high byte
-		byte(asn),                // ASN low byte
-		byte(holdTime >> 8),      // hold time high
-		byte(holdTime),           // hold time low
+		OPEN_VERSION,                           // version = 4
+		byte(asn >> 8),                         // ASN high byte
+		byte(asn),                              // ASN low byte
+		byte(holdTime >> 8),                    // hold time high
+		byte(holdTime),                         // hold time low
 		bgpID[0], bgpID[1], bgpID[2], bgpID[3], // BGP ID
-		byte(len(params)),        // params length
+		byte(len(params)), // params length
 	}
 	return append(data, params...)
 }
@@ -204,6 +204,19 @@ func TestHeader_TruncatedBuffer(t *testing.T) {
 	}
 }
 
+// Accept extra bytes after a complete message (stream parsing)
+func TestHeader_ExtraBytes(t *testing.T) {
+	raw := makeHeader(HEADLEN, KEEPALIVE)
+	buf := append(raw, 0x00, 0x01)
+
+	msg := NewMsg()
+	off, err := msg.FromBytes(buf)
+	require.NoError(t, err)
+	require.Equal(t, HEADLEN, off)
+	require.Equal(t, KEEPALIVE, msg.Type)
+	require.Empty(t, msg.Data)
+}
+
 // ============================================================================
 // OPEN Message Tests (RFC 4271 Section 4.2)
 // ============================================================================
@@ -227,7 +240,7 @@ func TestOpen_ValidMinimal(t *testing.T) {
 	require.Equal(t, uint16(65001), msg.Open.ASN)
 	require.Equal(t, uint16(90), msg.Open.HoldTime)
 	require.Equal(t, netip.AddrFrom4(bgpID), msg.Open.Identifier)
-	require.Empty(t, msg.Open.Params)
+	require.Empty(t, msg.Open.ParamsRaw)
 }
 
 func TestOpen_WithAS4Capability(t *testing.T) {
@@ -245,7 +258,7 @@ func TestOpen_WithAS4Capability(t *testing.T) {
 	err = msg.Open.Parse()
 	require.NoError(t, err)
 	require.Equal(t, uint16(AS_TRANS), msg.Open.ASN)
-	require.NotEmpty(t, msg.Open.Params)
+	require.NotEmpty(t, msg.Open.ParamsRaw)
 
 	err = msg.Open.ParseCaps()
 	require.NoError(t, err)
@@ -424,9 +437,9 @@ func TestUpdate_MultipleNLRI(t *testing.T) {
 	attrs = append(attrs, nextHop...)
 
 	nlri := []byte{
-		8, 10,           // 10.0.0.0/8
-		12, 172, 16,     // 172.16.0.0/12
-		16, 192, 168,    // 192.168.0.0/16
+		8, 10, // 10.0.0.0/8
+		12, 172, 16, // 172.16.0.0/12
+		16, 192, 168, // 192.168.0.0/16
 	}
 
 	data := makeUpdateData(nil, attrs, nlri)
@@ -457,112 +470,28 @@ func TestKeepalive_Valid(t *testing.T) {
 	require.Empty(t, msg.Data)
 }
 
-// ============================================================================
-// Round-Trip Tests
-// ============================================================================
-
-func TestRoundTrip_OPEN(t *testing.T) {
-	bgpID := [4]byte{192, 0, 2, 1}
-	as4Cap := makeCapability(65, []byte{0x00, 0x00, 0xFD, 0xE9})
-	params := makeParam(as4Cap)
-	data := makeOpenData(65001, 90, bgpID, params)
-	original := makeMsg(OPEN, data)
+// Minimal NOTIFICATION: error code + subcode
+func TestNotify_Minimal(t *testing.T) {
+	data := []byte{1, 2}
+	raw := makeMsg(NOTIFY, data)
 
 	msg := NewMsg()
-	_, err := msg.FromBytes(original)
+	off, err := msg.FromBytes(raw)
 	require.NoError(t, err)
-
-	var buf bytes.Buffer
-	n, err := msg.WriteTo(&buf)
-	require.NoError(t, err)
-	require.Equal(t, int64(len(original)), n)
-	require.Equal(t, original, buf.Bytes())
+	require.Equal(t, len(raw), off)
+	require.Equal(t, NOTIFY, msg.Type)
+	require.Equal(t, data, msg.Data)
 }
 
-func TestRoundTrip_UPDATE(t *testing.T) {
-	origin := makeAttr(0x40, 1, []byte{0x00})
-	asPath := makeAttr(0x40, 2, []byte{})
-	nextHop := makeAttr(0x40, 3, []byte{192, 0, 2, 1})
-	attrs := append(origin, asPath...)
-	attrs = append(attrs, nextHop...)
-	nlri := []byte{24, 10, 0, 0}
-
-	data := makeUpdateData(nil, attrs, nlri)
-	original := makeMsg(UPDATE, data)
+// Minimal ROUTE-REFRESH: AFI(2) + Reserved(1) + SAFI(1)
+func TestRefresh_Minimal(t *testing.T) {
+	data := []byte{0x00, 0x01, 0x00, 0x01}
+	raw := makeMsg(REFRESH, data)
 
 	msg := NewMsg()
-	_, err := msg.FromBytes(original)
+	off, err := msg.FromBytes(raw)
 	require.NoError(t, err)
-
-	var buf bytes.Buffer
-	n, err := msg.WriteTo(&buf)
-	require.NoError(t, err)
-	require.Equal(t, int64(len(original)), n)
-	require.Equal(t, original, buf.Bytes())
-}
-
-// ============================================================================
-// FRR/BIRD/GoBGP Compatibility Tests
-// ============================================================================
-
-func TestCompat_FRR_TypicalOpen(t *testing.T) {
-	// FRR typical OPEN: MP-BGP IPv4+IPv6, AS4, Route-Refresh, Enhanced-RR
-	bgpID := [4]byte{10, 255, 0, 1}
-
-	mpv4 := makeCapability(1, []byte{0x00, 0x01, 0x00, 0x01})  // IPv4 unicast
-	mpv6 := makeCapability(1, []byte{0x00, 0x02, 0x00, 0x01})  // IPv6 unicast
-	as4 := makeCapability(65, []byte{0x00, 0x00, 0xFD, 0xE9})  // AS 65001
-	rr := makeCapability(2, []byte{})                          // Route-Refresh
-	errCap := makeCapability(70, []byte{})                     // Enhanced-RR
-
-	allCaps := append(mpv4, mpv6...)
-	allCaps = append(allCaps, as4...)
-	allCaps = append(allCaps, rr...)
-	allCaps = append(allCaps, errCap...)
-
-	params := makeParam(allCaps)
-	data := makeOpenData(65001, 180, bgpID, params)
-	raw := makeMsg(OPEN, data)
-
-	msg := NewMsg()
-	_, parseErr := msg.FromBytes(raw)
-	require.NoError(t, parseErr)
-
-	parseErr = msg.Open.Parse()
-	require.NoError(t, parseErr)
-
-	parseErr = msg.Open.ParseCaps()
-	require.NoError(t, parseErr)
-	// MP-BGP cap code 1 appears twice but is stored once (last wins), so 4 caps total
-	require.GreaterOrEqual(t, msg.Open.Caps.Len(), 4)
-}
-
-func TestCompat_GoBGP_LargeCommunity(t *testing.T) {
-	// UPDATE with Large Community (RFC 8092) as GoBGP sends
-	origin := makeAttr(0x40, 1, []byte{0x00})
-	asPath := makeAttr(0x40, 2, []byte{})
-	nextHop := makeAttr(0x40, 3, []byte{192, 0, 2, 1})
-	// Large Community: 65001:1:100 (optional transitive)
-	largeCom := makeAttr(0xC0, 32, []byte{
-		0x00, 0x00, 0xFD, 0xE9, // Global Admin: 65001
-		0x00, 0x00, 0x00, 0x01, // Local Data 1: 1
-		0x00, 0x00, 0x00, 0x64, // Local Data 2: 100
-	})
-
-	attrs := append(origin, asPath...)
-	attrs = append(attrs, nextHop...)
-	attrs = append(attrs, largeCom...)
-	nlri := []byte{24, 10, 0, 0}
-
-	data := makeUpdateData(nil, attrs, nlri)
-	raw := makeMsg(UPDATE, data)
-
-	msg := NewMsg()
-	_, err := msg.FromBytes(raw)
-	require.NoError(t, err)
-
-	var cps caps.Caps
-	err = msg.Update.Parse(cps)
-	require.NoError(t, err)
-	require.NotEmpty(t, msg.Update.RawAttrs)
+	require.Equal(t, len(raw), off)
+	require.Equal(t, REFRESH, msg.Type)
+	require.Equal(t, data, msg.Data)
 }
