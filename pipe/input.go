@@ -201,12 +201,9 @@ input:
 		}
 
 		// run the callbacks
-		for len(mx.cbs) > 0 {
-			// eat the head
-			cb := mx.cbs[0]
-			mx.cbs = mx.cbs[1:]
-
-			// skip callback?
+	callbacks:
+		for _, cb := range mx.cbs {
+			// skip the callback?
 			if cb.Id != 0 && mx.Input.Id == cb.Id {
 				continue // skip own messages
 			} else if cb.Enabled != nil && !cb.Enabled.Load() {
@@ -224,7 +221,7 @@ input:
 			// evaluate callback message filters?
 			for _, f := range cb.Filter {
 				if !eval.Run(f) {
-					continue // skip m for this callback
+					continue callbacks // try next callback
 				}
 			}
 
@@ -232,7 +229,7 @@ input:
 			if cb.LimitRate != nil {
 				if cb.LimitSkip {
 					if !cb.LimitRate.Allow() {
-						continue // skip m for this callback
+						continue callbacks // try next callback
 					}
 				} else {
 					if err := cb.LimitRate.Wait(p.Ctx); err != nil {
