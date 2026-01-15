@@ -24,26 +24,13 @@ type Input struct {
 	Name string  // optional input name
 	Dir  dir.Dir // input direction
 
-	// In is the input for incoming messages.
-	In chan *msg.Msg
-
-	// Reverse, when true, runs callbacks in reverse order.
-	Reverse bool
-
-	// CbFilter controls which callbacks to skip (disabled by default)
-	CbFilter CbFilterMode
-
-	// CbFilterValue specifies the value for CbFilter
-	CbFilterValue any
-
-	// Filter is an optional message filter for this Input
-	Filter *filter.Filter
-
-	// LimitRate is an optional rate limiter for this Input
-	LimitRate *rate.Limiter
-
-	// LimitSkip, if true, drops messages that exceed the LimitRate (instead of delaying)
-	LimitSkip bool
+	In            chan *msg.Msg    // input channel for incoming messages
+	Reverse       bool             // if true, run callbacks in reverse order
+	CbFilter      CbFilterMode     // which callbacks to skip? (disabled by default)
+	CbFilterValue any              // optionally specifies the value for CbFilter
+	Filter        []*filter.Filter // drop messages not matching all filters
+	LimitRate     *rate.Limiter    // optional input rate limit (nil = no limit)
+	LimitSkip     bool             // if true, drop messages over the LimitRate (instead delay)
 
 	ibuf []byte          // input buffer
 	cbs  [16][]*Callback // callbacks for given message type
@@ -182,17 +169,19 @@ input:
 		eval.SetPipe(p.KV, p.Caps, mx.tags)
 
 		// has input filter?
-		if in.Filter != nil {
+		if len(in.Filter) > 0 {
 			// parse the message first?
 			if m.Upper == msg.INVALID && p.ParseMsg(m) != nil {
 				p.PutMsg(m)
 				continue input
 			}
 
-			// evaluate the filter
-			if !eval.Run(in.Filter) {
-				p.PutMsg(m)
-				continue input
+			// evaluate the filters
+			for _, f := range in.Filter {
+				if !eval.Run(f) {
+					p.PutMsg(m)
+					continue input
+				}
 			}
 		}
 
@@ -218,25 +207,25 @@ input:
 			mx.cbs = mx.cbs[1:]
 
 			// skip callback?
-			if cb.Dropped {
-				continue // dropped
-			} else if cb.Id != 0 && mx.Input.Id == cb.Id {
+			if cb.Id != 0 && mx.Input.Id == cb.Id {
 				continue // skip own messages
 			} else if cb.Enabled != nil && !cb.Enabled.Load() {
 				continue // disabled
 			}
 
 			// need to parse first?
-			if m.Upper == msg.INVALID && (!cb.Raw || cb.Filter != nil) {
+			if m.Upper == msg.INVALID && (!cb.Raw || len(cb.Filter) > 0) {
 				if p.ParseMsg(m) != nil {
 					p.PutMsg(m)
 					continue input // parse error, drop the message
 				}
 			}
 
-			// evaluate a message filter?
-			if cb.Filter != nil && !eval.Run(cb.Filter) {
-				continue // skip m for this callback
+			// evaluate callback message filters?
+			for _, f := range cb.Filter {
+				if !eval.Run(f) {
+					continue // skip m for this callback
+				}
 			}
 
 			// callback rate limiter?
@@ -248,7 +237,7 @@ input:
 				} else {
 					if err := cb.LimitRate.Wait(p.Ctx); err != nil {
 						p.PutMsg(m)
-						continue input
+						continue input // pipe is stopping
 					}
 				}
 			}
@@ -262,6 +251,7 @@ input:
 
 			// what's next?
 			if ctx.Err() != nil {
+				p.PutMsg(m)
 				return // pipe is stopping
 			} else if mx.Action.IsDrop() {
 				p.PutMsg(m)
@@ -302,17 +292,17 @@ input:
 				}
 			}
 
-			// do End-of-RIB detection?
-			if eor_done {
-				break
-			} else if eor_todo == 0 {
-				if c, ok := p.Caps.Get(caps.CAP_MP).(*caps.MP); ok {
-					eor_todo = len(c.Proto)
-				}
-			}
-
 			// an End-of-RIB marker?
-			if m.Len() < 32 && m.Parse(p.Caps) == nil {
+			if !eor_done && m.Len() < 32 && m.Parse(p.Caps) == nil {
+				// initialize eor_todo?
+				if eor_todo == 0 {
+					if c, ok := p.Caps.Get(caps.CAP_MP).(*caps.MP); ok {
+						eor_todo = len(c.Proto)
+					} else {
+						eor_todo = 1 // at least IPv4 unicast
+					}
+				}
+
 				// already seen for all AFs? (AS_INVALID marks all AFs seen)
 				if _, loaded := l.EoR.Load(afi.AS_INVALID); loaded || eor_todo == 0 {
 					eor_done = true
@@ -322,26 +312,27 @@ input:
 				// get Address Family
 				as := afi.AS_IPV4_UNICAST
 				if m.Len() == msg.HEADLEN+msg.UPDATE_MINLEN {
-					// must be IPv4 unicast
+					// FOUND: 23 bytes means this is the legacy IPv4 unicast EoR
 				} else if a := m.Update.Attrs; a.Len() != 1 {
-					break // must have 1 attribute
-				} else if unreach, ok := a.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); !ok {
-					break // the attr must be ATTR_MP_UNREACH
+					break // EoR must have 1 attribute total
+				} else if unreach, ok := a.Get(attrs.ATTR_MP_UNREACH).(*attrs.MP); !ok || len(unreach.Data) != 0 {
+					break // EoR must have an empty ATTR_MP_UNREACH
 				} else {
-					as = unreach.AS
+					as = unreach.AS // FOUND: this is the marker for given <AFI,SAFI>
 				}
 
 				// already seen this AF?
 				if _, loaded := l.EoR.LoadOrStore(as, t); loaded {
 					break
-				} else { // it's new AF, announce
+				} else { // it's a new AF, announce
 					p.Event(EVENT_EOR_AF, m.Dir, as.Afi(), as.Safi())
 				}
 
-				// seen as many EoRs as in Caps for the first time?
-				if eor_done = l.EoR.Size() >= eor_todo; eor_done {
+				// seen as many EoRs as in Caps?
+				if l.EoR.Size() >= eor_todo {
+					eor_done = true
 					if _, loaded := l.EoR.LoadOrStore(afi.AS_INVALID, t); !loaded {
-						p.Event(EVENT_EOR, m.Dir)
+						p.Event(EVENT_EOR, m.Dir) // we were the first, announce
 					}
 				}
 			}

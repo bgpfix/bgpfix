@@ -228,9 +228,9 @@ func (o *Open) Marshal() error {
 	return nil
 }
 
-// MarshalCaps marshals o.Caps into o.Params. Sets o.ParamsExt.
+// MarshalCaps marshals o.Caps into o.ParamsRaw. Updates o.ParamsExt.
 func (o *Open) MarshalCaps() error {
-	// NB: avoid o.Params[:0] as it might be referencing another slice
+	// NB: avoid o.ParamsRaw[:0] as it might be referencing another slice
 	o.ParamsRaw = nil
 
 	// marshal one-by-one
@@ -256,7 +256,7 @@ func (o *Open) MarshalCaps() error {
 		o.ParamsExt = false // avoid if not neccessary
 	}
 
-	// encode as new o.Params
+	// encode as new o.ParamsRaw
 	p := o.ParamsRaw
 	p = append(p, PARAM_CAPS)
 	if o.ParamsExt {

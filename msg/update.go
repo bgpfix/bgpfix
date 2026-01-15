@@ -115,7 +115,7 @@ func (u *Update) Parse(cps caps.Caps) error {
 	return nil
 }
 
-// ParseAttrs parses all attributes from RawAttrs into Attrs.
+// ParseAttrs parses all attributes from AttrsRaw into Attrs.
 func (u *Update) ParseAttrs(cps caps.Caps) error {
 	var (
 		raw  = u.AttrsRaw    // all attributes
@@ -167,9 +167,9 @@ func (u *Update) ParseAttrs(cps caps.Caps) error {
 	return nil
 }
 
-// MarshalAttrs marshals u.Attrs into u.RawAttrs
+// MarshalAttrs marshals u.Attrs into u.AttrsRaw
 func (u *Update) MarshalAttrs(cps caps.Caps) error {
-	// NB: avoid u.RawAttrs[:0] as it might be referencing another slice
+	// NB: avoid u.AttrsRaw[:0] as it might be referencing another slice
 	u.AttrsRaw = nil
 
 	// marshal one-by-one
@@ -240,14 +240,14 @@ func (u *Update) ToJSON(dst []byte) []byte {
 		dst = nlri.ToJSON(dst, u.Unreach)
 	}
 
-	if al := u.Attrs.Len() > 0; al || len(u.AttrsRaw) > 0 {
+	if u.Attrs.Len() > 0 || len(u.AttrsRaw) > 0 {
 		if comma {
 			dst = append(dst, ',')
 		} else {
 			comma = true
 		}
 		dst = append(dst, `"attrs":`...)
-		if al {
+		if u.Attrs.Len() > 0 {
 			dst = u.Attrs.ToJSON(dst)
 		} else {
 			dst = json.Hex(dst, u.AttrsRaw)

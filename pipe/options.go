@@ -39,17 +39,16 @@ type Callback struct {
 	Name    string       // optional name
 	Order   int          // the lower the order, the sooner callback is run
 	Enabled *atomic.Bool // if non-nil, disables the callback unless true
-	Dropped bool         // if true, permanently drops (unregisters) the callback
 
 	Pre  bool // run before non-pre callbacks?
 	Raw  bool // if true, do not parse the message (which may already be parsed, but for other reasons)
 	Post bool // run after non-post callbacks?
 
-	Dir       dir.Dir        // if non-zero, limits the direction
-	Types     []msg.Type     // if non-empty, limits message types
-	Filter    *filter.Filter // if non-nil, skips messages not matching the filter
-	LimitRate *rate.Limiter  // if non-nil, limits the rate of callback invocations
-	LimitSkip bool           // if true, skips the callback when over the rate limit (else delays)
+	Dir       dir.Dir          // if non-zero, limits the direction
+	Types     []msg.Type       // if non-empty, limits message types
+	Filter    []*filter.Filter // skip messages not matching all filters
+	LimitRate *rate.Limiter    // if non-nil, limits the rate of callback invocations
+	LimitSkip bool             // if true, skips the callback when over the rate limit (else delays)
 
 	Func CallbackFunc // the function to call
 }
@@ -104,30 +103,25 @@ func (o *Options) AddCallback(cbf CallbackFunc, tpl ...*Callback) *Callback {
 	return &cb
 }
 
-// Enable sets cb.Enabled to true and returns true. If cb.Enabled is nil, returns false.
+// Enable enables the callback and returns the previous state.
 func (cb *Callback) Enable() bool {
 	if cb == nil || cb.Enabled == nil {
-		return false
-	} else {
-		cb.Enabled.Store(true)
 		return true
+	} else {
+		return cb.Enabled.Swap(true)
 	}
 }
 
-// Disable sets cb.Enabled to false and returns true. If cb.Enabled is nil, returns false.
+// Disable disables the callback and returns the previous state.
 func (cb *Callback) Disable() bool {
-	if cb == nil || cb.Enabled == nil {
+	if cb == nil {
 		return false
+	} else if cb.Enabled == nil {
+		var v atomic.Bool
+		cb.Enabled = &v
+		return true // no cb.Enabled means was enabled
 	} else {
-		cb.Enabled.Store(false)
-		return true
-	}
-}
-
-// Drop drops the callback, permanently unregistering it from running
-func (cb *Callback) Drop() {
-	if cb != nil {
-		cb.Dropped = true
+		return cb.Enabled.Swap(false)
 	}
 }
 

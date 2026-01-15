@@ -70,10 +70,9 @@ func (cps *Caps) SetFrom(src Caps) {
 	}
 
 	cps.Init()
-	src.db.Range(func(cc Code, cap Cap) bool {
+	for cc, cap := range src.db.All() {
 		cps.db.Store(cc, cap)
-		return true
-	})
+	}
 }
 
 // Get returns cps[cc] or nil if not possible.
@@ -133,12 +132,11 @@ func (cps *Caps) Each(cb func(i int, cc Code, cap Cap)) {
 		cap Cap
 	}
 	var todo []capcode
-	cps.db.Range(func(cc Code, cap Cap) bool {
+	for cc, cap := range cps.db.All() {
 		if cap != nil {
 			todo = append(todo, capcode{cc, cap})
 		}
-		return true
-	})
+	}
 
 	// sort todo
 	sort.Slice(todo, func(i, j int) bool {

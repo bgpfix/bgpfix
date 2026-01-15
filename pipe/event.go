@@ -105,9 +105,14 @@ func (p *Pipe) attachEvent() error {
 		}
 	}
 
-	// p.events second pass: add wildcards
+	// p.events second pass: add wildcards (avoid duplicates)
 	for typ, hds := range p.events {
-		p.events[typ] = append(hds, wildcards...)
+		for _, wh := range wildcards {
+			if !slices.Contains(hds, wh) {
+				hds = append(hds, wh)
+			}
+		}
+		p.events[typ] = hds
 	}
 	p.events["*"] = wildcards
 
