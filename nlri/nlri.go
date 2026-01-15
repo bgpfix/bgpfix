@@ -22,7 +22,7 @@ type Prefix struct {
 	Add any // additional value, eg. the ADD_PATH Path Identifier
 }
 
-type PathId uint32
+type PathId = uint32
 
 // FromAddr returns normalized address ip wrapped in NLRI
 func FromAddr(ip netip.Addr) Prefix {
