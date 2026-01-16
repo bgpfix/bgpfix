@@ -253,6 +253,8 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 				continue // different direction
 			} else if h.Enabled != nil && !h.Enabled.Load() {
 				continue // disabled
+			} else if h.dropped.Load() {
+				continue // permanently dropped
 			}
 
 			// run the handler, block until done

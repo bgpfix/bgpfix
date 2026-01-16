@@ -426,15 +426,17 @@ func (u *Update) AddUnreach(prefixes ...nlri.Prefix) {
 		delete(u.cache, "allunreach")
 	}
 
-	// need to use MP?
+	// need to use MP-BGP?
 	var mp *attrs.MP
 	var mpp *attrs.MPPrefixes
 	if u.Attrs.Has(attrs.ATTR_MP_REACH) || u.Attrs.Has(attrs.ATTR_MP_UNREACH) {
 		mp = u.Attrs.Use(attrs.ATTR_MP_UNREACH).(*attrs.MP)
 		mpp, _ = mp.Value.(*attrs.MPPrefixes)
 	}
-
-	check_mp := func(as afi.AS) {
+	check_mpp := func(as afi.AS) {
+		if mp == nil {
+			mp = u.Attrs.Use(attrs.ATTR_MP_UNREACH).(*attrs.MP)
+		}
 		if mpp == nil || mp.AS != as {
 			mpp = attrs.NewMPPrefixes(mp).(*attrs.MPPrefixes)
 			mp.AS = as
@@ -450,9 +452,9 @@ func (u *Update) AddUnreach(prefixes ...nlri.Prefix) {
 				u.Unreach = append(u.Unreach, *pfx)
 				continue
 			}
-			check_mp(afi.AS_IPV4_UNICAST)
+			check_mpp(afi.AS_IPV4_UNICAST)
 		} else if pfx.Addr().Is6() {
-			check_mp(afi.AS_IPV6_UNICAST)
+			check_mpp(afi.AS_IPV6_UNICAST)
 		} else {
 			continue // ignore
 		}

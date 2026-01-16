@@ -208,6 +208,8 @@ input:
 				continue // skip own messages
 			} else if cb.Enabled != nil && !cb.Enabled.Load() {
 				continue // disabled
+			} else if cb.dropped.Load() {
+				continue // permanently dropped
 			}
 
 			// need to parse first?

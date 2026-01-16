@@ -1,6 +1,7 @@
 package nlri
 
 import (
+	"fmt"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -109,6 +110,17 @@ func ToJSON(dst []byte, src []Prefix) []byte {
 		dst = append(dst, '"')
 	}
 	return append(dst, ']')
+}
+
+// String returns string representation of prefix p
+func (p Prefix) String() string {
+	if !p.IsValid() {
+		return "invalid"
+	} else if pi, ok := p.Add.(PathId); ok {
+		return fmt.Sprintf("#%d#%s/%d", pi, p.Addr().String(), p.Bits())
+	} else {
+		return p.Prefix.String()
+	}
 }
 
 // FromJSON parses JSON representation of prefixes in src into dst
