@@ -258,7 +258,7 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 			// run the handler, block until done
 			ev.Handler = h
 			if !h.Func(ev) {
-				h.Disable()
+				h.Drop()
 			}
 			ev.Handler = nil
 

@@ -52,7 +52,8 @@ type Callback struct {
 	LimitRate *rate.Limiter    // if non-nil, limits the rate of callback invocations
 	LimitSkip bool             // if true, skips the callback when over the rate limit (else delays)
 
-	Func CallbackFunc // the function to call
+	Func    CallbackFunc // the function to call
+	dropped atomic.Bool  // if true, the callback is dropped permanently
 }
 
 // Handler represents a function to call for matching pipe events.
@@ -67,9 +68,11 @@ type Handler struct {
 	Pre  bool // run before non-pre handlers?
 	Post bool // run after non-post handlers?
 
-	Dir   dir.Dir     // if non-zero, limits the direction
-	Types []string    // if non-empty, limits event types
-	Func  HandlerFunc // the function to call
+	Dir   dir.Dir  // if non-zero, limits the direction
+	Types []string // if non-empty, limits event types
+
+	Func    HandlerFunc // the function to call
+	dropped atomic.Bool // if true, the callback is dropped permanently
 }
 
 // CallbackFunc processes message m.
@@ -87,9 +90,20 @@ func (o *Options) AddCallback(cbf CallbackFunc, tpl ...*Callback) *Callback {
 
 	// deep copy the tpl?
 	if len(tpl) > 0 {
-		cb = *tpl[0]
-		cb.Types = nil
-		cb.Types = append(cb.Types, tpl[0].Types...)
+		t := tpl[0]
+		cb.Id = t.Id
+		cb.Name = t.Name
+		cb.Order = t.Order
+		cb.Enabled = t.Enabled
+		cb.Pre = t.Pre
+		cb.Raw = t.Raw
+		cb.Post = t.Post
+		cb.Dir = t.Dir
+		cb.Types = append(cb.Types, t.Types...)
+		cb.Filter = append(cb.Filter, t.Filter...)
+		cb.LimitRate = t.LimitRate
+		cb.LimitSkip = t.LimitSkip
+		cb.Func = t.Func
 	}
 
 	// override the function?
@@ -106,26 +120,9 @@ func (o *Options) AddCallback(cbf CallbackFunc, tpl ...*Callback) *Callback {
 	return &cb
 }
 
-// Enable enables the callback and returns the previous state.
-func (cb *Callback) Enable() bool {
-	if cb == nil || cb.Enabled == nil {
-		return true
-	} else {
-		return cb.Enabled.Swap(true)
-	}
-}
-
-// Disable disables the callback and returns the previous state.
-func (cb *Callback) Disable() bool {
-	if cb == nil {
-		return false
-	} else if cb.Enabled == nil {
-		var v atomic.Bool
-		cb.Enabled = &v
-		return true // no cb.Enabled means was enabled
-	} else {
-		return cb.Enabled.Swap(false)
-	}
+// Drop marks the callback as dropped permanently.
+func (cb *Callback) Drop() {
+	cb.dropped.Store(true)
 }
 
 // String returns callback name and id as string
@@ -169,9 +166,16 @@ func (o *Options) AddHandler(hdf HandlerFunc, tpl ...*Handler) *Handler {
 
 	// deep copy the tpl?
 	if len(tpl) > 0 {
-		h = *tpl[0]
-		h.Types = nil
-		h.Types = append(h.Types, tpl[0].Types...)
+		t := tpl[0]
+		h.Id = t.Id
+		h.Name = t.Name
+		h.Order = t.Order
+		h.Enabled = t.Enabled
+		h.Pre = t.Pre
+		h.Post = t.Post
+		h.Dir = t.Dir
+		h.Types = append(h.Types, t.Types...)
+		h.Func = t.Func
 	}
 
 	// all types?
@@ -198,26 +202,9 @@ func (h *Handler) String() string {
 	return fmt.Sprintf("EV%d:%s", h.Id, h.Name)
 }
 
-// Enable enables the handler and returns the previous state.
-func (h *Handler) Enable() bool {
-	if h == nil || h.Enabled == nil {
-		return true
-	} else {
-		return h.Enabled.Swap(true)
-	}
-}
-
-// Disable disables the handler and returns the previous state.
-func (h *Handler) Disable() bool {
-	if h == nil {
-		return false
-	} else if h.Enabled == nil {
-		var v atomic.Bool
-		h.Enabled = &v
-		return true // no h.Enabled means was enabled
-	} else {
-		return h.Enabled.Swap(false)
-	}
+// Drop marks the handler as dropped permanently.
+func (h *Handler) Drop() {
+	h.dropped.Store(true)
 }
 
 // OnEvent request hdf to be called for given event types.
