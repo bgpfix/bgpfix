@@ -72,7 +72,7 @@ type Handler struct {
 	Types []string // if non-empty, limits event types
 
 	Func    HandlerFunc // the function to call
-	dropped atomic.Bool // if true, the callback is dropped permanently
+	dropped atomic.Bool // if true, the handler is dropped permanently
 }
 
 // CallbackFunc processes message m.
