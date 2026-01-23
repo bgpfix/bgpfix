@@ -101,7 +101,7 @@ func (b *Bmp) FromBytes(raw []byte) (int, error) {
 	b.MsgType = MsgType(raw[5])
 
 	// Validate length
-	if int(b.MsgLength) > len(raw) {
+	if b.MsgLength < HEADLEN || int(b.MsgLength) > len(raw) {
 		return 0, ErrLength
 	}
 
@@ -110,8 +110,8 @@ func (b *Bmp) FromBytes(raw []byte) (int, error) {
 
 	// Parse Per-Peer header for applicable message types
 	switch b.MsgType {
-	case MSG_ROUTE_MONITORING, MSG_STATISTICS_REPORT, MSG_PEER_DOWN, MSG_PEER_UP:
-		if len(raw[off:]) < PEER_HEADLEN {
+	case MSG_ROUTE_MONITORING, MSG_STATISTICS_REPORT, MSG_PEER_DOWN, MSG_PEER_UP, MSG_ROUTE_MIRRORING:
+		if msgEnd-off < PEER_HEADLEN {
 			return off, ErrShort
 		}
 		n, err := b.Peer.FromBytes(raw[off:])
@@ -153,7 +153,7 @@ func (b *Bmp) CopyData() *Bmp {
 // HasPerPeerHeader returns true if this message type has a Per-Peer header
 func (b *Bmp) HasPerPeerHeader() bool {
 	switch b.MsgType {
-	case MSG_ROUTE_MONITORING, MSG_STATISTICS_REPORT, MSG_PEER_DOWN, MSG_PEER_UP:
+	case MSG_ROUTE_MONITORING, MSG_STATISTICS_REPORT, MSG_PEER_DOWN, MSG_PEER_UP, MSG_ROUTE_MIRRORING:
 		return true
 	default:
 		return false

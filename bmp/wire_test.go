@@ -499,7 +499,7 @@ func TestBmp_HasPerPeerHeader(t *testing.T) {
 		{MSG_PEER_UP, true},
 		{MSG_INITIATION, false},
 		{MSG_TERMINATION, false},
-		{MSG_ROUTE_MIRRORING, false},
+		{MSG_ROUTE_MIRRORING, true}, // RFC 7854 section 4.7
 	}
 
 	for _, tt := range tests {

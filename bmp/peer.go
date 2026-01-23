@@ -25,7 +25,7 @@ type Peer struct {
 const (
 	PEER_FLAG_V = 0x80 // V flag: IPv6 (1) or IPv4 (0)
 	PEER_FLAG_L = 0x40 // L flag: post-policy (1) or pre-policy (0)
-	PEER_FLAG_A = 0x20 // A flag: 2-byte AS (1) or 4-byte AS (0)
+	PEER_FLAG_A = 0x20 // A flag: legacy 2-byte AS path format (1) or 4-byte AS (0)
 )
 
 // Reset clears the peer header
