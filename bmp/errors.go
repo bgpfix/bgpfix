@@ -1,4 +1,3 @@
-// Package bmp supports BGP Monitoring Protocol (RFC 7854)
 package bmp
 
 import "errors"
