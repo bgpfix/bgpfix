@@ -40,12 +40,31 @@ func UseTags(m *msg.Msg) map[string]string {
 	return UseContext(m).UseTags()
 }
 
+// HasTags returns true iff the message has any tags set
+func HasTags(m *msg.Msg) bool {
+	if mx, ok := m.Value.(*Context); ok && len(mx.tags) > 0 {
+		return true
+	} else {
+		return false
+	}
+}
+
 // GetTags returns message tags inside m, iff they exist (or nil).
 func GetTags(m *msg.Msg) map[string]string {
 	if mx, ok := m.Value.(*Context); ok {
 		return mx.tags
 	} else {
 		return nil
+	}
+}
+
+// DropTags drops all message tags, returning true if any existed
+func DropTags(m *msg.Msg) bool {
+	if mx, ok := m.Value.(*Context); ok && len(mx.tags) > 0 {
+		clear(mx.tags)
+		return true
+	} else {
+		return false
 	}
 }
 

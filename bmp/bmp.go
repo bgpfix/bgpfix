@@ -2,8 +2,12 @@
 package bmp
 
 import (
+	"io"
+
 	"github.com/bgpfix/bgpfix/binary"
 )
+
+var msb = binary.Msb
 
 // BMP common header length (RFC 7854 section 4.1)
 const HEADLEN = 6 // version(1) + length(4) + type(1)
@@ -89,29 +93,25 @@ func (b *Bmp) FromBytes(raw []byte) (int, error) {
 		return 0, ErrShort
 	}
 
-	msb := binary.Msb
-
 	// Parse common header
 	b.Version = raw[0]
 	if b.Version != VERSION {
 		return 0, ErrVersion
 	}
-
 	b.MsgLength = msb.Uint32(raw[1:5])
 	b.MsgType = MsgType(raw[5])
 
 	// Validate length
-	if b.MsgLength < HEADLEN || int(b.MsgLength) > len(raw) {
+	off := HEADLEN
+	ml := int(b.MsgLength)
+	if ml < off || ml > len(raw) {
 		return 0, ErrLength
 	}
-
-	off := HEADLEN
-	msgEnd := int(b.MsgLength)
 
 	// Parse Per-Peer header for applicable message types
 	switch b.MsgType {
 	case MSG_ROUTE_MONITORING, MSG_STATISTICS_REPORT, MSG_PEER_DOWN, MSG_PEER_UP, MSG_ROUTE_MIRRORING:
-		if msgEnd-off < PEER_HEADLEN {
+		if ml-off < PEER_HEADLEN {
 			return off, ErrShort
 		}
 		n, err := b.Peer.FromBytes(raw[off:])
@@ -124,14 +124,14 @@ func (b *Bmp) FromBytes(raw []byte) (int, error) {
 	}
 
 	// Extract BGP data for Route Monitoring messages
-	if b.MsgType == MSG_ROUTE_MONITORING && off < msgEnd {
+	if b.MsgType == MSG_ROUTE_MONITORING && off < ml {
 		b.ref = true
-		b.BgpData = raw[off:msgEnd]
+		b.BgpData = raw[off:ml]
 	} else {
 		b.BgpData = nil
 	}
 
-	return msgEnd, nil
+	return ml, nil
 }
 
 // CopyData copies referenced data if needed, making Bmp the owner
@@ -158,4 +158,62 @@ func (b *Bmp) HasPerPeerHeader() bool {
 	default:
 		return false
 	}
+}
+
+// Marshal serializes the BMP message to b.buf.
+// For Route Monitoring messages, BgpData must already contain the BGP message.
+func (b *Bmp) Marshal() error {
+	if b.BgpData == nil && b.MsgType == MSG_ROUTE_MONITORING {
+		return ErrNoData
+	}
+
+	// calculate total length
+	length := HEADLEN
+	if b.HasPerPeerHeader() {
+		length += PEER_HEADLEN
+	}
+	length += len(b.BgpData)
+
+	// allocate buffer
+	if cap(b.buf) < length {
+		b.buf = make([]byte, length)
+	}
+	b.buf = b.buf[:length]
+
+	// common header
+	b.buf[0] = VERSION
+	msb.PutUint32(b.buf[1:5], uint32(length))
+	b.buf[5] = byte(b.MsgType)
+
+	off := HEADLEN
+
+	// per-peer header
+	if b.HasPerPeerHeader() {
+		b.Peer.ToBytes(b.buf[off:])
+		off += PEER_HEADLEN
+	}
+
+	// bgp data
+	if b.BgpData != nil {
+		copy(b.buf[off:], b.BgpData)
+	}
+
+	b.MsgLength = uint32(length)
+	return nil
+}
+
+// WriteTo writes the BMP message to w, implementing io.WriterTo.
+// Call Marshal() first.
+func (b *Bmp) WriteTo(w io.Writer) (int64, error) {
+	if len(b.buf) == 0 {
+		return 0, ErrNoData
+	}
+	n, err := w.Write(b.buf)
+	return int64(n), err
+}
+
+// Bytes returns the marshaled BMP message.
+// Call Marshal() first.
+func (b *Bmp) Bytes() []byte {
+	return b.buf
 }
