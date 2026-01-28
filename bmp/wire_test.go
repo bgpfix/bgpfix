@@ -8,6 +8,7 @@ package bmp
 // See https://github.com/NLnetLabs/routecore/blob/main/LICENSE
 
 import (
+	"bytes"
 	"net/netip"
 	"testing"
 	"time"
@@ -116,7 +117,7 @@ func TestBmp_FromBytes_ValidIPv6Peer(t *testing.T) {
 	bgp := makeBgpKeepalive()
 	peerIP := netip.MustParseAddr("2001:db8::1")
 	// V flag set (0x80) for IPv6
-	peer := makePeerHeader(0, PEER_FLAG_V, 0, peerIP, 65002, 0x0A000002, 1700000000, 0)
+	peer := makePeerHeader(0, PEER_FLAG_V6, 0, peerIP, 65002, 0x0A000002, 1700000000, 0)
 
 	totalLen := uint32(HEADLEN + PEER_HEADLEN + len(bgp))
 	header := makeBmpHeader(totalLen, MSG_ROUTE_MONITORING)
@@ -353,7 +354,7 @@ func TestPeer_FromBytes_Valid(t *testing.T) {
 
 func TestPeer_FromBytes_IPv6(t *testing.T) {
 	peerIP := netip.MustParseAddr("2001:db8:85a3::8a2e:370:7334")
-	raw := makePeerHeader(0, PEER_FLAG_V, 0, peerIP, 65001, 0x01020304, 1700000000, 0)
+	raw := makePeerHeader(0, PEER_FLAG_V6, 0, peerIP, 65001, 0x01020304, 1700000000, 0)
 
 	p := &Peer{}
 	off, err := p.FromBytes(raw)
@@ -365,7 +366,7 @@ func TestPeer_FromBytes_IPv6(t *testing.T) {
 
 func TestPeer_FromBytes_AllFlags(t *testing.T) {
 	peerIP := netip.MustParseAddr("2001:db8::1")
-	flags := uint8(PEER_FLAG_V | PEER_FLAG_L | PEER_FLAG_A)
+	flags := uint8(PEER_FLAG_V6 | PEER_FLAG_L | PEER_FLAG_A)
 	raw := makePeerHeader(2, flags, 0, peerIP, 65001, 0x01020304, 1700000000, 0)
 
 	p := &Peer{}
@@ -450,7 +451,7 @@ func TestBmp_CopyData(t *testing.T) {
 
 func TestPeer_Reset(t *testing.T) {
 	peerIP := netip.MustParseAddr("10.0.0.1")
-	raw := makePeerHeader(1, PEER_FLAG_V|PEER_FLAG_L, 0x1234, peerIP, 65001, 0x0A000001, 1700000000, 500)
+	raw := makePeerHeader(1, PEER_FLAG_V6|PEER_FLAG_L, 0x1234, peerIP, 65001, 0x0A000001, 1700000000, 500)
 
 	p := &Peer{}
 	_, err := p.FromBytes(raw)
@@ -1036,7 +1037,7 @@ func TestPeer_RFC9069_LocRibType(t *testing.T) {
 func TestPeer_AllFlagsSet(t *testing.T) {
 	// All peer flags set: V + L + A + O
 	peerIP := netip.MustParseAddr("2001:db8::1")
-	flags := uint8(PEER_FLAG_V | PEER_FLAG_L | PEER_FLAG_A | PEER_FLAG_O)
+	flags := uint8(PEER_FLAG_V6 | PEER_FLAG_L | PEER_FLAG_A | PEER_FLAG_O)
 	raw := makePeerHeader(PEER_TYPE_RD, flags, 0x123456789ABCDEF0, peerIP, 65001, 0x01020304, 1700000000, 0)
 
 	p := &Peer{}
@@ -1060,8 +1061,584 @@ func TestPeer_TypeConstants(t *testing.T) {
 
 func TestPeer_FlagConstants(t *testing.T) {
 	// Verify flag constants match RFC 7854/8671
-	require.Equal(t, byte(0x80), byte(PEER_FLAG_V))
+	require.Equal(t, byte(0x80), byte(PEER_FLAG_V6))
 	require.Equal(t, byte(0x40), byte(PEER_FLAG_L))
 	require.Equal(t, byte(0x20), byte(PEER_FLAG_A))
 	require.Equal(t, byte(0x10), byte(PEER_FLAG_O))
+}
+
+// ============================================================================
+// Peer.ToBytes() Marshal Tests
+// ============================================================================
+
+func TestPeer_ToBytes_IPv4(t *testing.T) {
+	p := &Peer{
+		Type:    PEER_TYPE_GLOBAL,
+		Flags:   PEER_FLAG_L,
+		RD:      0x1234567890ABCDEF,
+		Address: netip.MustParseAddr("192.0.2.1"),
+		AS:      65001,
+		ID:      0xC0000201,
+		Time:    time.Unix(1700000000, 500000*1000).UTC(),
+	}
+
+	dst := p.ToBytes(nil)
+	require.Equal(t, PEER_HEADLEN, len(dst))
+
+	// Parse back and verify
+	p2 := &Peer{}
+	n, err := p2.FromBytes(dst)
+	require.NoError(t, err)
+	require.Equal(t, PEER_HEADLEN, n)
+
+	require.Equal(t, p.Type, p2.Type)
+	require.Equal(t, p.Flags, p2.Flags)
+	require.Equal(t, p.RD, p2.RD)
+	require.Equal(t, p.Address, p2.Address)
+	require.Equal(t, p.AS, p2.AS)
+	require.Equal(t, p.ID, p2.ID)
+	require.True(t, p.Time.Equal(p2.Time))
+}
+
+func TestPeer_ToBytes_IPv6(t *testing.T) {
+	p := &Peer{
+		Type:    PEER_TYPE_RD,
+		Flags:   PEER_FLAG_V6 | PEER_FLAG_L | PEER_FLAG_A,
+		RD:      0xDEADBEEFCAFEBABE,
+		Address: netip.MustParseAddr("2001:db8:85a3::8a2e:370:7334"),
+		AS:      4200000001,
+		ID:      0x0A0A0A01,
+		Time:    time.Unix(1700000000, 123456*1000).UTC(),
+	}
+
+	dst := p.ToBytes(nil)
+	require.Equal(t, PEER_HEADLEN, len(dst))
+
+	// Parse back and verify
+	p2 := &Peer{}
+	n, err := p2.FromBytes(dst)
+	require.NoError(t, err)
+	require.Equal(t, PEER_HEADLEN, n)
+
+	require.Equal(t, p.Type, p2.Type)
+	require.Equal(t, p.Flags, p2.Flags)
+	require.Equal(t, p.RD, p2.RD)
+	require.Equal(t, p.Address, p2.Address)
+	require.Equal(t, p.AS, p2.AS)
+	require.Equal(t, p.ID, p2.ID)
+	require.True(t, p.Time.Equal(p2.Time))
+}
+
+func TestPeer_ToBytes_InvalidAddress(t *testing.T) {
+	// Test with invalid/zero address - should produce zero bytes in IP field
+	p := &Peer{
+		Type:    PEER_TYPE_GLOBAL,
+		Flags:   0,
+		Address: netip.Addr{}, // invalid
+		AS:      65001,
+		Time:    time.Unix(1700000000, 0).UTC(),
+	}
+
+	dst := p.ToBytes(nil)
+	require.Equal(t, PEER_HEADLEN, len(dst))
+
+	// IP field (bytes 10-26) should be all zeros
+	for i := 10; i < 26; i++ {
+		require.Equal(t, byte(0), dst[i], "byte %d should be zero", i)
+	}
+}
+
+func TestPeer_ToBytes_ReuseBuffer(t *testing.T) {
+	p := &Peer{
+		Address: netip.MustParseAddr("10.0.0.1"),
+		AS:      65001,
+		Time:    time.Now().UTC(),
+	}
+
+	// Pre-allocate larger buffer
+	buf := make([]byte, 100)
+	dst := p.ToBytes(buf)
+
+	require.Equal(t, PEER_HEADLEN, len(dst))
+	require.Equal(t, 100, cap(dst)) // Should reuse provided buffer
+}
+
+func TestPeer_ToBytes_RoundTrip_RealWorldData(t *testing.T) {
+	// Use a real peer header from earlier test
+	raw := []byte{
+		0x00, 0x00, // type, flags (IPv4)
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // RD
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // IP prefix (zeros)
+		0x00, 0x00, 0x00, 0x00, 0x0a, 0xff, 0x00, 0x65, // IP (10.255.0.101)
+		0x00, 0x01, 0x00, 0x00, // AS (65536)
+		0x0a, 0x0a, 0x0a, 0x01, // BGP ID
+		0x54, 0xa2, 0x0e, 0x0c, // timestamp sec
+		0x00, 0x0e, 0x81, 0x09, // timestamp usec
+	}
+
+	// Parse
+	p := &Peer{}
+	_, err := p.FromBytes(raw)
+	require.NoError(t, err)
+
+	// Marshal back
+	dst := p.ToBytes(nil)
+
+	// Should match original
+	require.Equal(t, raw, dst)
+}
+
+// ============================================================================
+// Bmp.Marshal() Tests
+// ============================================================================
+
+func TestBmp_Marshal_RouteMonitoring(t *testing.T) {
+	bgp := makeBgpKeepalive()
+
+	b := NewBmp()
+	b.MsgType = MSG_ROUTE_MONITORING
+	b.Peer = Peer{
+		Type:    PEER_TYPE_GLOBAL,
+		Flags:   0,
+		Address: netip.MustParseAddr("192.0.2.1"),
+		AS:      65001,
+		ID:      0x0A000001,
+		Time:    time.Unix(1700000000, 500000*1000).UTC(),
+	}
+	b.BgpData = bgp
+
+	err := b.Marshal()
+	require.NoError(t, err)
+
+	// Verify marshaled length
+	expectedLen := HEADLEN + PEER_HEADLEN + len(bgp)
+	require.Equal(t, expectedLen, len(b.Bytes()))
+	require.Equal(t, uint32(expectedLen), b.MsgLength)
+
+	// Parse back and verify
+	b2 := NewBmp()
+	n, err := b2.FromBytes(b.Bytes())
+	require.NoError(t, err)
+	require.Equal(t, expectedLen, n)
+
+	require.Equal(t, uint8(VERSION), b2.Version)
+	require.Equal(t, MSG_ROUTE_MONITORING, b2.MsgType)
+	require.Equal(t, b.Peer.Address, b2.Peer.Address)
+	require.Equal(t, b.Peer.AS, b2.Peer.AS)
+	require.Equal(t, bgp, b2.BgpData)
+}
+
+func TestBmp_Marshal_Initiation(t *testing.T) {
+	b := NewBmp()
+	b.MsgType = MSG_INITIATION
+	// Initiation has no per-peer header, no BGP data
+
+	err := b.Marshal()
+	require.NoError(t, err)
+
+	expectedLen := HEADLEN // just common header
+	require.Equal(t, expectedLen, len(b.Bytes()))
+
+	// Parse back
+	b2 := NewBmp()
+	_, err = b2.FromBytes(b.Bytes())
+	require.NoError(t, err)
+	require.Equal(t, MSG_INITIATION, b2.MsgType)
+	require.False(t, b2.HasPerPeerHeader())
+}
+
+func TestBmp_Marshal_NoDataError(t *testing.T) {
+	b := NewBmp()
+	b.MsgType = MSG_ROUTE_MONITORING
+	b.BgpData = nil // No BGP data
+
+	err := b.Marshal()
+	require.ErrorIs(t, err, ErrNoData)
+}
+
+func TestBmp_Marshal_PeerUp(t *testing.T) {
+	// Peer Up with some payload data (not BGP, but extra peer up info)
+	peerUpData := []byte{0x01, 0x02, 0x03, 0x04}
+
+	b := NewBmp()
+	b.MsgType = MSG_PEER_UP
+	b.Peer = Peer{
+		Address: netip.MustParseAddr("10.0.0.1"),
+		AS:      65001,
+		Time:    time.Now().UTC(),
+	}
+	b.BgpData = peerUpData // Reusing BgpData for payload
+
+	err := b.Marshal()
+	require.NoError(t, err)
+
+	expectedLen := HEADLEN + PEER_HEADLEN + len(peerUpData)
+	require.Equal(t, expectedLen, len(b.Bytes()))
+
+	// Parse back
+	b2 := NewBmp()
+	_, err = b2.FromBytes(b.Bytes())
+	require.NoError(t, err)
+	require.Equal(t, MSG_PEER_UP, b2.MsgType)
+}
+
+func TestBmp_WriteTo(t *testing.T) {
+	bgp := makeBgpKeepalive()
+
+	b := NewBmp()
+	b.MsgType = MSG_ROUTE_MONITORING
+	b.Peer.Address = netip.MustParseAddr("10.0.0.1")
+	b.Peer.AS = 65001
+	b.Peer.Time = time.Now().UTC()
+	b.BgpData = bgp
+
+	err := b.Marshal()
+	require.NoError(t, err)
+
+	// Write to buffer
+	var buf bytes.Buffer
+	n, err := b.WriteTo(&buf)
+	require.NoError(t, err)
+	require.Equal(t, int64(len(b.Bytes())), n)
+	require.Equal(t, b.Bytes(), buf.Bytes())
+}
+
+func TestBmp_WriteTo_NoData(t *testing.T) {
+	b := NewBmp()
+	// Don't call Marshal()
+
+	var buf bytes.Buffer
+	_, err := b.WriteTo(&buf)
+	require.ErrorIs(t, err, ErrNoData)
+}
+
+func TestBmp_Marshal_RoundTrip_AllMsgTypes(t *testing.T) {
+	tests := []struct {
+		msgType       MsgType
+		hasPeerHeader bool
+		needsData     bool
+	}{
+		{MSG_ROUTE_MONITORING, true, true},
+		{MSG_STATISTICS_REPORT, true, false},
+		{MSG_PEER_DOWN, true, false},
+		{MSG_PEER_UP, true, false},
+		{MSG_INITIATION, false, false},
+		{MSG_TERMINATION, false, false},
+		{MSG_ROUTE_MIRRORING, true, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.msgType.String(), func(t *testing.T) {
+			b := NewBmp()
+			b.MsgType = tt.msgType
+
+			if tt.hasPeerHeader {
+				b.Peer = Peer{
+					Type:    PEER_TYPE_GLOBAL,
+					Address: netip.MustParseAddr("192.168.1.1"),
+					AS:      65001,
+					Time:    time.Unix(1700000000, 0).UTC(),
+				}
+			}
+
+			if tt.needsData || tt.msgType == MSG_ROUTE_MONITORING {
+				b.BgpData = makeBgpKeepalive()
+			}
+
+			err := b.Marshal()
+			if tt.msgType == MSG_ROUTE_MONITORING && b.BgpData == nil {
+				require.ErrorIs(t, err, ErrNoData)
+				return
+			}
+			require.NoError(t, err)
+
+			// Parse back
+			b2 := NewBmp()
+			_, err = b2.FromBytes(b.Bytes())
+			require.NoError(t, err)
+			require.Equal(t, tt.msgType, b2.MsgType)
+			require.Equal(t, tt.hasPeerHeader, b2.HasPerPeerHeader())
+		})
+	}
+}
+
+// ============================================================================
+// OpenBmp.Marshal() Tests
+// ============================================================================
+
+func TestOpenBmp_Marshal_Basic(t *testing.T) {
+	bmpData := makeBmpHeader(HEADLEN, MSG_INITIATION)
+
+	o := NewOpenBmp()
+	o.ObjType = OPENBMP_OBJ_RAW
+	o.Time = time.Unix(1700000000, 500000*1000).UTC()
+	o.CollectorName = "collector1"
+	o.RouterName = "router1"
+	o.Data = bmpData
+
+	err := o.Marshal()
+	require.NoError(t, err)
+
+	// Verify we have data
+	require.NotEmpty(t, o.buf)
+
+	// Parse back and verify
+	o2 := NewOpenBmp()
+	n, err := o2.FromBytes(o.buf)
+	require.NoError(t, err)
+	require.Equal(t, len(o.buf), n)
+
+	require.Equal(t, uint8(OPENBMP_VERSION), o2.Version)
+	require.Equal(t, uint8(7), o2.Minor) // bmp_raw minor version
+	require.Equal(t, "collector1", o2.CollectorName)
+	require.Equal(t, "router1", o2.RouterName)
+	require.Equal(t, bmpData, o2.Data)
+	require.Equal(t, int64(1700000000), o2.Time.Unix())
+}
+
+func TestOpenBmp_Marshal_IPv4Router(t *testing.T) {
+	bmpData := makeBmpHeader(HEADLEN, MSG_INITIATION)
+	routerIP := netip.MustParseAddr("10.0.0.1")
+
+	o := NewOpenBmp()
+	o.ObjType = OPENBMP_OBJ_RAW
+	o.Time = time.Now().UTC()
+	o.RouterIP = routerIP
+	o.Data = bmpData
+
+	err := o.Marshal()
+	require.NoError(t, err)
+
+	// Parse back
+	o2 := NewOpenBmp()
+	_, err = o2.FromBytes(o.buf)
+	require.NoError(t, err)
+
+	require.False(t, o2.IsRouterIPv6())
+	require.Equal(t, routerIP, o2.RouterIP)
+}
+
+func TestOpenBmp_Marshal_IPv6Router(t *testing.T) {
+	bmpData := makeBmpHeader(HEADLEN, MSG_INITIATION)
+	routerIP := netip.MustParseAddr("2001:db8::1")
+
+	o := NewOpenBmp()
+	o.ObjType = OPENBMP_OBJ_RAW
+	o.Time = time.Now().UTC()
+	o.RouterIP = routerIP
+	o.Data = bmpData
+
+	err := o.Marshal()
+	require.NoError(t, err)
+
+	// Parse back
+	o2 := NewOpenBmp()
+	_, err = o2.FromBytes(o.buf)
+	require.NoError(t, err)
+
+	require.True(t, o2.IsRouterIPv6())
+	require.Equal(t, routerIP, o2.RouterIP)
+}
+
+func TestOpenBmp_Marshal_NoDataError(t *testing.T) {
+	o := NewOpenBmp()
+	o.ObjType = OPENBMP_OBJ_RAW
+	o.Data = nil
+
+	err := o.Marshal()
+	require.ErrorIs(t, err, ErrNoData)
+}
+
+func TestOpenBmp_Marshal_EmptyNames(t *testing.T) {
+	bmpData := makeBmpHeader(HEADLEN, MSG_INITIATION)
+
+	o := NewOpenBmp()
+	o.ObjType = OPENBMP_OBJ_RAW
+	o.Time = time.Now().UTC()
+	o.CollectorName = ""
+	o.RouterName = ""
+	o.Data = bmpData
+
+	err := o.Marshal()
+	require.NoError(t, err)
+
+	// Parse back
+	o2 := NewOpenBmp()
+	_, err = o2.FromBytes(o.buf)
+	require.NoError(t, err)
+
+	require.Empty(t, o2.CollectorName)
+	require.Empty(t, o2.RouterName)
+}
+
+func TestOpenBmp_Marshal_LongNames(t *testing.T) {
+	bmpData := makeBmpHeader(HEADLEN, MSG_INITIATION)
+	longName := "this-is-a-very-long-collector-name-for-testing-purposes-1234567890"
+
+	o := NewOpenBmp()
+	o.ObjType = OPENBMP_OBJ_RAW
+	o.Time = time.Now().UTC()
+	o.CollectorName = longName
+	o.RouterName = longName
+	o.Data = bmpData
+
+	err := o.Marshal()
+	require.NoError(t, err)
+
+	// Parse back
+	o2 := NewOpenBmp()
+	_, err = o2.FromBytes(o.buf)
+	require.NoError(t, err)
+
+	require.Equal(t, longName, o2.CollectorName)
+	require.Equal(t, longName, o2.RouterName)
+}
+
+func TestOpenBmp_WriteTo(t *testing.T) {
+	bmpData := makeBmpHeader(HEADLEN, MSG_INITIATION)
+
+	o := NewOpenBmp()
+	o.ObjType = OPENBMP_OBJ_RAW
+	o.Time = time.Now().UTC()
+	o.Data = bmpData
+
+	err := o.Marshal()
+	require.NoError(t, err)
+
+	var buf bytes.Buffer
+	n, err := o.WriteTo(&buf)
+	require.NoError(t, err)
+	require.Equal(t, int64(len(o.buf)), n)
+	require.Equal(t, o.buf, buf.Bytes())
+}
+
+func TestOpenBmp_WriteTo_NoData(t *testing.T) {
+	o := NewOpenBmp()
+	// Don't call Marshal()
+
+	var buf bytes.Buffer
+	_, err := o.WriteTo(&buf)
+	require.ErrorIs(t, err, ErrNoData)
+}
+
+func TestOpenBmp_Marshal_InvalidRouterIP(t *testing.T) {
+	bmpData := makeBmpHeader(HEADLEN, MSG_INITIATION)
+
+	o := NewOpenBmp()
+	o.ObjType = OPENBMP_OBJ_RAW
+	o.Time = time.Now().UTC()
+	o.RouterIP = netip.Addr{} // Invalid
+	o.Data = bmpData
+
+	err := o.Marshal()
+	require.NoError(t, err)
+
+	// Parse back - should have zero IP (0.0.0.0 for IPv4)
+	o2 := NewOpenBmp()
+	_, err = o2.FromBytes(o.buf)
+	require.NoError(t, err)
+
+	// RouterIP should be 0.0.0.0 (parsed from zero bytes as IPv4)
+	require.Equal(t, netip.MustParseAddr("0.0.0.0"), o2.RouterIP)
+}
+
+// ============================================================================
+// Full Round-Trip Tests (BMP inside OpenBMP)
+// ============================================================================
+
+func TestBmpOpenBmp_FullRoundTrip(t *testing.T) {
+	// Create a complete BGP -> BMP -> OpenBMP -> parse chain
+	bgp := makeBgpKeepalive()
+
+	// Create BMP message
+	bmp := NewBmp()
+	bmp.MsgType = MSG_ROUTE_MONITORING
+	bmp.Peer = Peer{
+		Type:    PEER_TYPE_GLOBAL,
+		Flags:   PEER_FLAG_L, // post-policy
+		Address: netip.MustParseAddr("192.0.2.1"),
+		AS:      65001,
+		ID:      0xC0000201,
+		Time:    time.Unix(1700000000, 123456*1000).UTC(),
+	}
+	bmp.BgpData = bgp
+
+	err := bmp.Marshal()
+	require.NoError(t, err)
+
+	// Wrap in OpenBMP
+	obmp := NewOpenBmp()
+	obmp.ObjType = OPENBMP_OBJ_RAW
+	obmp.Time = time.Unix(1700000001, 0).UTC()
+	obmp.CollectorName = "route-views.collector"
+	obmp.RouterName = "router1.example.com"
+	obmp.RouterIP = netip.MustParseAddr("10.255.0.1")
+	obmp.Data = bmp.Bytes()
+
+	err = obmp.Marshal()
+	require.NoError(t, err)
+
+	// Parse OpenBMP
+	obmp2 := NewOpenBmp()
+	_, err = obmp2.FromBytes(obmp.buf)
+	require.NoError(t, err)
+
+	require.Equal(t, "route-views.collector", obmp2.CollectorName)
+	require.Equal(t, "router1.example.com", obmp2.RouterName)
+	require.Equal(t, netip.MustParseAddr("10.255.0.1"), obmp2.RouterIP)
+
+	// Parse inner BMP
+	bmp2 := NewBmp()
+	_, err = bmp2.FromBytes(obmp2.Data)
+	require.NoError(t, err)
+
+	require.Equal(t, MSG_ROUTE_MONITORING, bmp2.MsgType)
+	require.Equal(t, netip.MustParseAddr("192.0.2.1"), bmp2.Peer.Address)
+	require.Equal(t, uint32(65001), bmp2.Peer.AS)
+	require.True(t, bmp2.Peer.IsPostPolicy())
+	require.Equal(t, bgp, bmp2.BgpData)
+}
+
+func TestBmpOpenBmp_IPv6FullRoundTrip(t *testing.T) {
+	bgp := makeBgpKeepalive()
+
+	// BMP with IPv6 peer
+	bmp := NewBmp()
+	bmp.MsgType = MSG_ROUTE_MONITORING
+	bmp.Peer = Peer{
+		Type:    PEER_TYPE_GLOBAL,
+		Flags:   PEER_FLAG_V6,
+		Address: netip.MustParseAddr("2001:db8::1"),
+		AS:      4200000001,
+		Time:    time.Now().UTC(),
+	}
+	bmp.BgpData = bgp
+
+	err := bmp.Marshal()
+	require.NoError(t, err)
+
+	// OpenBMP with IPv6 router
+	obmp := NewOpenBmp()
+	obmp.ObjType = OPENBMP_OBJ_RAW
+	obmp.Time = time.Now().UTC()
+	obmp.RouterIP = netip.MustParseAddr("2001:db8:85a3::1")
+	obmp.Data = bmp.Bytes()
+
+	err = obmp.Marshal()
+	require.NoError(t, err)
+
+	// Parse back
+	obmp2 := NewOpenBmp()
+	_, err = obmp2.FromBytes(obmp.buf)
+	require.NoError(t, err)
+
+	require.True(t, obmp2.IsRouterIPv6())
+	require.Equal(t, netip.MustParseAddr("2001:db8:85a3::1"), obmp2.RouterIP)
+
+	bmp2 := NewBmp()
+	_, err = bmp2.FromBytes(obmp2.Data)
+	require.NoError(t, err)
+
+	require.True(t, bmp2.Peer.IsIPv6())
+	require.Equal(t, netip.MustParseAddr("2001:db8::1"), bmp2.Peer.Address)
 }

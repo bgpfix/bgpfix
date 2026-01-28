@@ -15,4 +15,7 @@ var (
 	// Reader errors
 	ErrNotRouteMonitoring = errors.New("not a Route Monitoring message")
 	ErrNoBgpData          = errors.New("no BGP data in message")
+
+	// Writer errors
+	ErrNoData = errors.New("no data to write")
 )

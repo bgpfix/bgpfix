@@ -1,22 +1,21 @@
 package bmp
 
 import (
+	"io"
 	"net/netip"
 	"time"
-
-	"github.com/bgpfix/bgpfix/binary"
 )
 
 // OpenBMP header constants
 const (
 	OPENBMP_MAGIC      = "OBMP"
-	OPENBMP_VERSION    = 0x01        // protocol version
-	OPENBMP_HEADLEN    = 14          // minimum header length to read basic fields
-	OPENBMP_FLAG_V6    = 0x40        // router IP is IPv6
-	OPENBMP_FLAG_RTYPE = 0x80        // router message (vs collector message)
-	OPENBMP_OBJ_RAW    = 12          // object type for BMP_RAW
-	OPENBMP_OBJ_ROUTER = 1           // object type for router
-	OPENBMP_OBJ_PEER   = 2           // object type for peer
+	OPENBMP_VERSION    = 0x01 // protocol version
+	OPENBMP_HEADLEN    = 14   // minimum header length to read basic fields
+	OPENBMP_FLAG_V6    = 0x40 // router IP is IPv6
+	OPENBMP_FLAG_RTYPE = 0x80 // router message (vs collector message)
+	OPENBMP_OBJ_RAW    = 12   // object type for BMP_RAW
+	OPENBMP_OBJ_ROUTER = 1    // object type for router
+	OPENBMP_OBJ_PEER   = 2    // object type for peer
 )
 
 // OpenBmp represents an OpenBMP message header (used by RouteViews Kafka streams).
@@ -111,8 +110,6 @@ func (o *OpenBmp) FromBytes(raw []byte) (int, error) {
 	if string(raw[0:4]) != OPENBMP_MAGIC {
 		return 0, ErrOpenBmpMagic
 	}
-
-	msb := binary.Msb
 
 	o.Version = raw[4]
 	if o.Version != OPENBMP_VERSION {
@@ -229,4 +226,88 @@ func (o *OpenBmp) IsRouterIPv6() bool {
 // IsBmpRaw returns true if this contains raw BMP data
 func (o *OpenBmp) IsBmpRaw() bool {
 	return o.ObjType == OPENBMP_OBJ_RAW
+}
+
+// Marshal serializes the OpenBMP message to o.buf.
+// Data must already contain the BMP message.
+func (o *OpenBmp) Marshal() error {
+	if o.Data == nil {
+		return ErrNoData
+	}
+
+	// calculate header length (minimal: 14 + timestamps + hashes + names)
+	headerLen := 14 + 8 + 16 + 2 + len(o.CollectorName) + 16 + 16 + 2 + len(o.RouterName) + 4
+
+	// allocate buffer
+	total := headerLen + len(o.Data)
+	if cap(o.buf) < total {
+		o.buf = make([]byte, total)
+	}
+	o.buf = o.buf[:total]
+
+	// magic + version
+	copy(o.buf[0:4], OPENBMP_MAGIC)
+	o.buf[4] = OPENBMP_VERSION
+	o.buf[5] = 7 // minor version for bmp_raw
+	msb.PutUint16(o.buf[6:8], uint16(headerLen))
+	msb.PutUint32(o.buf[8:12], uint32(len(o.Data)))
+	o.buf[12] = o.Flags
+	o.buf[13] = OPENBMP_OBJ_RAW
+
+	off := 14
+
+	// timestamp
+	sec := o.Time.Unix()
+	usec := o.Time.UnixMicro() % 1e6
+	msb.PutUint32(o.buf[off:], uint32(sec))
+	msb.PutUint32(o.buf[off+4:], uint32(usec))
+	off += 8
+
+	// collector hash + name
+	copy(o.buf[off:], o.CollectorHash[:])
+	off += 16
+	msb.PutUint16(o.buf[off:], uint16(len(o.CollectorName)))
+	off += 2
+	copy(o.buf[off:], o.CollectorName)
+	off += len(o.CollectorName)
+
+	// router hash + ip + name
+	copy(o.buf[off:], o.RouterHash[:])
+	off += 16
+	clear(o.buf[off : off+16])
+	if o.RouterIP.IsValid() {
+		if o.RouterIP.Is6() {
+			o.Flags |= OPENBMP_FLAG_V6
+			copy(o.buf[off:], o.RouterIP.AsSlice())
+		} else {
+			o.Flags &^= OPENBMP_FLAG_V6
+			copy(o.buf[off+12:], o.RouterIP.AsSlice())
+		}
+		o.buf[12] = o.Flags // update flags byte after IP detection
+	}
+	off += 16
+	msb.PutUint16(o.buf[off:], uint16(len(o.RouterName)))
+	off += 2
+	copy(o.buf[off:], o.RouterName)
+	off += len(o.RouterName)
+
+	// row count = 1
+	msb.PutUint32(o.buf[off:], 1)
+	off += 4
+
+	// BMP data
+	copy(o.buf[off:], o.Data)
+
+	o.HeaderLen = uint16(headerLen)
+	o.DataLen = uint32(len(o.Data))
+	return nil
+}
+
+// WriteTo writes the OpenBMP message to w.
+func (o *OpenBmp) WriteTo(w io.Writer) (int64, error) {
+	if len(o.buf) == 0 {
+		return 0, ErrNoData
+	}
+	n, err := w.Write(o.buf)
+	return int64(n), err
 }
