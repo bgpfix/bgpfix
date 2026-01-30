@@ -112,6 +112,7 @@ var NewFuncs = [256]NewFunc{
 	ATTR_AS4AGGREGATOR:   NewAggregator,
 	ATTR_ORIGINATOR:      NewIP4,
 	ATTR_CLUSTER_LIST:    NewIPList4,
+	ATTR_OTC:             NewU32,
 }
 
 // DefaultFlags gives the default flags for attribute codes, in addition to ATTR_OPTIONAL
@@ -120,6 +121,7 @@ var DefaultFlags = [256]Flags{
 	ATTR_EXT_COMMUNITY:   ATTR_TRANSITIVE,
 	ATTR_LARGE_COMMUNITY: ATTR_TRANSITIVE,
 	ATTR_AGGREGATOR:      ATTR_TRANSITIVE,
+	ATTR_OTC:             ATTR_TRANSITIVE,
 }
 
 // NewAttr returns a new Attr instance for given code ac and default flags.

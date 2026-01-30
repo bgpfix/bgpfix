@@ -426,17 +426,55 @@ func TestLargeCommunity_Multi_Wire(t *testing.T) {
 }
 
 func TestOTC_Wire(t *testing.T) {
-	// From routecore: OTC (Only To Customer) with AS1234
-	// Note: In bgpfix, ATTR_OTC is treated as Raw since no specific handler is registered
-	at := NewAttr(ATTR_OTC).(*Raw)
+	// OTC (Only To Customer) with AS1234 per RFC 9234
+	at := NewAttr(ATTR_OTC).(*U32)
 	var cps caps.Caps
 
 	err := at.Unmarshal([]byte{0x00, 0x00, 0x04, 0xd2}, cps, dir.DIR_L)
 	require.NoError(t, err)
-	require.Equal(t, []byte{0x00, 0x00, 0x04, 0xd2}, at.Raw)
+	require.Equal(t, uint32(1234), at.Val)
 
 	buf := at.Marshal(nil, cps, dir.DIR_L)
-	require.Equal(t, []byte{0x80, 0x23, 0x04, 0x00, 0x00, 0x04, 0xd2}, buf)
+	// 0xC0 = optional + transitive, 0x23 = 35 (OTC), 0x04 = length
+	require.Equal(t, []byte{0xC0, 0x23, 0x04, 0x00, 0x00, 0x04, 0xd2}, buf)
+}
+
+func TestOTC_InvalidLength_Wire(t *testing.T) {
+	at := NewAttr(ATTR_OTC).(*U32)
+	var cps caps.Caps
+
+	// OTC must be exactly 4 bytes
+	err := at.Unmarshal([]byte{0x00, 0x00, 0x00}, cps, dir.DIR_L)
+	require.Error(t, err)
+
+	err = at.Unmarshal([]byte{0x00, 0x00, 0x00, 0x00, 0x00}, cps, dir.DIR_L)
+	require.Error(t, err)
+}
+
+func TestOTC_MaxASN_Wire(t *testing.T) {
+	at := NewAttr(ATTR_OTC).(*U32)
+	var cps caps.Caps
+
+	// Test max 4-byte ASN (4294967295)
+	err := at.Unmarshal([]byte{0xFF, 0xFF, 0xFF, 0xFF}, cps, dir.DIR_L)
+	require.NoError(t, err)
+	require.Equal(t, uint32(0xFFFFFFFF), at.Val)
+
+	buf := at.Marshal(nil, cps, dir.DIR_L)
+	require.Equal(t, []byte{0xC0, 0x23, 0x04, 0xFF, 0xFF, 0xFF, 0xFF}, buf)
+}
+
+func TestOTC_JSON(t *testing.T) {
+	at := NewAttr(ATTR_OTC).(*U32)
+
+	// Test FromJSON
+	err := at.FromJSON([]byte("65001"))
+	require.NoError(t, err)
+	require.Equal(t, uint32(65001), at.Val)
+
+	// Test ToJSON
+	buf := at.ToJSON(nil)
+	require.Equal(t, []byte("65001"), buf)
 }
 
 func TestMPReachIPv6_Wire(t *testing.T) {
