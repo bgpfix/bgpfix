@@ -277,7 +277,7 @@ func (mrt *Mrt) WriteTo(w io.Writer) (n int64, err error) {
 
 	// write the timestamp
 	time_us := mrt.Time.UnixMicro()
-	k, err := msb.WriteUint32(w, uint32(time_us/1e9))
+	k, err := msb.WriteUint32(w, uint32(time_us/1e6))
 	n += int64(k)
 	if err != nil {
 		return n, err
@@ -306,7 +306,7 @@ func (mrt *Mrt) WriteTo(w io.Writer) (n int64, err error) {
 
 	// extended timestamp?
 	if mrt.Type.IsET() {
-		k, err = msb.WriteUint32(w, uint32(time_us%1e9))
+		k, err = msb.WriteUint32(w, uint32(time_us%1e6))
 		n += int64(k)
 		if err != nil {
 			return n, err

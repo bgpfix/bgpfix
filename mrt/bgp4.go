@@ -40,7 +40,7 @@ type Bgp4 struct {
 	Interface uint16     // interface index
 	PeerIP    netip.Addr // peer IP address
 	LocalIP   netip.Addr // local IP address
-	MsgData   []byte     // raw BGP message, referenced
+	BgpData   []byte     // raw BGP message, referenced
 }
 
 // Init initializes b4 to use parent mrt
@@ -50,7 +50,7 @@ func (b4 *Bgp4) Init(mrt *Mrt) {
 
 // Reset prepares b4 for re-use
 func (b4 *Bgp4) Reset() {
-	b4.MsgData = nil
+	b4.BgpData = nil
 }
 
 // FromMsg copies BGP message m into BGP4MP message b4.
@@ -61,13 +61,13 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg) error {
 		return ErrNoData
 	}
 
-	// marshal m to b4.Data
+	// marshal m to b4.BgpData
 	var bb bytes.Buffer
 	_, err := m.WriteTo(&bb)
 	if err != nil {
 		return err
 	}
-	b4.MsgData = bb.Bytes()
+	b4.BgpData = bb.Bytes()
 
 	// update parent Mrt
 	mrt := b4.Mrt
@@ -78,7 +78,7 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg) error {
 	mrt.Data = nil
 
 	// m has Context with tags?
-	if tags := pipe.GetContext(m).GetTags(); len(tags) > 0 {
+	if tags := pipe.GetTags(m); len(tags) > 0 {
 		if s := tags["PEER_AS"]; len(s) > 0 {
 			v, err := strconv.ParseUint(s, 10, 32)
 			if err == nil {
@@ -116,11 +116,11 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg) error {
 
 // ToMsg reads MRT-BGP4MP message b4 into BGP message m, referencing data.
 func (b4 *Bgp4) ToMsg(m *msg.Msg, set_tags bool) error {
-	off, err := m.FromBytes(b4.MsgData)
+	off, err := m.FromBytes(b4.BgpData)
 	switch {
 	case err != nil:
 		return err
-	case off != len(b4.MsgData):
+	case off != len(b4.BgpData):
 		return ErrLength
 	}
 
@@ -204,7 +204,7 @@ func (b4 *Bgp4) Parse() error {
 	}
 
 	// reference the raw BGP message
-	b4.MsgData = buf
+	b4.BgpData = buf
 
 	// done
 	mrt.Upper = mrt.Type
@@ -265,7 +265,7 @@ func (b4 *Bgp4) Marshal() error {
 	}
 
 	// write BGP raw data
-	buf = append(buf, b4.MsgData...)
+	buf = append(buf, b4.BgpData...)
 
 	// done
 	mrt.Upper = mrt.Type

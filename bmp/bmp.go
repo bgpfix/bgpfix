@@ -2,9 +2,14 @@
 package bmp
 
 import (
+	"bytes"
 	"io"
+	"net/netip"
+	"strconv"
 
 	"github.com/bgpfix/bgpfix/binary"
+	"github.com/bgpfix/bgpfix/msg"
+	"github.com/bgpfix/bgpfix/pipe"
 )
 
 var msb = binary.Msb
@@ -55,12 +60,12 @@ type Bmp struct {
 	ref bool   // true iff Data is a reference to borrowed memory
 	buf []byte // internal buffer
 
-	Version   uint8   // BMP version (should be 3)
-	MsgLength uint32  // Total message length
-	MsgType   MsgType // Message type
+	Version uint8   // BMP version (should be 3)
+	Length  uint32  // Total message length
+	Type    MsgType // Message type
 
 	Peer    Peer   // Per-Peer Header (for types 0,1,2,3)
-	BgpData []byte // Extracted BGP message data (for Route Monitoring)
+	BgpData []byte // raw BGP message (for Route Monitoring)
 }
 
 // NewBmp returns a new empty BMP message
@@ -78,8 +83,8 @@ func (b *Bmp) Reset() *Bmp {
 	}
 
 	b.Version = 0
-	b.MsgLength = 0
-	b.MsgType = 0
+	b.Length = 0
+	b.Type = 0
 	b.Peer.Reset()
 	b.BgpData = nil
 
@@ -98,18 +103,20 @@ func (b *Bmp) FromBytes(raw []byte) (int, error) {
 	if b.Version != VERSION {
 		return 0, ErrVersion
 	}
-	b.MsgLength = msb.Uint32(raw[1:5])
-	b.MsgType = MsgType(raw[5])
+	b.Length = msb.Uint32(raw[1:5])
+	b.Type = MsgType(raw[5])
 
 	// Validate length
 	off := HEADLEN
-	ml := int(b.MsgLength)
-	if ml < off || ml > len(raw) {
+	ml := int(b.Length)
+	if ml < off {
 		return 0, ErrLength
+	} else if len(raw) < ml {
+		return 0, ErrShort
 	}
 
 	// Parse Per-Peer header for applicable message types
-	switch b.MsgType {
+	switch b.Type {
 	case MSG_ROUTE_MONITORING, MSG_STATISTICS_REPORT, MSG_PEER_DOWN, MSG_PEER_UP, MSG_ROUTE_MIRRORING:
 		if ml-off < PEER_HEADLEN {
 			return off, ErrShort
@@ -124,7 +131,7 @@ func (b *Bmp) FromBytes(raw []byte) (int, error) {
 	}
 
 	// Extract BGP data for Route Monitoring messages
-	if b.MsgType == MSG_ROUTE_MONITORING && off < ml {
+	if b.Type == MSG_ROUTE_MONITORING && off < ml {
 		b.ref = true
 		b.BgpData = raw[off:ml]
 	} else {
@@ -152,7 +159,7 @@ func (b *Bmp) CopyData() *Bmp {
 
 // HasPerPeerHeader returns true if this message type has a Per-Peer header
 func (b *Bmp) HasPerPeerHeader() bool {
-	switch b.MsgType {
+	switch b.Type {
 	case MSG_ROUTE_MONITORING, MSG_STATISTICS_REPORT, MSG_PEER_DOWN, MSG_PEER_UP, MSG_ROUTE_MIRRORING:
 		return true
 	default:
@@ -163,7 +170,7 @@ func (b *Bmp) HasPerPeerHeader() bool {
 // Marshal serializes the BMP message to b.buf.
 // For Route Monitoring messages, BgpData must already contain the BGP message.
 func (b *Bmp) Marshal() error {
-	if b.BgpData == nil && b.MsgType == MSG_ROUTE_MONITORING {
+	if b.BgpData == nil && b.Type == MSG_ROUTE_MONITORING {
 		return ErrNoData
 	}
 
@@ -183,7 +190,7 @@ func (b *Bmp) Marshal() error {
 	// common header
 	b.buf[0] = VERSION
 	msb.PutUint32(b.buf[1:5], uint32(length))
-	b.buf[5] = byte(b.MsgType)
+	b.buf[5] = byte(b.Type)
 
 	off := HEADLEN
 
@@ -194,11 +201,11 @@ func (b *Bmp) Marshal() error {
 	}
 
 	// bgp data
-	if b.BgpData != nil {
+	if len(b.BgpData) > 0 {
 		copy(b.buf[off:], b.BgpData)
 	}
 
-	b.MsgLength = uint32(length)
+	b.Length = uint32(length)
 	return nil
 }
 
@@ -216,4 +223,44 @@ func (b *Bmp) WriteTo(w io.Writer) (int64, error) {
 // Call Marshal() first.
 func (b *Bmp) Bytes() []byte {
 	return b.buf
+}
+
+// FromMsg populates BMP ROUTE_MONITORING from BGP message m.
+// m must already be marshaled. Extracts peer info from message tags.
+func (b *Bmp) FromMsg(m *msg.Msg) error {
+	if m.Data == nil {
+		return ErrNoData
+	}
+
+	// Set message type
+	b.Type = MSG_ROUTE_MONITORING
+
+	// Write complete BGP message (header + data) to BgpData
+	var bb bytes.Buffer
+	if _, err := m.WriteTo(&bb); err != nil {
+		return err
+	}
+	b.BgpData = bb.Bytes()
+
+	// Set peer time from message
+	b.Peer.Time = m.Time
+
+	// Extract peer info from message tags
+	if tags := pipe.GetTags(m); len(tags) > 0 {
+		if s := tags["PEER_IP"]; len(s) > 0 {
+			if addr, err := netip.ParseAddr(s); err == nil {
+				b.Peer.Address = addr
+				if addr.Is6() {
+					b.Peer.Flags |= PEER_FLAG_V6
+				}
+			}
+		}
+		if s := tags["PEER_AS"]; len(s) > 0 {
+			if v, err := strconv.ParseUint(s, 10, 32); err == nil {
+				b.Peer.AS = uint32(v)
+			}
+		}
+	}
+
+	return nil
 }
