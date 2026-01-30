@@ -15,9 +15,9 @@ type Reader struct {
 	pipe *pipe.Pipe  // target pipe
 	in   *pipe.Input // target input
 
-	ibuf    []byte   // input buffer
-	bmp     *Bmp     // reusable BMP parser
-	openBmp *OpenBmp // reusable OpenBMP parser (for wrapped format)
+	ibuf []byte   // input buffer
+	bmp  *Bmp     // reusable BMP parser
+	obmp *OpenBmp // reusable OpenBMP parser (for wrapped format)
 
 	OpenBMP bool        // true if reading OpenBMP-wrapped format
 	NoTags  bool        // ignore message tags?
@@ -36,10 +36,10 @@ type ReaderStats struct {
 // NewReader returns a new Reader with given target Input.
 func NewReader(p *pipe.Pipe, input *pipe.Input) *Reader {
 	return &Reader{
-		pipe:    p,
-		in:      input,
-		bmp:     NewBmp(),
-		openBmp: NewOpenBmp(),
+		pipe: p,
+		in:   input,
+		bmp:  NewBmp(),
+		obmp: NewOpenBmp(),
 	}
 }
 
@@ -81,10 +81,10 @@ func (br *Reader) WriteFunc(src []byte, cb pipe.CallbackFunc) (n int, err error)
 
 		if br.OpenBMP {
 			// Parse OpenBMP header first
-			br.openBmp.Reset()
-			off, perr = br.openBmp.FromBytes(raw)
+			br.obmp.Reset()
+			off, perr = br.obmp.FromBytes(raw)
 			if perr == nil {
-				bmpData = br.openBmp.Data
+				bmpData = br.obmp.Data
 			}
 		} else {
 			// Parse raw BMP directly
@@ -119,7 +119,7 @@ func (br *Reader) WriteFunc(src []byte, cb pipe.CallbackFunc) (n int, err error)
 		}
 
 		// Only process Route Monitoring messages with BGP data
-		if br.bmp.MsgType != MSG_ROUTE_MONITORING || len(br.bmp.BgpData) == 0 {
+		if br.bmp.Type != MSG_ROUTE_MONITORING || len(br.bmp.BgpData) == 0 {
 			stats.ParsedSkip++
 			continue
 		}
@@ -138,27 +138,8 @@ func (br *Reader) WriteFunc(src []byte, cb pipe.CallbackFunc) (n int, err error)
 			return n, fmt.Errorf("BGP: dangling bytes %d/%d", k, len(br.bmp.BgpData))
 		}
 
-		// Set message time from BMP peer header
-		m.Time = br.bmp.Peer.Time
-
-		// Add tags from BMP peer header
-		if !br.NoTags {
-			tags := pipe.UseContext(m).UseTags()
-			tags["PEER_IP"] = br.bmp.Peer.Address.String()
-			tags["PEER_AS"] = strconv.FormatUint(uint64(br.bmp.Peer.AS), 10)
-
-			// Add OpenBMP metadata if available
-			if br.OpenBMP {
-				if br.openBmp.CollectorName != "" {
-					tags["COLLECTOR"] = br.openBmp.CollectorName
-				}
-				if br.openBmp.RouterName != "" {
-					tags["ROUTER"] = br.openBmp.RouterName
-				} else if br.openBmp.RouterIP.IsValid() {
-					tags["ROUTER"] = br.openBmp.RouterIP.String()
-				}
-			}
-		}
+		// Set message metadata
+		br.setMeta(m, br.bmp, br.obmp)
 
 		// Callback check
 		if cb != nil && !cb(m) {
@@ -177,46 +158,79 @@ func (br *Reader) WriteFunc(src []byte, cb pipe.CallbackFunc) (n int, err error)
 }
 
 // FromBytes parses the first BMP message in buf and references it in bgp_msg.
-// Does not buffer or copy buf. Can be used concurrently.
-func (br *Reader) FromBytes(buf []byte, bgp_msg *msg.Msg) (n int, err error) {
-	bmp := NewBmp()
-	var bmpData []byte
-
+// References bytes in buf. Can be used concurrently.
+// bmp_msg and obmp_msg may be nil, in which case new instances are created.
+func (br *Reader) FromBytes(buf []byte, bgp_msg *msg.Msg, bmp_msg *Bmp, obmp_msg *OpenBmp) (n int, err error) {
+	// parse OpenBMP wrapper first?
+	var data []byte
 	if br.OpenBMP {
-		openBmp := NewOpenBmp()
-		n, err = openBmp.FromBytes(buf)
+		if obmp_msg == nil {
+			obmp_msg = NewOpenBmp()
+		} else {
+			obmp_msg.Reset()
+		}
+
+		n, err = obmp_msg.FromBytes(buf)
 		if err != nil {
 			return n, fmt.Errorf("OpenBMP: %w", err)
 		}
-		bmpData = openBmp.Data
+		data = obmp_msg.Data
 	} else {
-		bmpData = buf
+		data = buf
 		n = len(buf)
 	}
 
-	if _, err = bmp.FromBytes(bmpData); err != nil {
+	// parse BMP message
+	if bmp_msg == nil {
+		bmp_msg = NewBmp()
+	} else {
+		bmp_msg.Reset()
+	}
+	if _, err = bmp_msg.FromBytes(data); err != nil {
 		return n, fmt.Errorf("BMP: %w", err)
 	}
 
-	// Only Route Monitoring messages have BGP data
-	if bmp.MsgType != MSG_ROUTE_MONITORING {
+	// only Route Monitoring messages have BGP data
+	if bmp_msg.Type != MSG_ROUTE_MONITORING {
 		return n, ErrNotRouteMonitoring
 	}
-	if len(bmp.BgpData) == 0 {
-		return n, ErrNoBgpData
-	}
 
-	// Parse BGP message
-	if k, err := bgp_msg.FromBytes(bmp.BgpData); err != nil {
+	// parse BGP message
+	if k, err := bgp_msg.FromBytes(bmp_msg.BgpData); err != nil {
 		return n, fmt.Errorf("BGP: %w", err)
-	} else if k != len(bmp.BgpData) {
-		return n, fmt.Errorf("BGP: dangling bytes %d/%d", k, len(bmp.BgpData))
+	} else if k != len(bmp_msg.BgpData) {
+		return n, fmt.Errorf("BGP: dangling bytes %d/%d", k, len(bmp_msg.BgpData))
 	}
 
-	// Set time from BMP peer header
-	bgp_msg.Time = bmp.Peer.Time
+	// set message metadata
+	br.setMeta(bgp_msg, bmp_msg, obmp_msg)
 
 	return n, nil
+}
+
+// setMeta sets message time and tags from BMP and OpenBMP headers
+func (br *Reader) setMeta(m *msg.Msg, bmp *Bmp, obmp *OpenBmp) {
+	m.Time = bmp.Peer.Time
+
+	if br.NoTags {
+		return
+	}
+
+	tags := pipe.UseTags(m)
+	tags["PEER_IP"] = bmp.Peer.Address.String()
+	tags["PEER_AS"] = strconv.FormatUint(uint64(bmp.Peer.AS), 10)
+
+	// Add OpenBMP metadata if available
+	if br.OpenBMP && obmp != nil {
+		if obmp.CollectorName != "" {
+			tags["COLLECTOR"] = obmp.CollectorName
+		}
+		if obmp.RouterName != "" {
+			tags["ROUTER"] = obmp.RouterName
+		} else if obmp.RouterIP.IsValid() && !obmp.RouterIP.IsUnspecified() {
+			tags["ROUTER"] = obmp.RouterIP.String()
+		}
+	}
 }
 
 // ReadFrom implements io.ReaderFrom, reading BMP messages from r until EOF.

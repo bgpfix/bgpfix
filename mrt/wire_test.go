@@ -80,7 +80,7 @@ func TestMRT_FromBytes_ValidETBGP4(t *testing.T) {
 	require.Equal(t, uint16(1), m.Bgp4.Interface)
 	require.Equal(t, peerIP, m.Bgp4.PeerIP)
 	require.Equal(t, localIP, m.Bgp4.LocalIP)
-	require.Equal(t, bgp, m.Bgp4.MsgData)
+	require.Equal(t, bgp, m.Bgp4.BgpData)
 }
 
 func TestMRT_FromBytes_Truncated(t *testing.T) {
@@ -126,7 +126,7 @@ func TestBGP4_Marshal_Parse_RoundTrip(t *testing.T) {
 	b4.Interface = 2
 	b4.PeerIP = peerIP
 	b4.LocalIP = localIP
-	b4.MsgData = bgp
+	b4.BgpData = bgp
 
 	err := b4.Marshal()
 	require.NoError(t, err)
@@ -144,7 +144,7 @@ func TestBGP4_Marshal_Parse_RoundTrip(t *testing.T) {
 	require.Equal(t, b4.Interface, m2.Bgp4.Interface)
 	require.Equal(t, peerIP, m2.Bgp4.PeerIP)
 	require.Equal(t, localIP, m2.Bgp4.LocalIP)
-	require.Equal(t, bgp, m2.Bgp4.MsgData)
+	require.Equal(t, bgp, m2.Bgp4.BgpData)
 }
 
 func TestBGP4_IPv6_RoundTrip(t *testing.T) {
@@ -162,7 +162,7 @@ func TestBGP4_IPv6_RoundTrip(t *testing.T) {
 	b4.Interface = 1
 	b4.PeerIP = peerIP
 	b4.LocalIP = localIP
-	b4.MsgData = bgp
+	b4.BgpData = bgp
 
 	err := b4.Marshal()
 	require.NoError(t, err)

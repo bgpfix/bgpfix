@@ -131,3 +131,72 @@ func TestMP_InvalidLength_Wire(t *testing.T) {
 	err := c.Unmarshal([]byte{0x00, 0x01, 0x00}, cps)
 	require.ErrorIs(t, err, ErrLength)
 }
+
+func TestRole_Wire(t *testing.T) {
+	c := NewRole(CAP_ROLE).(*Role)
+	var cps Caps
+
+	// Test Customer role
+	err := c.Unmarshal([]byte{ROLE_CUSTOMER}, cps)
+	require.NoError(t, err)
+	require.Equal(t, ROLE_CUSTOMER, c.Role)
+
+	buf := c.Marshal(nil)
+	require.Equal(t, []byte{byte(CAP_ROLE), 1, ROLE_CUSTOMER}, buf)
+
+	// Test invalid length
+	err = c.Unmarshal([]byte{}, cps)
+	require.ErrorIs(t, err, ErrLength)
+
+	err = c.Unmarshal([]byte{0x00, 0x00}, cps)
+	require.ErrorIs(t, err, ErrLength)
+}
+
+func TestRole_AllValues_Wire(t *testing.T) {
+	var cps Caps
+
+	tests := []struct {
+		name  string
+		value byte
+		json  string
+	}{
+		{"PROVIDER", ROLE_PROVIDER, `"PROVIDER"`},
+		{"RS", ROLE_RS, `"RS"`},
+		{"RS-CLIENT", ROLE_RS_CLIENT, `"RS-CLIENT"`},
+		{"CUSTOMER", ROLE_CUSTOMER, `"CUSTOMER"`},
+		{"PEER", ROLE_PEER, `"PEER"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewRole(CAP_ROLE).(*Role)
+			err := c.Unmarshal([]byte{tt.value}, cps)
+			require.NoError(t, err)
+			require.Equal(t, tt.value, c.Role)
+
+			// Test JSON output
+			jsonBuf := c.ToJSON(nil)
+			require.Equal(t, tt.json, string(jsonBuf))
+
+			// Test JSON input
+			c2 := NewRole(CAP_ROLE).(*Role)
+			err = c2.FromJSON([]byte(tt.json))
+			require.NoError(t, err)
+			require.Equal(t, tt.value, c2.Role)
+		})
+	}
+}
+
+func TestRole_UnknownValue_Wire(t *testing.T) {
+	c := NewRole(CAP_ROLE).(*Role)
+	var cps Caps
+
+	// Unknown role value (e.g., 255)
+	err := c.Unmarshal([]byte{255}, cps)
+	require.NoError(t, err)
+	require.Equal(t, byte(255), c.Role)
+
+	// JSON output for unknown value (plain number)
+	jsonBuf := c.ToJSON(nil)
+	require.Equal(t, `255`, string(jsonBuf))
+}

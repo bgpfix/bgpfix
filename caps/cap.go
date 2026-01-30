@@ -71,6 +71,7 @@ var NewFuncs = map[Code]NewFunc{
 	CAP_EXTENDED_NEXTHOP: NewExtNH,
 	CAP_FQDN:             NewFqdn,
 	CAP_ADDPATH:          NewAddPath,
+	CAP_ROLE:             NewRole,
 }
 
 // NewCap returns a new Cap instance for given code cc

@@ -4,6 +4,9 @@ import (
 	"io"
 	"net/netip"
 	"time"
+
+	"github.com/bgpfix/bgpfix/msg"
+	"github.com/bgpfix/bgpfix/pipe"
 )
 
 // OpenBMP header constants
@@ -123,14 +126,17 @@ func (o *OpenBmp) FromBytes(raw []byte) (int, error) {
 	o.ObjType = raw[13]
 
 	// Validate header length
-	if int(o.HeaderLen) > len(raw) {
-		return 0, ErrLength
+	if len(raw) < int(o.HeaderLen) {
+		return 0, ErrShort
 	}
 
 	// Validate total length (careful with overflow)
 	totalLen := int(o.HeaderLen) + int(o.DataLen)
-	if totalLen < int(o.HeaderLen) || totalLen > len(raw) {
+	if totalLen < int(o.HeaderLen) {
 		return 0, ErrLength
+	}
+	if totalLen > len(raw) {
+		return 0, ErrShort
 	}
 
 	// Parse extended header fields for BMP_RAW messages
@@ -310,4 +316,26 @@ func (o *OpenBmp) WriteTo(w io.Writer) (int64, error) {
 	}
 	n, err := w.Write(o.buf)
 	return int64(n), err
+}
+
+// FromBmp wraps marshaled BMP message for OpenBMP output.
+// bm must already be marshaled. Extracts collector/router from message tags.
+func (o *OpenBmp) FromBmp(bm *Bmp, m *msg.Msg) error {
+	o.ObjType = OPENBMP_OBJ_RAW
+	o.Time = m.Time
+	o.Data = bm.Bytes()
+
+	// Extract collector/router from message tags
+	if tags := pipe.GetTags(m); len(tags) > 0 {
+		o.CollectorName = tags["COLLECTOR"]
+		if router := tags["ROUTER"]; router != "" {
+			if addr, err := netip.ParseAddr(router); err == nil {
+				o.RouterIP = addr
+			} else {
+				o.RouterName = router
+			}
+		}
+	}
+
+	return nil
 }

@@ -130,7 +130,7 @@ func (br *Reader) WriteFunc(src []byte, cb pipe.CallbackFunc) (n int, err error)
 }
 
 // FromBytes parses the first MRT-BGP4MP message in buf, and references it in bgp_msg.
-// Does not buffer or copy buf. Can be used concurrently. mrt_msg may be nil
+// References bytes in buf. Can be used concurrently. mrt_msg may be nil
 func (br *Reader) FromBytes(buf []byte, bgp_msg *msg.Msg, mrt_msg *Mrt) (n int, err error) {
 	// intermediate buffer
 	if mrt_msg == nil {
