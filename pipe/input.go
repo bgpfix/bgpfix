@@ -204,12 +204,13 @@ input:
 	callbacks:
 		for _, cb := range mx.cbs {
 			// skip the callback?
-			if cb.Id != 0 && mx.Input.Id == cb.Id {
-				continue // skip own messages
+			if cb.blackhole.Load() {
+				p.PutMsg(m)
+				continue input // drop the message
 			} else if cb.Enabled != nil && !cb.Enabled.Load() {
 				continue // disabled
-			} else if cb.dropped.Load() {
-				continue // permanently dropped
+			} else if cb.Id != 0 && mx.Input.Id == cb.Id {
+				continue // skip own messages
 			}
 
 			// need to parse first?
