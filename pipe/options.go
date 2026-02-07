@@ -52,8 +52,8 @@ type Callback struct {
 	LimitRate *rate.Limiter    // if non-nil, limits the rate of callback invocations
 	LimitSkip bool             // if true, skips the callback when over the rate limit (else delays)
 
-	Func    CallbackFunc // the function to call
-	dropped atomic.Bool  // if true, the callback is dropped permanently
+	Func      CallbackFunc // the function to call
+	blackhole atomic.Bool  // if true, the callback is dropped permanently
 }
 
 // Handler represents a function to call for matching pipe events.
@@ -120,9 +120,9 @@ func (o *Options) AddCallback(cbf CallbackFunc, tpl ...*Callback) *Callback {
 	return &cb
 }
 
-// Drop marks the callback as dropped permanently.
-func (cb *Callback) Drop() {
-	cb.dropped.Store(true)
+// Blackhole makes all messages reaching the callback to be dropped permanently.
+func (cb *Callback) Blackhole() {
+	cb.blackhole.Store(true)
 }
 
 // String returns callback name and id as string

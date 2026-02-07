@@ -153,8 +153,8 @@ func (in *Input) process() {
 		p           = in.Pipe
 		ctx         = p.Ctx
 		l           = in.Line
-		closed      bool
 		eval        = filter.NewEval(true)
+		closed      bool
 		last_update int64
 		eor_done    bool
 		eor_todo    int
@@ -167,6 +167,17 @@ input:
 		mx := in.prepare(m)
 		eval.SetMsg(m)
 		eval.SetPipe(p.KV, p.Caps, mx.tags)
+
+		// double-check context
+		if ctx.Err() != nil {
+			p.PutMsg(m)
+			return // pipe is stopping
+		} else if mx.Action.HasDrop() {
+			p.PutMsg(m)
+			continue input // next message
+		} else if mx.Action.HasAccept() {
+			mx.cbs = mx.cbs[:0] // skip callbacks, take it as-is
+		}
 
 		// has input filter?
 		if len(in.Filter) > 0 {
@@ -204,12 +215,13 @@ input:
 	callbacks:
 		for _, cb := range mx.cbs {
 			// skip the callback?
-			if cb.Id != 0 && mx.Input.Id == cb.Id {
-				continue // skip own messages
+			if cb.blackhole.Load() {
+				p.PutMsg(m)
+				continue input // drop the message
 			} else if cb.Enabled != nil && !cb.Enabled.Load() {
 				continue // disabled
-			} else if cb.dropped.Load() {
-				continue // permanently dropped
+			} else if cb.Id != 0 && mx.Input.Id == cb.Id {
+				continue // skip own messages
 			}
 
 			// need to parse first?
