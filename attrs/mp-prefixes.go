@@ -89,10 +89,10 @@ func (a *MPPrefixes) Marshal(cps caps.Caps, dir dir.Dir) {
 }
 
 func (a *MPPrefixes) ToJSON(dst []byte) []byte {
-	if a.Code() == ATTR_MP_REACH {
+	if a.Code() == ATTR_MP_REACH && a.NextHop.IsValid() && !a.NextHop.IsUnspecified() {
 		dst = append(dst, `"nexthop":"`...)
 		dst = a.NextHop.AppendTo(dst)
-		if a.LinkLocal.IsValid() {
+		if a.LinkLocal.IsValid() && !a.LinkLocal.IsUnspecified() {
 			dst = append(dst, `","link-local":"`...)
 			dst = a.LinkLocal.AppendTo(dst)
 		}
