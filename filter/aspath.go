@@ -6,6 +6,48 @@ import (
 	"regexp"
 )
 
+func (e *Expr) aspathLenParse() error {
+	if e.Idx != nil {
+		return ErrIndex
+	}
+	if e.Op == OP_TRUE {
+		return nil
+	}
+	if e.Op == OP_LIKE {
+		return ErrOp
+	}
+	v, ok := e.Val.(int)
+	if !ok || v < 0 {
+		return fmt.Errorf("invalid value: %v (expected non-negative integer)", e.Val)
+	}
+	return nil
+}
+
+func (e *Expr) aspathLenEval(ev *Eval) bool {
+	aspath := ev.Msg.Update.AsPath()
+	if aspath == nil {
+		return false
+	}
+	if e.Op == OP_TRUE {
+		return aspath.Len() > 0
+	}
+	length := aspath.Len()
+	ref := e.Val.(int)
+	switch e.Op {
+	case OP_EQ:
+		return length == ref
+	case OP_LT:
+		return length < ref
+	case OP_LE:
+		return length <= ref
+	case OP_GT:
+		return length > ref
+	case OP_GE:
+		return length >= ref
+	}
+	return false
+}
+
 func (e *Expr) aspathParse() error {
 	// verify the operator and value
 	ok := false

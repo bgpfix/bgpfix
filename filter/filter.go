@@ -50,7 +50,11 @@ const (
 	ATTR_UNREACH                // unreachable prefixes
 	ATTR_PREFIX                 // prefix, either reachable or unreachable
 	ATTR_ASPATH                 // AS_PATH attribute
+	ATTR_ASPATH_LEN             // AS_PATH length
 	ATTR_NEXTHOP                // NEXT_HOP attribute
+	ATTR_ORIGIN                 // ORIGIN attribute (IGP/EGP/INCOMPLETE)
+	ATTR_MED                    // MULTI_EXIT_DISC attribute
+	ATTR_LOCALPREF              // LOCAL_PREF attribute
 	ATTR_COMM                   // COMMUNITY attribute
 	ATTR_COMM_EXT               // EXTENDED_COMMUNITY attribute
 	ATTR_COMM_LARGE             // LARGE_COMMUNITY attribute
@@ -171,11 +175,7 @@ func (f *Filter) parse(expstr string, lvl int) (parsed *Expr, left string, err e
 				return nil, str, ErrIndex
 			}
 			index = before
-			if len(after) > 0 {
-				str = after[1:] // skip ']'
-			} else {
-				str = ""
-			}
+			str = after
 		}
 
 		// read operator
@@ -364,6 +364,14 @@ func (e *Expr) parseAttr(attr string) bool {
 		e.Attr = ATTR_TYPE
 		e.Op = OP_EQ
 		e.Val = msg.KEEPALIVE
+	case "notify", "notification":
+		e.Attr = ATTR_TYPE
+		e.Op = OP_EQ
+		e.Val = msg.NOTIFY
+	case "refresh", "route_refresh":
+		e.Attr = ATTR_TYPE
+		e.Op = OP_EQ
+		e.Val = msg.REFRESH
 
 	case "reach":
 		e.Attr = ATTR_REACH
@@ -394,9 +402,18 @@ func (e *Expr) parseAttr(attr string) bool {
 	case "as_peer":
 		e.Attr = ATTR_ASPATH
 		e.Idx = 0
+	case "aspath_len", "as_path_len":
+		e.Attr = ATTR_ASPATH_LEN
 
 	case "nexthop", "nh":
 		e.Attr = ATTR_NEXTHOP
+
+	case "origin":
+		e.Attr = ATTR_ORIGIN
+	case "med", "metric":
+		e.Attr = ATTR_MED
+	case "local_pref", "localpref":
+		e.Attr = ATTR_LOCALPREF
 
 	case "com", "community":
 		e.Attr = ATTR_COMM
@@ -428,6 +445,14 @@ func (e *Expr) parseCheck() error {
 		return e.nexthopParse()
 	case ATTR_ASPATH:
 		return e.aspathParse()
+	case ATTR_ASPATH_LEN:
+		return e.aspathLenParse()
+	case ATTR_ORIGIN:
+		return e.originParse()
+	case ATTR_MED:
+		return e.u32Parse()
+	case ATTR_LOCALPREF:
+		return e.u32Parse()
 	case ATTR_COMM, ATTR_COMM_EXT, ATTR_COMM_LARGE:
 		return e.communityParse()
 	default:
@@ -451,6 +476,14 @@ func (e *Expr) eval(ev *Eval) (res bool) {
 		res = e.nexthopEval(ev)
 	case ATTR_ASPATH:
 		res = e.aspathEval(ev)
+	case ATTR_ASPATH_LEN:
+		res = e.aspathLenEval(ev)
+	case ATTR_ORIGIN:
+		res = e.originEval(ev)
+	case ATTR_MED:
+		res = e.medEval(ev)
+	case ATTR_LOCALPREF:
+		res = e.localprefEval(ev)
 	case ATTR_COMM, ATTR_COMM_EXT, ATTR_COMM_LARGE:
 		res = e.communityEval(ev)
 	default:
