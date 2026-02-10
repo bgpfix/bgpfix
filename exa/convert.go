@@ -182,11 +182,11 @@ func (x *Exa) readMsgAttrs(u *msg.Update) {
 
 	// Next hop - directly check from attributes since we know they're available
 	if nh, ok := u.Attrs.Get(attrs.ATTR_NEXTHOP).(*attrs.IP); ok {
-		if nh.Addr.IsValid() {
+		if nh.Addr.IsValid() && !nh.Addr.IsUnspecified() {
 			x.NextHop = nh.Addr.String()
 		}
 	} else if mp := u.ReachMP().Prefixes(); mp != nil {
-		if mp.NextHop.IsValid() {
+		if mp.NextHop.IsValid() && !mp.NextHop.IsUnspecified() {
 			x.NextHop = mp.NextHop.String()
 		}
 	}

@@ -32,20 +32,29 @@ func NewEval(use_cache bool) *Eval {
 
 // SetMsg sets the Msg to be evaluated, and clears the Pipe context.
 // It must be called before using the Run method.
-func (ev *Eval) SetMsg(m *msg.Msg) {
+func (ev *Eval) SetMsg(m *msg.Msg) *Eval {
 	ev.Msg = m
 	ev.ClearCache()
 	ev.PipeKV = nil
 	ev.PipeCaps.Reset()
 	ev.PipeTags = nil
+	return ev
 }
 
 // SetPipe sets the optional, read-only Pipe context, in a way that
 // avoids a cyclic import vs. the pipe package.
-func (ev *Eval) SetPipe(kv *xsync.Map[string, any], caps caps.Caps, tags map[string]string) {
+func (ev *Eval) SetPipe(kv *xsync.Map[string, any], caps caps.Caps, tags map[string]string) *Eval {
 	ev.PipeKV = kv
 	ev.PipeCaps = caps
 	ev.PipeTags = tags
+	return ev
+}
+
+// Set sets the Msg and Pipe context together, for convenience.
+func (ev *Eval) Set(m *msg.Msg, kv *xsync.Map[string, any], caps caps.Caps, tags map[string]string) *Eval {
+	ev.SetMsg(m)
+	ev.SetPipe(kv, caps, tags)
+	return ev
 }
 
 // Clear resets the cache to match the current Msg version.

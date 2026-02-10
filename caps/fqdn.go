@@ -61,15 +61,13 @@ func (c *Fqdn) Marshal(dst []byte) []byte {
 func (c *Fqdn) ToJSON(dst []byte) []byte {
 	dst = append(dst, `{"host":"`...)
 	dst = json.Ascii(dst, c.Host)
-	dst = append(dst, `"`...)
 
 	if len(c.Domain) > 0 {
 		dst = append(dst, `","domain":"`...)
 		dst = json.Ascii(dst, c.Domain)
-		dst = append(dst, `"`...)
 	}
 
-	return append(dst, '}')
+	return append(dst, `"}`...)
 }
 
 func (c *Fqdn) FromJSON(src []byte) (err error) {
