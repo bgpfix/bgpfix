@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/filter"
@@ -17,14 +18,16 @@ import (
 
 // Default BGP pipe options
 var DefaultOptions = Options{
-	Logger: &log.Logger,
-	Caps:   true,
+	Logger:      &log.Logger,
+	Caps:        true,
+	StopTimeout: time.Second,
 }
 
 // BGP pipe options
 type Options struct {
-	Logger  *zerolog.Logger // if nil logging is disabled
-	MsgPool *sync.Pool      // optional pool for msg.Msg
+	Logger      *zerolog.Logger // if nil logging is disabled
+	MsgPool     *sync.Pool      // optional pool for msg.Msg
+	StopTimeout time.Duration   // timeout for Stop() before cancelling context (default 1s)
 
 	Caps bool // overwrite pipe.Caps with the capabilities negotiated in OPEN messages?
 
@@ -258,9 +261,19 @@ func (o *Options) OnParseError(hdf HandlerFunc) *Handler {
 func (o *Options) AddInput(dst dir.Dir, tpl ...*Input) *Input {
 	var in Input
 
-	// copy the tpl?
+	// copy exported fields from tpl (avoids copying sync primitives)
 	if len(tpl) > 0 {
-		in = *tpl[0]
+		t := tpl[0]
+		in.Id = t.Id
+		in.Name = t.Name
+		in.Dir = t.Dir
+		in.In = t.In
+		in.Reverse = t.Reverse
+		in.CbFilter = t.CbFilter
+		in.CbFilterValue = t.CbFilterValue
+		in.Filter = append(in.Filter, t.Filter...)
+		in.LimitRate = t.LimitRate
+		in.LimitSkip = t.LimitSkip
 	}
 
 	// override the name?

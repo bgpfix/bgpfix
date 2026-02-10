@@ -165,8 +165,7 @@ input:
 	for m := range in.In {
 		// prepare tools
 		mx := in.prepare(m)
-		eval.SetMsg(m)
-		eval.SetPipe(p.KV, p.Caps, mx.tags)
+		eval.Set(m, p.KV, p.Caps, mx.tags)
 
 		// double-check context
 		if ctx.Err() != nil {

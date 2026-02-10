@@ -98,7 +98,6 @@ func (p *Pipe) attach() error {
 		l := zerolog.Nop()
 		p.Logger = &l
 	}
-	p.Logger = opts.Logger
 
 	if opts.MsgPool != nil {
 		p.msgpool = opts.MsgPool
@@ -226,11 +225,18 @@ func (p *Pipe) Stop() {
 	p.L.Close()
 	p.R.Close()
 
-	// yank the cable out of blocked calls (give it 1 sec)
-	go func() {
-		<-time.After(time.Second)
+	// yank the cable out of blocked calls
+	if t := p.Options.StopTimeout; t >= 0 {
+		if t == 0 {
+			t = time.Second
+		}
+		go func() {
+			<-time.After(t)
+			p.Cancel(ErrStopped)
+		}()
+	} else {
 		p.Cancel(ErrStopped)
-	}()
+	}
 
 	// wait for input handlers
 	p.L.Wait()
