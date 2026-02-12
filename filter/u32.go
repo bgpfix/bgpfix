@@ -19,7 +19,7 @@ func (e *Expr) u32Parse() error {
 	if !ok {
 		return fmt.Errorf("invalid value: %v (expected integer)", e.Val)
 	}
-	if v < 0 || v > 0xFFFFFFFF {
+	if v < 0 || int64(v) > 0xFFFFFFFF {
 		return fmt.Errorf("value out of range: %d", v)
 	}
 	e.Val = uint32(v)

@@ -271,7 +271,7 @@ func (mrt *Mrt) WriteTo(w io.Writer) (n int64, err error) {
 
 	// data length ok?
 	l := mrt.Len()
-	if l < HEADLEN || l > MAXLEN {
+	if l < HEADLEN || int64(l) > MAXLEN {
 		return n, ErrLength
 	}
 
