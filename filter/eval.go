@@ -2,6 +2,7 @@ package filter
 
 import (
 	"github.com/bgpfix/bgpfix/caps"
+	bj "github.com/bgpfix/bgpfix/json"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/puzpuzpuz/xsync/v4"
 )
@@ -18,6 +19,12 @@ type Eval struct {
 
 	cached int             // msg.Version for which the cache is valid
 	cache  map[string]bool // cached results of evaluated expressions
+
+	// lazy caches for json/time filters
+	upperVer int    // msg.Version for which upperJSON is valid
+	upperJSON []byte // cached upper layer JSON (element [4] of msg JSON)
+	timeVer  int    // msg.Version for which timeFmt is valid
+	timeFmt  string // cached formatted timestamp
 }
 
 // NewEval creates a new Eval instance.
@@ -57,10 +64,91 @@ func (ev *Eval) Set(m *msg.Msg, kv *xsync.Map[string, any], caps caps.Caps, tags
 	return ev
 }
 
-// Clear resets the cache to match the current Msg version.
+// ClearCache resets the cache to match the current Msg version.
 func (ev *Eval) ClearCache() {
 	clear(ev.cache)
 	ev.cached = ev.Msg.Version
+	ev.upperVer = -1
+	ev.timeVer = -1
+}
+
+// getUpper returns the upper layer JSON (element [4] of the message JSON array).
+// Returns nil for messages with null upper layer (eg. KEEPALIVE).
+func (ev *Eval) getUpper() []byte {
+	if ev.upperVer != ev.Msg.Version {
+		ev.upperVer = ev.Msg.Version
+		ev.upperJSON = bj.Get(ev.Msg.GetJSON(), "[4]")
+	}
+	return ev.upperJSON
+}
+
+// getTime returns the formatted timestamp string for the current message.
+func (ev *Eval) getTime() string {
+	if ev.timeVer != ev.Msg.Version {
+		ev.timeVer = ev.Msg.Version
+		ev.timeFmt = ev.Msg.Time.Format(msg.JSON_TIME)
+	}
+	return ev.timeFmt
+}
+
+// attrExists checks whether the attribute referenced by e exists in the message.
+// Used by OpNot (!=, !~) to distinguish "doesn't exist" from "exists but doesn't match".
+func (ev *Eval) attrExists(e *Expr) bool {
+	m := ev.Msg
+	switch e.Attr {
+	case ATTR_EXPR:
+		return true
+	case ATTR_TAG:
+		if e.Idx != nil {
+			return ev.PipeTags[e.Idx.(string)] != ""
+		}
+		return len(ev.PipeTags) > 0
+	case ATTR_TYPE:
+		return true
+	case ATTR_AF:
+		return true
+	case ATTR_REACH:
+		return len(m.Update.AllReach()) > 0
+	case ATTR_UNREACH:
+		return len(m.Update.AllUnreach()) > 0
+	case ATTR_PREFIX:
+		return len(m.Update.AllReach()) > 0 || len(m.Update.AllUnreach()) > 0
+	case ATTR_ASPATH, ATTR_ASPATH_LEN, ATTR_ASPATH_HOPS:
+		return m.Update.AsPath() != nil
+	case ATTR_NEXTHOP:
+		return m.Update.NextHop().IsValid()
+	case ATTR_ORIGIN:
+		_, ok := m.Update.Origin()
+		return ok
+	case ATTR_MED:
+		_, ok := m.Update.Med()
+		return ok
+	case ATTR_LOCALPREF:
+		_, ok := m.Update.LocalPref()
+		return ok
+	case ATTR_COMM:
+		return m.Update.Community().Len() > 0
+	case ATTR_COMM_EXT:
+		return m.Update.ExtCommunity().Len() > 0
+	case ATTR_COMM_LARGE:
+		return m.Update.LargeCommunity().Len() > 0
+	case ATTR_OTC:
+		_, ok := m.Update.Otc()
+		return ok
+	case ATTR_DIR:
+		return m.Dir != 0
+	case ATTR_SEQ:
+		return m.Seq != 0
+	case ATTR_TIME:
+		return !m.Time.IsZero()
+	case ATTR_JSON, ATTR_JSONATTR:
+		upper := ev.getUpper()
+		if upper == nil {
+			return false
+		}
+		return bj.Get(upper, e.Idx.([]string)...) != nil
+	}
+	return false
 }
 
 // Run evaluates given Filter f against the current message.

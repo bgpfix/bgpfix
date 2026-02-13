@@ -42,6 +42,14 @@ func (e *Expr) localprefEval(ev *Eval) bool {
 	return e.u32Eval(lp)
 }
 
+func (e *Expr) otcEval(ev *Eval) bool {
+	otc, ok := ev.Msg.Update.Otc()
+	if !ok {
+		return false
+	}
+	return e.u32Eval(otc)
+}
+
 func (e *Expr) u32Eval(val uint32) bool {
 	if e.Op == OP_TRUE {
 		return true

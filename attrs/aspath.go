@@ -60,6 +60,29 @@ func (a *Aspath) Len() int {
 	return l
 }
 
+// UniqueLen returns the number of unique consecutive ASNs in the AS_PATH,
+// ignoring prepending (consecutive duplicate ASNs count as 1).
+// AS_SETs with more than 1 member always count as 1 hop.
+func (a *Aspath) UniqueLen() (l int) {
+	var prev uint32
+	first := true
+	for _, seg := range a.Segments {
+		if seg.IsSet && len(seg.List) > 1 {
+			l++
+			first = true // reset dedup after a set
+		} else {
+			for _, asn := range seg.List {
+				if first || asn != prev {
+					l++
+					prev = asn
+					first = false
+				}
+			}
+		}
+	}
+	return l
+}
+
 // Hops returns an iterator over the AS_PATH hops.
 // Each hop is either a single ASN (len=1) or a list of AS_SET members (len>1).
 func (a *Aspath) Hops() iter.Seq2[int, []uint32] {

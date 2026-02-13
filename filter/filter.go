@@ -26,9 +26,10 @@ type Expr struct {
 	String string  // raw expression string
 	Types  bool    // allow message types other than UPDATE?
 
-	Not  bool  // negate the final result of this expression?
-	And  bool  // apply logical AND with the next expression? (if false, apply OR)
-	Next *Expr // next expression (nil means last)
+	Not   bool // negate the final result of this expression?
+	OpNot bool // operator-level negation (!=, !~): negate match only if attribute exists
+	And   bool // apply logical AND with the next expression? (if false, apply OR)
+	Next  *Expr // next expression (nil means last)
 
 	Attr Attr // attribute
 	Idx  any  // index inside the attribute (eg. int(0) if aspath[0])
@@ -58,6 +59,13 @@ const (
 	ATTR_COMM                   // COMMUNITY attribute
 	ATTR_COMM_EXT               // EXTENDED_COMMUNITY attribute
 	ATTR_COMM_LARGE             // LARGE_COMMUNITY attribute
+	ATTR_ASPATH_HOPS            // AS_PATH unique hop count (ignoring prepending)
+	ATTR_OTC                    // OTC attribute (Only To Customer, RFC 9234)
+	ATTR_DIR                    // message direction (L/R)
+	ATTR_SEQ                    // message sequence number
+	ATTR_TIME                   // message timestamp
+	ATTR_JSON                   // generic JSON path extractor
+	ATTR_JSONATTR               // attribute-specific JSON extractor
 )
 
 const (
@@ -69,6 +77,23 @@ const (
 	OP_GE             // >=
 	OP_LIKE           // ~ (match)
 )
+
+// cmpOp evaluates a three-way comparison result against an operator.
+func cmpOp(cmp int, op Op) bool {
+	switch op {
+	case OP_EQ:
+		return cmp == 0
+	case OP_LT:
+		return cmp < 0
+	case OP_LE:
+		return cmp <= 0
+	case OP_GT:
+		return cmp > 0
+	case OP_GE:
+		return cmp >= 0
+	}
+	return false
+}
 
 func NewFilter(filter string) (*Filter, error) {
 	f := &Filter{
@@ -297,7 +322,7 @@ func (e *Expr) parseOp(op string) bool {
 		e.Op = OP_EQ
 	case "!=", "=!":
 		e.Op = OP_EQ
-		e.Not = !e.Not
+		e.OpNot = true
 	case "<":
 		e.Op = OP_LT
 	case "<=":
@@ -310,7 +335,7 @@ func (e *Expr) parseOp(op string) bool {
 		e.Op = OP_LIKE
 	case "!~", "~!":
 		e.Op = OP_LIKE
-		e.Not = !e.Not
+		e.OpNot = true
 	default:
 		return false // invalid operator
 	}
@@ -404,6 +429,8 @@ func (e *Expr) parseAttr(attr string) bool {
 		e.Idx = 0
 	case "aspath_len", "as_path_len":
 		e.Attr = ATTR_ASPATH_LEN
+	case "aspath_hops", "as_path_hops":
+		e.Attr = ATTR_ASPATH_HOPS
 
 	case "nexthop", "nh":
 		e.Attr = ATTR_NEXTHOP
@@ -421,6 +448,20 @@ func (e *Expr) parseAttr(attr string) bool {
 		e.Attr = ATTR_COMM_EXT
 	case "com_large", "large_community", "large_com":
 		e.Attr = ATTR_COMM_LARGE
+
+	case "otc", "only_to_customer":
+		e.Attr = ATTR_OTC
+
+	case "dir", "direction":
+		e.Attr = ATTR_DIR
+	case "seq", "sequence":
+		e.Attr = ATTR_SEQ
+	case "time", "timestamp":
+		e.Attr = ATTR_TIME
+	case "json":
+		e.Attr = ATTR_JSON
+	case "attr":
+		e.Attr = ATTR_JSONATTR
 
 	default:
 		return false
@@ -447,6 +488,8 @@ func (e *Expr) parseCheck() error {
 		return e.aspathParse()
 	case ATTR_ASPATH_LEN:
 		return e.aspathLenParse()
+	case ATTR_ASPATH_HOPS:
+		return e.aspathLenParse() // same validation as aspath_len
 	case ATTR_ORIGIN:
 		return e.originParse()
 	case ATTR_MED:
@@ -455,44 +498,78 @@ func (e *Expr) parseCheck() error {
 		return e.u32Parse()
 	case ATTR_COMM, ATTR_COMM_EXT, ATTR_COMM_LARGE:
 		return e.communityParse()
+	case ATTR_OTC:
+		return e.u32Parse()
+	case ATTR_DIR:
+		return e.dirParse()
+	case ATTR_SEQ:
+		return e.seqParse()
+	case ATTR_TIME:
+		return e.timeParse()
+	case ATTR_JSON, ATTR_JSONATTR:
+		return e.jsonParse()
 	default:
 		return fmt.Errorf("unsupported attribute")
 	}
 }
 
 func (e *Expr) eval(ev *Eval) (res bool) {
-	switch e.Attr {
-	case ATTR_EXPR: // sub-expression
-		res = ev.exprEval(e.Val.(*Expr))
-	case ATTR_TAG:
-		res = e.tagEval(ev)
-	case ATTR_TYPE:
-		res = e.typeEval(ev)
-	case ATTR_AF:
-		res = e.afEval(ev)
-	case ATTR_REACH, ATTR_UNREACH, ATTR_PREFIX:
-		res = e.prefixEval(ev)
-	case ATTR_NEXTHOP:
-		res = e.nexthopEval(ev)
-	case ATTR_ASPATH:
-		res = e.aspathEval(ev)
-	case ATTR_ASPATH_LEN:
-		res = e.aspathLenEval(ev)
-	case ATTR_ORIGIN:
-		res = e.originEval(ev)
-	case ATTR_MED:
-		res = e.medEval(ev)
-	case ATTR_LOCALPREF:
-		res = e.localprefEval(ev)
-	case ATTR_COMM, ATTR_COMM_EXT, ATTR_COMM_LARGE:
-		res = e.communityEval(ev)
-	default:
-		panic("not implemented")
+	res = e.evalAttr(ev)
+
+	// operator negation (!=, !~): negate match only if attribute exists
+	if e.OpNot {
+		if res {
+			res = false // matched → negated to false
+		} else {
+			res = ev.attrExists(e) // didn't match → true only if attr exists
+		}
 	}
 
 	if e.Not {
 		return !res
-	} else {
-		return res
+	}
+	return res
+}
+
+func (e *Expr) evalAttr(ev *Eval) bool {
+	switch e.Attr {
+	case ATTR_EXPR: // sub-expression
+		return ev.exprEval(e.Val.(*Expr))
+	case ATTR_TAG:
+		return e.tagEval(ev)
+	case ATTR_TYPE:
+		return e.typeEval(ev)
+	case ATTR_AF:
+		return e.afEval(ev)
+	case ATTR_REACH, ATTR_UNREACH, ATTR_PREFIX:
+		return e.prefixEval(ev)
+	case ATTR_NEXTHOP:
+		return e.nexthopEval(ev)
+	case ATTR_ASPATH:
+		return e.aspathEval(ev)
+	case ATTR_ASPATH_LEN:
+		return e.aspathLenEval(ev)
+	case ATTR_ASPATH_HOPS:
+		return e.aspathHopsEval(ev)
+	case ATTR_ORIGIN:
+		return e.originEval(ev)
+	case ATTR_MED:
+		return e.medEval(ev)
+	case ATTR_LOCALPREF:
+		return e.localprefEval(ev)
+	case ATTR_COMM, ATTR_COMM_EXT, ATTR_COMM_LARGE:
+		return e.communityEval(ev)
+	case ATTR_OTC:
+		return e.otcEval(ev)
+	case ATTR_DIR:
+		return e.dirEval(ev)
+	case ATTR_SEQ:
+		return e.seqEval(ev)
+	case ATTR_TIME:
+		return e.timeEval(ev)
+	case ATTR_JSON, ATTR_JSONATTR:
+		return e.jsonEval(ev)
+	default:
+		panic("not implemented")
 	}
 }

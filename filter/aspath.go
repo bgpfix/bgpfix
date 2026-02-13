@@ -48,6 +48,31 @@ func (e *Expr) aspathLenEval(ev *Eval) bool {
 	return false
 }
 
+func (e *Expr) aspathHopsEval(ev *Eval) bool {
+	aspath := ev.Msg.Update.AsPath()
+	if aspath == nil {
+		return false
+	}
+	if e.Op == OP_TRUE {
+		return aspath.UniqueLen() > 0
+	}
+	length := aspath.UniqueLen()
+	ref := e.Val.(int)
+	switch e.Op {
+	case OP_EQ:
+		return length == ref
+	case OP_LT:
+		return length < ref
+	case OP_LE:
+		return length <= ref
+	case OP_GT:
+		return length > ref
+	case OP_GE:
+		return length >= ref
+	}
+	return false
+}
+
 func (e *Expr) aspathParse() error {
 	// verify the operator and value
 	ok := false
@@ -97,9 +122,11 @@ func (e *Expr) aspathParse() error {
 		return fmt.Errorf("invalid value: %v", e.Val)
 	}
 
-	// check if index is allowed and is an integer
+	// check if index is allowed and is an integer (or "*" which means any)
 	if e.Idx != nil {
-		if !can_index {
+		if e.Idx == "*" {
+			e.Idx = nil // [*] = any hop, same as no index
+		} else if !can_index {
 			return fmt.Errorf("index not allowed: %v", e.Idx)
 		} else if _, ok := e.Idx.(int); !ok {
 			return fmt.Errorf("invalid index: %v", e.Idx)
@@ -171,7 +198,7 @@ func (e *Expr) aspathEval(ev *Eval) bool {
 			return check_hop(ref, aspath.Hop(index))
 		}
 
-		// any index match is ok
+		// any hop match is ok
 		for _, hop := range aspath.Hops() {
 			if check_hop(ref, hop) {
 				return true
