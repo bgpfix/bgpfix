@@ -20,9 +20,10 @@ import (
 type Msg struct {
 	// internal
 
-	ref  bool   // true iff Data references memory we don't own
-	buf  []byte // internal buffer
-	json []byte // JSON representation (own memory), can be nil
+	ref    bool   // true iff Data references memory we don't own
+	buf    []byte // internal buffer
+	json   []byte // JSON representation (own memory), can be nil
+	jupper []byte // upper layer JSON (subslice of json), can be nil
 
 	// optional metadata
 
@@ -126,6 +127,7 @@ func (msg *Msg) Reset() *Msg {
 	} else {
 		msg.json = nil
 	}
+	msg.jupper = nil
 
 	return msg
 }
@@ -431,6 +433,7 @@ func (msg *Msg) GetJSON() []byte {
 	dst = append(dst, `",`...)
 
 	// [4] upper layer (optional)
+	up_from := len(dst)
 	switch msg.Upper {
 	case OPEN:
 		dst = msg.Open.ToJSON(dst)
@@ -445,6 +448,7 @@ func (msg *Msg) GetJSON() []byte {
 	default:
 		dst = json.Hex(dst, msg.Data)
 	}
+	up_till := len(dst)
 
 	// [5] value
 	dst = append(dst, ',')
@@ -456,7 +460,17 @@ func (msg *Msg) GetJSON() []byte {
 
 	// done!
 	msg.json = append(dst, "]\n"...)
+	msg.jupper = msg.json[up_from:up_till] // cache upper layer JSON for quick access
 	return msg.json
+}
+
+// UpperJSON returns the upper layer as JSON (element [4] of the message JSON array).
+func (msg *Msg) UpperJSON() []byte {
+	if len(msg.json) == 0 {
+		msg.jupper = nil // invalidate cached upper layer JSON
+		msg.GetJSON()    // regenerate both json and jupper
+	}
+	return msg.jupper
 }
 
 // ToJSON appends JSON representation of msg + "\n" to dst (may be nil to allocate)

@@ -12,13 +12,13 @@ func (e *Expr) dirParse() error {
 	}
 
 	switch e.Op {
-	case OP_TRUE:
+	case OP_PRESENT:
 		// ok
 	case OP_EQ:
 		s := fmt.Sprintf("%v", e.Val)
 		d, err := dir.DirString(s)
 		if err != nil {
-			return fmt.Errorf("invalid direction: %s (expected L or R)", s)
+			return fmt.Errorf("invalid direction: %s (expected L, R, or LR)", s)
 		}
 		e.Val = d
 	default:
@@ -29,9 +29,12 @@ func (e *Expr) dirParse() error {
 	return nil
 }
 
-func (e *Expr) dirEval(ev *Eval) bool {
-	if e.Op == OP_TRUE {
-		return ev.Msg.Dir != 0
+func (e *Expr) dirEval(ev *Eval) Res {
+	if ev.Msg.Dir == 0 {
+		return RES_ABSENT
 	}
-	return ev.Msg.Dir == e.Val.(dir.Dir)
+	if e.Op == OP_PRESENT {
+		return RES_TRUE
+	}
+	return resBool(ev.Msg.Dir == e.Val.(dir.Dir))
 }

@@ -13,7 +13,7 @@ func (e *Expr) nexthopParse() error {
 	}
 
 	// OP_TRUE is simple
-	if e.Op == OP_TRUE {
+	if e.Op == OP_PRESENT {
 		return nil
 	}
 
@@ -38,36 +38,32 @@ func (e *Expr) nexthopParse() error {
 	return nil
 }
 
-func (e *Expr) nexthopEval(ev *Eval) bool {
-	upd := &ev.Msg.Update
-
-	// get message nexthop
-	nh := upd.NextHop()
+func (e *Expr) nexthopEval(ev *Eval) Res {
+	nh := ev.Msg.Update.NextHop()
 	if !nh.IsValid() {
-		return false // no nexthop, or invalid value
-	} else if e.Op == OP_TRUE {
-		return true // any nexthop is OK
+		return RES_ABSENT
 	}
-
-	// check
+	if e.Op == OP_PRESENT {
+		return RES_TRUE
+	}
 	ref := e.Val.(nlri.Prefix)
 	ra := ref.Addr()
 	if ra.Is4() != nh.Is4() {
-		return false // different address families never match
+		return RES_FALSE // different address families never match
 	}
 	switch e.Op {
 	case OP_EQ:
-		return ra == nh
+		return resBool(ra == nh)
 	case OP_LT:
-		return nh.Less(ra)
+		return resBool(nh.Less(ra))
 	case OP_LE:
-		return nh == ra || nh.Less(ra)
+		return resBool(nh == ra || nh.Less(ra))
 	case OP_GT:
-		return ra.Less(nh)
+		return resBool(ra.Less(nh))
 	case OP_GE:
-		return nh == ra || ra.Less(nh)
+		return resBool(nh == ra || ra.Less(nh))
 	case OP_LIKE:
-		return ref.Bits() == 0 || ref.Contains(nh)
+		return resBool(ref.Bits() == 0 || ref.Contains(nh))
 	}
 
 	panic("unreachable") // should never happen

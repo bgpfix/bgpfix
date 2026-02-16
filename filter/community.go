@@ -16,7 +16,7 @@ func (e *Expr) communityParse() error {
 
 	// check operator
 	switch e.Op {
-	case OP_TRUE:
+	case OP_PRESENT:
 		e.Val = nil
 	case OP_EQ:
 		// make e.Val a JSON array
@@ -62,29 +62,29 @@ func (e *Expr) communityParse() error {
 	return nil
 }
 
-func (e *Expr) communityEval(ev *Eval) bool {
+func (e *Expr) communityEval(ev *Eval) Res {
 	upd := &ev.Msg.Update
 
-	// handle OP_TRUE / OP_EQ, prepare for OP_LIKE otherwise
 	var json []byte
 	switch e.Attr {
 	case ATTR_COMM:
 		com := upd.Community()
 		if com.Len() == 0 {
-			return false
+			return RES_ABSENT
+		}
+		if e.Op == OP_PRESENT {
+			return RES_TRUE
 		}
 		switch e.Op {
-		case OP_TRUE:
-			return true
 		case OP_EQ:
 			ref := e.Val.(attrs.Community)
 			asn, val := ref.ASN[0], ref.Value[0]
 			for i := range com.ASN {
 				if com.ASN[i] == asn && com.Value[i] == val {
-					return true // found a match
+					return RES_TRUE
 				}
 			}
-			return false // no match
+			return RES_FALSE
 		default:
 			json = com.ToJSON(json)
 		}
@@ -92,20 +92,21 @@ func (e *Expr) communityEval(ev *Eval) bool {
 	case ATTR_COMM_EXT:
 		com := upd.ExtCommunity()
 		if com.Len() == 0 {
-			return false
+			return RES_ABSENT
+		}
+		if e.Op == OP_PRESENT {
+			return RES_TRUE
 		}
 		switch e.Op {
-		case OP_TRUE:
-			return true
 		case OP_EQ:
 			ref := e.Val.(attrs.Extcom)
 			typ, val := ref.Type[0], ref.Value[0].Marshal()
 			for i := range com.Type {
 				if com.Type[i] == typ && com.Value[i].Marshal() == val {
-					return true // found a match
+					return RES_TRUE
 				}
 			}
-			return false // no match
+			return RES_FALSE
 		default:
 			json = com.ToJSON(json)
 		}
@@ -113,20 +114,21 @@ func (e *Expr) communityEval(ev *Eval) bool {
 	case ATTR_COMM_LARGE:
 		com := upd.LargeCommunity()
 		if com.Len() == 0 {
-			return false
+			return RES_ABSENT
+		}
+		if e.Op == OP_PRESENT {
+			return RES_TRUE
 		}
 		switch e.Op {
-		case OP_TRUE:
-			return true
 		case OP_EQ:
 			ref := e.Val.(attrs.LargeCom)
 			asn, val1, val2 := ref.ASN[0], ref.Value1[0], ref.Value2[0]
 			for i := range com.ASN {
 				if com.ASN[i] == asn && com.Value1[i] == val1 && com.Value2[i] == val2 {
-					return true // found a match
+					return RES_TRUE
 				}
 			}
-			return false // no match
+			return RES_FALSE
 		default:
 			json = com.ToJSON(json)
 		}
@@ -134,11 +136,11 @@ func (e *Expr) communityEval(ev *Eval) bool {
 
 	// if we are here, it's an OP_LIKE against JSON of the community values
 	if len(json) <= 2 {
-		return false // empty json
+		return RES_FALSE // empty json
 	} else {
 		json = json[1 : len(json)-1] // remove brackets
 	}
 
 	// run the regex check
-	return e.Val.(*regexp.Regexp).Match(json)
+	return resBool(e.Val.(*regexp.Regexp).Match(json))
 }

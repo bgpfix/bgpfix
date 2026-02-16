@@ -36,6 +36,6 @@ func (e *Expr) typeParse() error {
 	return nil
 }
 
-func (e *Expr) typeEval(ev *Eval) bool {
-	return ev.Msg.Type == e.Val.(msg.Type)
+func (e *Expr) typeEval(ev *Eval) Res {
+	return resBool(ev.Msg.Type == e.Val.(msg.Type))
 }

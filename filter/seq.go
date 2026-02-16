@@ -12,10 +12,12 @@ func (e *Expr) seqParse() error {
 
 	e.Types = true
 
-	if e.Op == OP_TRUE {
-		return nil
-	}
-	if e.Op == OP_LIKE {
+	switch e.Op {
+	case OP_PRESENT:
+		return nil // ok
+	case OP_EQ, OP_LT, OP_LE, OP_GT, OP_GE:
+		break // value must be an integer
+	default:
 		return ErrOp
 	}
 
@@ -24,12 +26,16 @@ func (e *Expr) seqParse() error {
 		return fmt.Errorf("invalid value: %v (expected integer)", e.Val)
 	}
 	e.Val = int64(v)
+
 	return nil
 }
 
-func (e *Expr) seqEval(ev *Eval) bool {
-	if e.Op == OP_TRUE {
-		return ev.Msg.Seq != 0
+func (e *Expr) seqEval(ev *Eval) Res {
+	if ev.Msg.Seq == 0 {
+		return RES_ABSENT
+	} else if e.Op == OP_PRESENT {
+		return RES_TRUE
 	}
-	return cmpOp(cmp.Compare(ev.Msg.Seq, e.Val.(int64)), e.Op)
+
+	return resCmp(e.Op, cmp.Compare(ev.Msg.Seq, e.Val.(int64)))
 }

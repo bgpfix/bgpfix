@@ -12,8 +12,8 @@ func (e *Expr) prefixParse() error {
 		return ErrIndex
 	}
 
-	// only reach/unreach support OP_TRUE
-	if e.Op == OP_TRUE {
+	// only reach/unreach support OP_PRESENT
+	if e.Op == OP_PRESENT {
 		if e.Attr == ATTR_PREFIX {
 			return ErrOp
 		}
@@ -36,29 +36,33 @@ func (e *Expr) prefixParse() error {
 	return nil
 }
 
-func (e *Expr) prefixEval(ev *Eval) bool {
+func (e *Expr) prefixEval(ev *Eval) Res {
 	upd := &ev.Msg.Update
 
-	// collect prefixes
-	var prefixes []nlri.Prefix
+	// collect todo
+	var todo [2][]nlri.Prefix
 	switch e.Attr {
 	case ATTR_REACH:
-		prefixes = upd.AllReach()
+		todo[0] = upd.AllReach()
 	case ATTR_UNREACH:
-		prefixes = upd.AllUnreach()
+		todo[0] = upd.AllUnreach()
 	case ATTR_PREFIX:
-		prefixes = upd.AllReach() // start with reachable prefixes
+		todo[0] = upd.AllReach()
+		todo[1] = upd.AllUnreach()
 	}
 
-	// simple check? (only for reach/unreach)
-	if e.Op == OP_TRUE {
-		return len(prefixes) > 0
+	// no prefixes at all?
+	if len(todo[0])+len(todo[1]) == 0 {
+		return RES_ABSENT
+	}
+	if e.Op == OP_PRESENT {
+		return resBool(len(todo[0]) > 0) // only for reach/unreach
 	}
 
 	// check checks specific prefix value
 	ref := e.Val.(nlri.Prefix)
 	ra, rb := ref.Addr().Unmap(), ref.Bits()
-	check := func(pfx *nlri.Prefix) bool {
+	check := func(pfx nlri.Prefix) bool {
 		pa, pb := pfx.Addr().Unmap(), pfx.Bits()
 		if ra.Is4() != pa.Is4() {
 			return false // different address families never match
@@ -84,28 +88,21 @@ func (e *Expr) prefixEval(ev *Eval) bool {
 	// iterate over prefixes, compare vs. ref
 	all := e.Idx == "*" // must match all prefixes?
 	any_ok := false     // any OK so far?
-	for i := range 2 {
-		for p := range prefixes {
-			res := check(&prefixes[p])
+	for _, prefixes := range todo {
+		for _, pfx := range prefixes {
+			res := check(pfx)
 			any_ok = any_ok || res
 			if all {
 				if !res {
-					return false // all prefixes must match
+					return RES_FALSE // all prefixes must match
 				}
 			} else {
 				if res {
-					return true // any match is enough
+					return RES_TRUE // any match is enough
 				}
 			}
 		}
-
-		// keep searching in unreachable prefixes?
-		if i == 0 && e.Attr == ATTR_PREFIX {
-			prefixes = upd.AllUnreach()
-		} else {
-			break
-		}
 	}
 
-	return any_ok
+	return resBool(any_ok)
 }

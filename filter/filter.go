@@ -26,10 +26,9 @@ type Expr struct {
 	String string  // raw expression string
 	Types  bool    // allow message types other than UPDATE?
 
-	Not   bool // negate the final result of this expression?
-	OpNot bool // operator-level negation (!=, !~): negate match only if attribute exists
-	And   bool // apply logical AND with the next expression? (if false, apply OR)
-	Next  *Expr // next expression (nil means last)
+	Not  bool  // negate the final result of this expression?
+	And  bool  // apply logical AND with the next expression? (if false, apply OR)
+	Next *Expr // next expression (nil means last)
 
 	Attr Attr // attribute
 	Idx  any  // index inside the attribute (eg. int(0) if aspath[0])
@@ -40,59 +39,80 @@ type Expr struct {
 type (
 	Attr = int
 	Op   = int
+	Res  = int8
 )
 
 const (
-	ATTR_EXPR       Attr = iota // sub-expression in value (nested)
-	ATTR_TAG                    // message tag (from pipe context)
-	ATTR_TYPE                   // BGP message type
-	ATTR_AF                     // address family / subsequent address family
-	ATTR_REACH                  // reachable prefixes
-	ATTR_UNREACH                // unreachable prefixes
-	ATTR_PREFIX                 // prefix, either reachable or unreachable
-	ATTR_ASPATH                 // AS_PATH attribute
-	ATTR_ASPATH_LEN             // AS_PATH length
-	ATTR_NEXTHOP                // NEXT_HOP attribute
-	ATTR_ORIGIN                 // ORIGIN attribute (IGP/EGP/INCOMPLETE)
-	ATTR_MED                    // MULTI_EXIT_DISC attribute
-	ATTR_LOCALPREF              // LOCAL_PREF attribute
-	ATTR_COMM                   // COMMUNITY attribute
-	ATTR_COMM_EXT               // EXTENDED_COMMUNITY attribute
-	ATTR_COMM_LARGE             // LARGE_COMMUNITY attribute
-	ATTR_ASPATH_HOPS            // AS_PATH unique hop count (ignoring prepending)
-	ATTR_OTC                    // OTC attribute (Only To Customer, RFC 9234)
-	ATTR_DIR                    // message direction (L/R)
-	ATTR_SEQ                    // message sequence number
-	ATTR_TIME                   // message timestamp
-	ATTR_JSON                   // generic JSON path extractor
-	ATTR_JSONATTR               // attribute-specific JSON extractor
+	RES_FALSE  Res = -1 // evaluated to false
+	RES_ABSENT Res = 0  // referenced attribute not found
+	RES_TRUE   Res = 1  // evaluated to true
 )
 
 const (
-	OP_TRUE Op = iota // is true? (no value)
-	OP_EQ             // ==
-	OP_LT             // <
-	OP_LE             // <=
-	OP_GT             // >
-	OP_GE             // >=
-	OP_LIKE           // ~ (match)
+	ATTR_EXPR        Attr = iota // sub-expression in value (nested)
+	ATTR_TAG                     // message tag (from pipe context)
+	ATTR_TYPE                    // BGP message type
+	ATTR_AF                      // address family / subsequent address family
+	ATTR_REACH                   // reachable prefixes
+	ATTR_UNREACH                 // unreachable prefixes
+	ATTR_PREFIX                  // prefix, either reachable or unreachable
+	ATTR_ASPATH                  // AS_PATH attribute
+	ATTR_ASPATH_LEN              // AS_PATH length
+	ATTR_ASPATH_HOPS             // AS_PATH unique hop count (ignore prepending)
+	ATTR_NEXTHOP                 // NEXT_HOP attribute
+	ATTR_ORIGIN                  // ORIGIN attribute (IGP/EGP/INCOMPLETE)
+	ATTR_MED                     // MULTI_EXIT_DISC attribute
+	ATTR_LOCALPREF               // LOCAL_PREF attribute
+	ATTR_COMM                    // COMMUNITY attribute
+	ATTR_COMM_EXT                // EXTENDED_COMMUNITY attribute
+	ATTR_COMM_LARGE              // LARGE_COMMUNITY attribute
+	ATTR_OTC                     // OTC attribute (Only To Customer, RFC 9234)
+	ATTR_DIR                     // message direction (L/R)
+	ATTR_SEQ                     // message sequence number
+	ATTR_TIME                    // message timestamp
+	ATTR_JSON                    // generic JSON path extractor
+	ATTR_JATTR                   // attribute-specific JSON extractor
 )
 
-// cmpOp evaluates a three-way comparison result against an operator.
-func cmpOp(cmp int, op Op) bool {
+const (
+	OP_PRESENT Op = iota // attribute exists? (no value)
+	OP_EQ                // ==
+	OP_LT                // <
+	OP_LE                // <=
+	OP_GT                // >
+	OP_GE                // >=
+	OP_LIKE              // ~ (match)
+)
+
+// resBool converts a bool to Res.
+func resBool(v bool) Res {
+	if v {
+		return RES_TRUE
+	} else {
+		return RES_FALSE
+	}
+}
+
+// resCmp evaluates a three-way comparison result against an operator.
+func resCmp(op Op, cmp int) Res {
+	var ok bool
 	switch op {
 	case OP_EQ:
-		return cmp == 0
+		ok = cmp == 0
 	case OP_LT:
-		return cmp < 0
+		ok = cmp < 0
 	case OP_LE:
-		return cmp <= 0
+		ok = cmp <= 0
 	case OP_GT:
-		return cmp > 0
+		ok = cmp > 0
 	case OP_GE:
-		return cmp >= 0
+		ok = cmp >= 0
 	}
-	return false
+	if ok {
+		return RES_TRUE
+	} else {
+		return RES_FALSE
+	}
 }
 
 func NewFilter(filter string) (*Filter, error) {
@@ -322,7 +342,7 @@ func (e *Expr) parseOp(op string) bool {
 		e.Op = OP_EQ
 	case "!=", "=!":
 		e.Op = OP_EQ
-		e.OpNot = true
+		e.Not = !e.Not
 	case "<":
 		e.Op = OP_LT
 	case "<=":
@@ -335,7 +355,7 @@ func (e *Expr) parseOp(op string) bool {
 		e.Op = OP_LIKE
 	case "!~", "~!":
 		e.Op = OP_LIKE
-		e.OpNot = true
+		e.Not = !e.Not
 	default:
 		return false // invalid operator
 	}
@@ -461,7 +481,7 @@ func (e *Expr) parseAttr(attr string) bool {
 	case "json":
 		e.Attr = ATTR_JSON
 	case "attr":
-		e.Attr = ATTR_JSONATTR
+		e.Attr = ATTR_JATTR
 
 	default:
 		return false
@@ -506,70 +526,75 @@ func (e *Expr) parseCheck() error {
 		return e.seqParse()
 	case ATTR_TIME:
 		return e.timeParse()
-	case ATTR_JSON, ATTR_JSONATTR:
+	case ATTR_JSON, ATTR_JATTR:
 		return e.jsonParse()
 	default:
 		return fmt.Errorf("unsupported attribute")
 	}
 }
 
-func (e *Expr) eval(ev *Eval) (res bool) {
-	res = e.evalAttr(ev)
-
-	// operator negation (!=, !~): negate match only if attribute exists
-	if e.OpNot {
-		if res {
-			res = false // matched → negated to false
-		} else {
-			res = ev.attrExists(e) // didn't match → true only if attr exists
-		}
-	}
-
-	if e.Not {
-		return !res
-	}
-	return res
-}
-
-func (e *Expr) evalAttr(ev *Eval) bool {
+func (e *Expr) eval(ev *Eval) (res Res) {
 	switch e.Attr {
 	case ATTR_EXPR: // sub-expression
-		return ev.exprEval(e.Val.(*Expr))
+		res = ev.exprEval(e.Val.(*Expr))
 	case ATTR_TAG:
-		return e.tagEval(ev)
+		res = e.tagEval(ev)
 	case ATTR_TYPE:
-		return e.typeEval(ev)
+		res = e.typeEval(ev)
 	case ATTR_AF:
-		return e.afEval(ev)
+		res = e.afEval(ev)
 	case ATTR_REACH, ATTR_UNREACH, ATTR_PREFIX:
-		return e.prefixEval(ev)
+		res = e.prefixEval(ev)
 	case ATTR_NEXTHOP:
-		return e.nexthopEval(ev)
+		res = e.nexthopEval(ev)
 	case ATTR_ASPATH:
-		return e.aspathEval(ev)
+		res = e.aspathEval(ev)
 	case ATTR_ASPATH_LEN:
-		return e.aspathLenEval(ev)
+		res = e.aspathLenEval(ev)
 	case ATTR_ASPATH_HOPS:
-		return e.aspathHopsEval(ev)
+		res = e.aspathHopsEval(ev)
 	case ATTR_ORIGIN:
-		return e.originEval(ev)
+		res = e.originEval(ev)
 	case ATTR_MED:
-		return e.medEval(ev)
+		res = e.medEval(ev)
 	case ATTR_LOCALPREF:
-		return e.localprefEval(ev)
+		res = e.localprefEval(ev)
 	case ATTR_COMM, ATTR_COMM_EXT, ATTR_COMM_LARGE:
-		return e.communityEval(ev)
+		res = e.communityEval(ev)
 	case ATTR_OTC:
-		return e.otcEval(ev)
+		res = e.otcEval(ev)
 	case ATTR_DIR:
-		return e.dirEval(ev)
+		res = e.dirEval(ev)
 	case ATTR_SEQ:
-		return e.seqEval(ev)
+		res = e.seqEval(ev)
 	case ATTR_TIME:
-		return e.timeEval(ev)
-	case ATTR_JSON, ATTR_JSONATTR:
-		return e.jsonEval(ev)
+		res = e.timeEval(ev)
+	case ATTR_JSON, ATTR_JATTR:
+		res = e.jsonEval(ev)
 	default:
 		panic("not implemented")
 	}
+
+	// transform the raw result?
+	if e.Not {
+		switch res {
+		case RES_TRUE:
+			res = RES_FALSE
+		case RES_FALSE:
+			res = RES_TRUE
+		case RES_ABSENT:
+			if e.Op == OP_PRESENT {
+				res = RES_TRUE // treat as TRUE if !OP_PRESENT
+			}
+		}
+	} else {
+		switch res {
+		case RES_ABSENT:
+			if e.Op == OP_PRESENT {
+				res = RES_FALSE // treat as FALSE if OP_PRESENT
+			}
+		}
+	}
+
+	return res
 }

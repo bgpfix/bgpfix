@@ -20,8 +20,8 @@ func (e *Expr) jsonParse() error {
 	// convert index to string, split on "."
 	path := strings.Split(fmt.Sprintf("%v", e.Idx), ".")
 
-	// for ATTR_JSONATTR: resolve attribute name and build path
-	if e.Attr == ATTR_JSONATTR {
+	// for ATTR_JATTR: resolve attribute name and build path
+	if e.Attr == ATTR_JATTR {
 		name := strings.ToUpper(path[0])
 
 		// try with ATTR_ prefix first, then without
@@ -44,9 +44,16 @@ func (e *Expr) jsonParse() error {
 		path = newPath
 	}
 
+	// convert numeric path segments to jsonparser array index format
+	for i, seg := range path {
+		if _, err := strconv.Atoi(seg); err == nil {
+			path[i] = "[" + seg + "]"
+		}
+	}
+
 	// validate value based on operator
 	switch e.Op {
-	case OP_TRUE:
+	case OP_PRESENT:
 		// ok
 	case OP_EQ:
 		if _, ok := e.Val.(string); !ok {
@@ -82,30 +89,29 @@ func (e *Expr) jsonParse() error {
 	return nil
 }
 
-func (e *Expr) jsonEval(ev *Eval) bool {
-	upper := ev.getUpper()
-	if upper == nil {
-		return false
+func (e *Expr) jsonEval(ev *Eval) Res {
+	upper := ev.Msg.UpperJSON()
+	if len(upper) == 0 {
+		return RES_ABSENT // NB: should not happen
 	}
 
-	path := e.Idx.([]string)
-	val := bj.Get(upper, path...)
+	val := bj.Get(upper, e.Idx.([]string)...)
 	if val == nil {
-		return false
+		return RES_ABSENT
+	} else if e.Op == OP_PRESENT {
+		return RES_TRUE
 	}
 
 	switch e.Op {
-	case OP_TRUE:
-		return true
 	case OP_EQ:
-		return string(val) == e.Val.(string)
+		return resBool(string(val) == e.Val.(string))
 	case OP_LIKE:
-		return e.Val.(*regexp.Regexp).Match(val)
+		return resBool(e.Val.(*regexp.Regexp).Match(val))
 	default:
 		f, err := strconv.ParseFloat(string(val), 64)
 		if err != nil {
-			return false
+			return RES_FALSE
 		}
-		return cmpOp(cmp.Compare(f, e.Val.(float64)), e.Op)
+		return resCmp(e.Op, cmp.Compare(f, e.Val.(float64)))
 	}
 }

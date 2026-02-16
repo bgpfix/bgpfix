@@ -3,7 +3,9 @@ package filter
 import (
 	"fmt"
 	"regexp"
-	"strings"
+	"time"
+
+	"github.com/itlightning/dateparse"
 )
 
 func (e *Expr) timeParse() error {
@@ -13,22 +15,20 @@ func (e *Expr) timeParse() error {
 	}
 
 	switch e.Op {
-	case OP_TRUE:
+	case OP_PRESENT:
 		// ok
-	case OP_EQ:
-		if _, ok := e.Val.(string); !ok {
-			e.Val = fmt.Sprintf("%v", e.Val)
-		}
 	case OP_LIKE:
 		re, err := regexp.Compile(e.Val.(string))
 		if err != nil {
 			return fmt.Errorf("invalid regex: %w", err)
 		}
 		e.Val = re
-	case OP_LT, OP_LE, OP_GT, OP_GE:
-		if _, ok := e.Val.(string); !ok {
-			e.Val = fmt.Sprintf("%v", e.Val)
+	case OP_EQ, OP_LT, OP_LE, OP_GT, OP_GE:
+		t, err := dateparse.ParseAny(fmt.Sprintf("%v", e.Val))
+		if err != nil {
+			return err
 		}
+		e.Val = t
 	default:
 		return ErrOp
 	}
@@ -37,21 +37,18 @@ func (e *Expr) timeParse() error {
 	return nil
 }
 
-func (e *Expr) timeEval(ev *Eval) bool {
+func (e *Expr) timeEval(ev *Eval) Res {
 	if ev.Msg.Time.IsZero() {
-		return false
-	}
-	if e.Op == OP_TRUE {
-		return true
+		return RES_ABSENT
+	} else if e.Op == OP_PRESENT {
+		return RES_TRUE
 	}
 
-	ts := ev.getTime()
 	switch e.Op {
-	case OP_EQ:
-		return ts == e.Val.(string)
 	case OP_LIKE:
-		return e.Val.(*regexp.Regexp).MatchString(ts)
+		ts := ev.getTime()
+		return resBool(e.Val.(*regexp.Regexp).MatchString(ts))
 	default:
-		return cmpOp(strings.Compare(ts, e.Val.(string)), e.Op)
+		return resCmp(e.Op, ev.Msg.Time.Compare(e.Val.(time.Time)))
 	}
 }

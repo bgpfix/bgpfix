@@ -425,8 +425,8 @@ func TestEvalOrigin(t *testing.T) {
 
 	// != with absent attribute: should be false (not true)
 	assert.False(t, evalFilter(t, m2, "origin != igp"))
-	// contrast with !origin == igp which IS true (negation of "has igp origin")
-	assert.True(t, evalFilter(t, m2, "!origin == igp"))
+	// !origin == igp also false for absent (both use Not toggle)
+	assert.False(t, evalFilter(t, m2, "!origin == igp"))
 }
 
 func TestEvalMed(t *testing.T) {
@@ -779,6 +779,10 @@ func TestEvalJson(t *testing.T) {
 
 	// != with absent path: should be false
 	assert.False(t, evalFilter(t, m, `json[attrs.LOCALPREF.value] != 100`))
+
+	// array index access (numeric path segments become [N])
+	assert.True(t, evalFilter(t, m, `json[reach.0] ~ "10\\."`))
+	assert.True(t, evalFilter(t, m, `attr[COMMUNITY.0] ~ "3356:"`))
 
 	// works on non-UPDATE for json (Types=true)
 	ka := msg.NewMsg()

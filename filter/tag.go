@@ -8,7 +8,7 @@ import (
 func (e *Expr) tagParse() error {
 	// check operator (TRUE/EQ/LIKE), make value string or regexp
 	switch e.Op {
-	case OP_TRUE:
+	case OP_PRESENT:
 		// non-empty tag or tags
 	case OP_EQ:
 		if _, ok := e.Val.(string); !ok {
@@ -35,17 +35,16 @@ func (e *Expr) tagParse() error {
 	return nil
 }
 
-func (e *Expr) tagEval(ev *Eval) bool {
-	// message has tags?
+func (e *Expr) tagEval(ev *Eval) Res {
 	tags := ev.PipeTags
 	if len(tags) == 0 {
-		return false
+		return RES_ABSENT
 	}
 
 	// check_val checks specific tag value
 	check_val := func(val string) bool {
 		switch e.Op {
-		case OP_TRUE:
+		case OP_PRESENT:
 			return val != ""
 		case OP_EQ:
 			return val == e.Val
@@ -58,13 +57,18 @@ func (e *Expr) tagEval(ev *Eval) bool {
 
 	// specific tag key?
 	if e.Idx != nil {
-		return check_val(tags[e.Idx.(string)])
-	} else { // look for any tag match
-		for _, val := range tags {
-			if check_val(val) {
-				return true
-			}
+		val := tags[e.Idx.(string)]
+		if val == "" {
+			return RES_ABSENT
 		}
-		return false
+		return resBool(check_val(val))
 	}
+
+	// look for any tag match
+	for _, val := range tags {
+		if check_val(val) {
+			return RES_TRUE
+		}
+	}
+	return RES_FALSE
 }
