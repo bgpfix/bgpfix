@@ -8,7 +8,7 @@ func (e *Expr) u32Parse() error {
 		return ErrIndex
 	}
 
-	if e.Op == OP_TRUE {
+	if e.Op == OP_PRESENT {
 		return nil
 	}
 	if e.Op == OP_LIKE {
@@ -26,38 +26,46 @@ func (e *Expr) u32Parse() error {
 	return nil
 }
 
-func (e *Expr) medEval(ev *Eval) bool {
+func (e *Expr) medEval(ev *Eval) Res {
 	med, ok := ev.Msg.Update.Med()
 	if !ok {
-		return false
+		return RES_ABSENT
 	}
 	return e.u32Eval(med)
 }
 
-func (e *Expr) localprefEval(ev *Eval) bool {
+func (e *Expr) localprefEval(ev *Eval) Res {
 	lp, ok := ev.Msg.Update.LocalPref()
 	if !ok {
-		return false
+		return RES_ABSENT
 	}
 	return e.u32Eval(lp)
 }
 
-func (e *Expr) u32Eval(val uint32) bool {
-	if e.Op == OP_TRUE {
-		return true
+func (e *Expr) otcEval(ev *Eval) Res {
+	otc, ok := ev.Msg.Update.Otc()
+	if !ok {
+		return RES_ABSENT
+	}
+	return e.u32Eval(otc)
+}
+
+func (e *Expr) u32Eval(val uint32) Res {
+	if e.Op == OP_PRESENT {
+		return RES_TRUE
 	}
 	ref := e.Val.(uint32)
 	switch e.Op {
 	case OP_EQ:
-		return val == ref
+		return resBool(val == ref)
 	case OP_LT:
-		return val < ref
+		return resBool(val < ref)
 	case OP_LE:
-		return val <= ref
+		return resBool(val <= ref)
 	case OP_GT:
-		return val > ref
+		return resBool(val > ref)
 	case OP_GE:
-		return val >= ref
+		return resBool(val >= ref)
 	}
-	return false
+	return RES_FALSE
 }

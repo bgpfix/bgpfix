@@ -16,8 +16,9 @@ type Eval struct {
 	PipeCaps caps.Caps               // pipe capabilities (can be nil)
 	PipeTags map[string]string       // pipe message tags (can be nil)
 
-	cached int             // msg.Version for which the cache is valid
-	cache  map[string]bool // cached results of evaluated expressions
+	cached    int            // msg.Version for which the cache is valid
+	cache     map[string]Res // cached results of evaluated expressions
+	cacheTime string         // cached formatted timestamp
 }
 
 // NewEval creates a new Eval instance.
@@ -25,7 +26,7 @@ type Eval struct {
 func NewEval(use_cache bool) *Eval {
 	ev := &Eval{}
 	if use_cache {
-		ev.cache = make(map[string]bool)
+		ev.cache = make(map[string]Res)
 	}
 	return ev
 }
@@ -57,10 +58,19 @@ func (ev *Eval) Set(m *msg.Msg, kv *xsync.Map[string, any], caps caps.Caps, tags
 	return ev
 }
 
-// Clear resets the cache to match the current Msg version.
+// ClearCache resets the cache to match the current Msg version.
 func (ev *Eval) ClearCache() {
 	clear(ev.cache)
 	ev.cached = ev.Msg.Version
+	ev.cacheTime = ""
+}
+
+// getTime returns the formatted timestamp string for the current message.
+func (ev *Eval) getTime() string {
+	if len(ev.cacheTime) == 0 {
+		ev.cacheTime = ev.Msg.Time.Format(msg.JSON_TIME)
+	}
+	return ev.cacheTime
 }
 
 // Run evaluates given Filter f against the current message.
@@ -72,20 +82,20 @@ func (ev *Eval) Run(f *Filter) (result bool) {
 	}
 
 	// check the expressions one by one
-	return ev.exprEval(f.First)
+	return ev.exprEval(f.First) == RES_TRUE
 }
 
-func (ev *Eval) exprEval(first *Expr) (result bool) {
+func (ev *Eval) exprEval(first *Expr) Res {
 	is_update := ev.Msg.Type == msg.UPDATE
-	prev_and := false
-	any_ok := false
+	var prev_and, any_true, any_false bool
 	for e := first; e != nil; e = e.Next {
-		var res, cache_ok bool
+		var res Res
 		switch {
 		case !is_update && !e.Types:
-			res = false // no need to run
-		case ev.cache != nil:
-			if res, cache_ok = ev.cache[e.String]; cache_ok {
+			res = RES_FALSE // no need to run
+		case len(ev.cache) > 0:
+			var ok bool
+			if res, ok = ev.cache[e.String]; ok {
 				break // use cached result in res
 			}
 			fallthrough
@@ -96,22 +106,29 @@ func (ev *Eval) exprEval(first *Expr) (result bool) {
 			}
 		}
 
-		// any success so far?
-		any_ok = any_ok || res
+		// any success/ failure so far?
+		any_true = any_true || res == RES_TRUE
+		any_false = any_false || res == RES_FALSE
 
 		// no need to keep checking?
 		is_and := prev_and || e.And // left or right is AND?
-		if res {
+		if res == RES_TRUE {
 			if !is_and {
-				return true // one True in OR chain is enough to succeed
+				return RES_TRUE // one True in OR chain is enough to succeed
 			}
-		} else {
+		} else { // = RES_FALSE or RES_ABSENT
 			if is_and {
-				return false // one False in AND chain is enough to fail
+				return RES_FALSE // one False in AND chain is enough to fail
 			}
 		}
 		prev_and = e.And
 	}
 
-	return any_ok
+	if any_true {
+		return RES_TRUE // at least one RES_TRUE
+	} else if any_false {
+		return RES_FALSE // at least one RES_FALSE
+	} else {
+		return RES_ABSENT // all were RES_ABSENT
+	}
 }

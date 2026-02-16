@@ -557,6 +557,15 @@ func (u *Update) LocalPref() (localpref uint32, ok bool) {
 	}
 }
 
+// Otc returns the ATTR_OTC value (Only To Customer, RFC 9234)
+func (u *Update) Otc() (otc uint32, ok bool) {
+	if a, ok := u.Attrs.Get(attrs.ATTR_OTC).(*attrs.U32); ok {
+		return a.Val, true
+	} else {
+		return 0, false
+	}
+}
+
 // Community returns the community attribute, or nil if not defined.
 func (u *Update) Community() *attrs.Community {
 	c, _ := u.Attrs.Get(attrs.ATTR_COMMUNITY).(*attrs.Community)

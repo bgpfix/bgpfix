@@ -10,7 +10,7 @@ func (e *Expr) aspathLenParse() error {
 	if e.Idx != nil {
 		return ErrIndex
 	}
-	if e.Op == OP_TRUE {
+	if e.Op == OP_PRESENT {
 		return nil
 	}
 	if e.Op == OP_LIKE {
@@ -23,29 +23,54 @@ func (e *Expr) aspathLenParse() error {
 	return nil
 }
 
-func (e *Expr) aspathLenEval(ev *Eval) bool {
+func (e *Expr) aspathLenEval(ev *Eval) Res {
 	aspath := ev.Msg.Update.AsPath()
 	if aspath == nil {
-		return false
+		return RES_ABSENT
 	}
-	if e.Op == OP_TRUE {
-		return aspath.Len() > 0
+	if e.Op == OP_PRESENT {
+		return resBool(aspath.Len() > 0)
 	}
 	length := aspath.Len()
 	ref := e.Val.(int)
 	switch e.Op {
 	case OP_EQ:
-		return length == ref
+		return resBool(length == ref)
 	case OP_LT:
-		return length < ref
+		return resBool(length < ref)
 	case OP_LE:
-		return length <= ref
+		return resBool(length <= ref)
 	case OP_GT:
-		return length > ref
+		return resBool(length > ref)
 	case OP_GE:
-		return length >= ref
+		return resBool(length >= ref)
 	}
-	return false
+	return RES_FALSE
+}
+
+func (e *Expr) aspathHopsEval(ev *Eval) Res {
+	aspath := ev.Msg.Update.AsPath()
+	if aspath == nil {
+		return RES_ABSENT
+	}
+	if e.Op == OP_PRESENT {
+		return resBool(aspath.UniqueLen() > 0)
+	}
+	length := aspath.UniqueLen()
+	ref := e.Val.(int)
+	switch e.Op {
+	case OP_EQ:
+		return resBool(length == ref)
+	case OP_LT:
+		return resBool(length < ref)
+	case OP_LE:
+		return resBool(length <= ref)
+	case OP_GT:
+		return resBool(length > ref)
+	case OP_GE:
+		return resBool(length >= ref)
+	}
+	return RES_FALSE
 }
 
 func (e *Expr) aspathParse() error {
@@ -53,7 +78,7 @@ func (e *Expr) aspathParse() error {
 	ok := false
 	can_index := false
 	switch e.Op {
-	case OP_TRUE:
+	case OP_PRESENT:
 		ok = true // = non-empty AS_PATH
 	case OP_EQ:
 		switch v := e.Val.(type) {
@@ -97,9 +122,11 @@ func (e *Expr) aspathParse() error {
 		return fmt.Errorf("invalid value: %v", e.Val)
 	}
 
-	// check if index is allowed and is an integer
+	// check if index is allowed and is an integer (or "*" which means any)
 	if e.Idx != nil {
-		if !can_index {
+		if e.Idx == "*" {
+			e.Idx = nil // [*] = any hop, same as no index
+		} else if !can_index {
 			return fmt.Errorf("index not allowed: %v", e.Idx)
 		} else if _, ok := e.Idx.(int); !ok {
 			return fmt.Errorf("invalid index: %v", e.Idx)
@@ -109,11 +136,10 @@ func (e *Expr) aspathParse() error {
 	return nil
 }
 
-func (e *Expr) aspathEval(ev *Eval) bool {
-	// has valid, non-empty AS_PATH?
+func (e *Expr) aspathEval(ev *Eval) Res {
 	aspath := ev.Msg.Update.AsPath()
 	if aspath == nil {
-		return false
+		return RES_ABSENT
 	}
 
 	// to_text converts aspath to JSON without the brackets
@@ -152,14 +178,14 @@ func (e *Expr) aspathEval(ev *Eval) bool {
 	}
 
 	switch e.Op {
-	case OP_TRUE:
-		return true // already checked
+	case OP_PRESENT:
+		return RES_TRUE // already checked
 	case OP_LIKE:
 		re := e.Val.(*regexp.Regexp)
-		return re.Match(to_text())
+		return resBool(re.Match(to_text()))
 	case OP_EQ:
 		if v, ok := e.Val.([]byte); ok {
-			return bytes.Equal(v, to_text())
+			return resBool(bytes.Equal(v, to_text()))
 		}
 		fallthrough
 	default:
@@ -168,15 +194,15 @@ func (e *Expr) aspathEval(ev *Eval) bool {
 		// investigate given index only?
 		if e.Idx != nil {
 			index := e.Idx.(int)
-			return check_hop(ref, aspath.Hop(index))
+			return resBool(check_hop(ref, aspath.Hop(index)))
 		}
 
-		// any index match is ok
+		// any hop match is ok
 		for _, hop := range aspath.Hops() {
 			if check_hop(ref, hop) {
-				return true
+				return RES_TRUE
 			}
 		}
-		return false
+		return RES_FALSE
 	}
 }

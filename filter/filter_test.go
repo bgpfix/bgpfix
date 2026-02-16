@@ -3,8 +3,10 @@ package filter
 import (
 	"net/netip"
 	"testing"
+	"time"
 
 	"github.com/bgpfix/bgpfix/attrs"
+	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/nlri"
 	"github.com/stretchr/testify/assert"
@@ -66,6 +68,12 @@ func setLocalPref(m *msg.Msg, lp uint32) {
 	a.Val = lp
 }
 
+// setOtc sets the OTC attribute
+func setOtc(m *msg.Msg, otc uint32) {
+	a := m.Update.Attrs.Use(attrs.ATTR_OTC).(*attrs.U32)
+	a.Val = otc
+}
+
 // setCommunity sets standard communities from "ASN:VALUE" pairs
 func setCommunity(m *msg.Msg, pairs ...string) {
 	c := m.Update.Attrs.Use(attrs.ATTR_COMMUNITY).(*attrs.Community)
@@ -125,12 +133,20 @@ func TestParseValid(t *testing.T) {
 		"aspath ~ \"65001\"",
 		"as_peer >= 100",
 		"as_upstream == 3356",
+		"aspath[*] > 100",
+		"aspath[*] == 65001",
 
 		// aspath_len
 		"aspath_len > 5",
 		"aspath_len == 0",
 		"as_path_len <= 10",
 		"aspath_len",
+
+		// aspath_hops
+		"aspath_hops > 3",
+		"aspath_hops == 2",
+		"as_path_hops <= 10",
+		"aspath_hops",
 
 		// nexthop
 		"nexthop",
@@ -156,6 +172,12 @@ func TestParseValid(t *testing.T) {
 		"localpref == 100",
 		"local_pref > 50",
 		"local_pref <= 200",
+
+		// otc
+		"otc",
+		"otc == 65001",
+		"otc > 0",
+		"only_to_customer <= 64512",
 
 		// community
 		`community`,
@@ -195,8 +217,12 @@ func TestParseInvalid(t *testing.T) {
 		{"med == hello", "med non-integer"},
 		{"med ~ 100", "med like"},
 		{"local_pref ~ 100", "localpref like"},
+		{"otc ~ 100", "otc like"},
+		{"otc == hello", "otc non-integer"},
 		{"aspath_len ~ 5", "aspath_len like"},
 		{"aspath_len == -1", "aspath_len negative"},
+		{"aspath_hops ~ 5", "aspath_hops like"},
+		{"aspath_hops == -1", "aspath_hops negative"},
 		{"prefix ==", "missing value"},
 		{"prefix == not_a_prefix", "bad prefix value"},
 		{"(prefix == 1.2.3.4/32", "unmatched open paren"},
@@ -304,6 +330,12 @@ func TestEvalAsPath(t *testing.T) {
 	assert.True(t, evalFilter(t, m, `aspath ~ "3356,15169$"`))
 	assert.False(t, evalFilter(t, m, `aspath ~ "^15169"`))
 
+	// aspath[*] - any hop match (same as no index)
+	assert.True(t, evalFilter(t, m, "aspath[*] == 3356"))    // 3356 is in the path
+	assert.True(t, evalFilter(t, m, "aspath[*] > 10000"))    // 65001 and 15169 are > 10000
+	assert.False(t, evalFilter(t, m, "aspath[*] == 9999"))   // 9999 not in path
+	assert.True(t, evalFilter(t, m, "aspath[*] >= 3356"))    // 3356 matches
+
 	// negation
 	assert.True(t, evalFilter(t, m, "as_origin != 9999"))
 	assert.False(t, evalFilter(t, m, "as_origin != 15169"))
@@ -335,6 +367,43 @@ func TestEvalAspathLen(t *testing.T) {
 	assert.False(t, evalFilter(t, m2, "aspath_len == 0"))
 }
 
+func TestEvalAspathHops(t *testing.T) {
+	// path with prepending: 65001 3356 3356 3356 15169
+	// aspath_len = 5, aspath_hops = 3 (unique consecutive)
+	m := newUpdate()
+	addReach(m, "10.0.0.0/24")
+	setAsPath(m, 65001, 3356, 3356, 3356, 15169)
+
+	assert.True(t, evalFilter(t, m, "aspath_hops"))
+	assert.True(t, evalFilter(t, m, "aspath_hops == 3"))
+	assert.False(t, evalFilter(t, m, "aspath_hops == 5"))
+	assert.True(t, evalFilter(t, m, "aspath_hops > 2"))
+	assert.True(t, evalFilter(t, m, "aspath_hops >= 3"))
+	assert.True(t, evalFilter(t, m, "aspath_hops < 4"))
+	assert.True(t, evalFilter(t, m, "aspath_hops <= 3"))
+	assert.False(t, evalFilter(t, m, "aspath_hops > 3"))
+
+	// no prepending: 65001 3356 15169
+	m2 := newUpdate()
+	addReach(m2, "10.0.0.0/24")
+	setAsPath(m2, 65001, 3356, 15169)
+	assert.True(t, evalFilter(t, m2, "aspath_hops == 3"))
+	assert.True(t, evalFilter(t, m2, "aspath_len == 3"))
+
+	// all prepending: 65001 65001 65001
+	m3 := newUpdate()
+	addReach(m3, "10.0.0.0/24")
+	setAsPath(m3, 65001, 65001, 65001)
+	assert.True(t, evalFilter(t, m3, "aspath_hops == 1"))
+	assert.True(t, evalFilter(t, m3, "aspath_len == 3"))
+
+	// no aspath
+	m4 := newUpdate()
+	addReach(m4, "10.0.0.0/24")
+	assert.False(t, evalFilter(t, m4, "aspath_hops"))
+	assert.False(t, evalFilter(t, m4, "aspath_hops == 0"))
+}
+
 func TestEvalOrigin(t *testing.T) {
 	m := newUpdate()
 	addReach(m, "10.0.0.0/24")
@@ -353,6 +422,11 @@ func TestEvalOrigin(t *testing.T) {
 	addReach(m2, "10.0.0.0/24")
 	assert.False(t, evalFilter(t, m2, "origin"))
 	assert.False(t, evalFilter(t, m2, "origin == igp"))
+
+	// != with absent attribute: should be false (not true)
+	assert.False(t, evalFilter(t, m2, "origin != igp"))
+	// !origin == igp also false for absent (both use Not toggle)
+	assert.False(t, evalFilter(t, m2, "!origin == igp"))
 }
 
 func TestEvalMed(t *testing.T) {
@@ -373,6 +447,7 @@ func TestEvalMed(t *testing.T) {
 	m2 := newUpdate()
 	addReach(m2, "10.0.0.0/24")
 	assert.False(t, evalFilter(t, m2, "med"))
+	assert.False(t, evalFilter(t, m2, "med != 100")) // absent → false, not true
 }
 
 func TestEvalLocalPref(t *testing.T) {
@@ -392,6 +467,28 @@ func TestEvalLocalPref(t *testing.T) {
 	m2 := newUpdate()
 	addReach(m2, "10.0.0.0/24")
 	assert.False(t, evalFilter(t, m2, "local_pref"))
+}
+
+func TestEvalOtc(t *testing.T) {
+	m := newUpdate()
+	addReach(m, "10.0.0.0/24")
+	setOtc(m, 65001)
+
+	assert.True(t, evalFilter(t, m, "otc"))
+	assert.True(t, evalFilter(t, m, "otc == 65001"))
+	assert.False(t, evalFilter(t, m, "otc == 65002"))
+	assert.True(t, evalFilter(t, m, "otc > 65000"))
+	assert.True(t, evalFilter(t, m, "otc >= 65001"))
+	assert.True(t, evalFilter(t, m, "otc < 65002"))
+	assert.True(t, evalFilter(t, m, "otc <= 65001"))
+	assert.False(t, evalFilter(t, m, "otc > 65001"))
+	assert.True(t, evalFilter(t, m, "only_to_customer == 65001"))
+
+	// no otc
+	m2 := newUpdate()
+	addReach(m2, "10.0.0.0/24")
+	assert.False(t, evalFilter(t, m2, "otc"))
+	assert.False(t, evalFilter(t, m2, "otc == 65001"))
 }
 
 func TestEvalNexthop(t *testing.T) {
@@ -431,6 +528,8 @@ func TestEvalCommunity(t *testing.T) {
 	m2 := newUpdate()
 	addReach(m2, "10.0.0.0/24")
 	assert.False(t, evalFilter(t, m2, "community"))
+	assert.False(t, evalFilter(t, m2, `community != "3356:100"`)) // absent → false
+	assert.False(t, evalFilter(t, m2, `com !~ "3356:"`))          // absent → false
 }
 
 func TestEvalTag(t *testing.T) {
@@ -476,6 +575,7 @@ func TestEvalNonUpdate(t *testing.T) {
 	assert.False(t, evalFilter(t, ka, "aspath"))
 	assert.False(t, evalFilter(t, ka, "origin == igp"))
 	assert.False(t, evalFilter(t, ka, "med > 0"))
+	assert.False(t, evalFilter(t, ka, "otc"))
 
 	// but type filters work
 	assert.True(t, evalFilter(t, ka, "keepalive"))
@@ -563,4 +663,277 @@ func TestEvalCache(t *testing.T) {
 	m.Edit()
 	setOrigin(m, 1) // EGP
 	assert.False(t, ev.Run(f))
+}
+
+// --- json/attr/time parse tests ---
+
+func TestParseValidJsonAttrTime(t *testing.T) {
+	valid := []string{
+		// dir
+		`dir`,
+		`dir == L`,
+		`dir == R`,
+		`dir != L`,
+
+		// seq
+		`seq`,
+		`seq == 1`,
+		`seq > 0`,
+		`seq <= 100`,
+
+		// json
+		`json[attrs.ORIGIN.value]`,
+		`json[reach]`,
+		`json[attrs.MED.value] > 100`,
+		`json[attrs.ORIGIN.value] == IGP`,
+		`json[attrs.ORIGIN.value] ~ "^I"`,
+
+		// attr
+		`attr[ORIGIN]`,
+		`attr[MP_REACH.af]`,
+		`attr[MED] > 100`,
+		`attr[COMMUNITY] ~ "3356:"`,
+		`attr[ORIGIN] == IGP`,
+
+		// time
+		`time`,
+		`time == "2023-03-01T00:00:00.000"`,
+		`time ~ "^2023"`,
+		`time > "2023-01-01"`,
+		`time >= "2023-01-01T00:00:00.000"`,
+		`time < "2024-01-01"`,
+		`timestamp`,
+	}
+
+	for _, tc := range valid {
+		t.Run(tc, func(t *testing.T) {
+			_, err := NewFilter(tc)
+			assert.NoError(t, err)
+		})
+	}
+}
+
+func TestParseInvalidJsonAttrTime(t *testing.T) {
+	invalid := []struct {
+		filter string
+		name   string
+	}{
+		{"json", "json no index"},
+		{"attr", "attr no index"},
+		{"attr[BOGUS]", "unknown attr"},
+		{"json[x] > hello", "numeric op non-numeric value"},
+		{"time[x]", "time with index"},
+		{"dir > L", "dir bad op"},
+		{"dir == X", "dir bad value"},
+		{"dir[0]", "dir with index"},
+		{"seq ~ 1", "seq like"},
+		{"seq == hello", "seq non-integer"},
+		{"seq[0]", "seq with index"},
+	}
+
+	for _, tc := range invalid {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := NewFilter(tc.filter)
+			assert.Error(t, err, "expected error for: %s", tc.filter)
+		})
+	}
+}
+
+// --- json eval tests ---
+
+func TestEvalJson(t *testing.T) {
+	m := newUpdate()
+	addReach(m, "10.0.0.0/24")
+	setOrigin(m, 0) // IGP
+	setMed(m, 500)
+	setCommunity(m, "3356:100", "174:200")
+
+	// existence
+	assert.True(t, evalFilter(t, m, `json[attrs.ORIGIN.value]`))
+	assert.True(t, evalFilter(t, m, `json[reach]`))
+	assert.False(t, evalFilter(t, m, `json[unreach]`))
+	assert.False(t, evalFilter(t, m, `json[attrs.LOCALPREF.value]`))
+
+	// string eq
+	assert.True(t, evalFilter(t, m, `json[attrs.ORIGIN.value] == IGP`))
+	assert.False(t, evalFilter(t, m, `json[attrs.ORIGIN.value] == EGP`))
+
+	// negation
+	assert.True(t, evalFilter(t, m, `json[attrs.ORIGIN.value] != EGP`))
+	assert.False(t, evalFilter(t, m, `json[attrs.ORIGIN.value] != IGP`))
+
+	// regex
+	assert.True(t, evalFilter(t, m, `json[attrs.ORIGIN.value] ~ "^I"`))
+	assert.False(t, evalFilter(t, m, `json[attrs.ORIGIN.value] ~ "^E"`))
+
+	// numeric comparison on MED value
+	assert.True(t, evalFilter(t, m, `json[attrs.MED.value] > 100`))
+	assert.True(t, evalFilter(t, m, `json[attrs.MED.value] == 500`))
+	assert.False(t, evalFilter(t, m, `json[attrs.MED.value] > 500`))
+	assert.True(t, evalFilter(t, m, `json[attrs.MED.value] >= 500`))
+	assert.True(t, evalFilter(t, m, `json[attrs.MED.value] < 1000`))
+
+	// regex on community array JSON
+	assert.True(t, evalFilter(t, m, `json[attrs.COMMUNITY.value] ~ "3356:"`))
+	assert.False(t, evalFilter(t, m, `json[attrs.COMMUNITY.value] ~ "9999:"`))
+
+	// != with absent path: should be false
+	assert.False(t, evalFilter(t, m, `json[attrs.LOCALPREF.value] != 100`))
+
+	// array index access (numeric path segments become [N])
+	assert.True(t, evalFilter(t, m, `json[reach.0] ~ "10\\."`))
+	assert.True(t, evalFilter(t, m, `attr[COMMUNITY.0] ~ "3356:"`))
+
+	// works on non-UPDATE for json (Types=true)
+	ka := msg.NewMsg()
+	ka.Switch(msg.KEEPALIVE)
+	assert.False(t, evalFilter(t, ka, `json[reach]`)) // KEEPALIVE has null upper layer
+}
+
+// --- attr eval tests ---
+
+func TestEvalAttr(t *testing.T) {
+	m := newUpdate()
+	addReach(m, "10.0.0.0/24")
+	setOrigin(m, 0) // IGP
+	setMed(m, 500)
+	setCommunity(m, "3356:100", "174:200")
+
+	// attr[ORIGIN] → attrs.ORIGIN.value
+	assert.True(t, evalFilter(t, m, `attr[ORIGIN] == IGP`))
+	assert.False(t, evalFilter(t, m, `attr[ORIGIN] == EGP`))
+
+	// attr[MED] → attrs.MED.value
+	assert.True(t, evalFilter(t, m, `attr[MED] > 100`))
+	assert.True(t, evalFilter(t, m, `attr[MED] == 500`))
+	assert.False(t, evalFilter(t, m, `attr[MED] < 100`))
+
+	// attr[COMMUNITY] regex
+	assert.True(t, evalFilter(t, m, `attr[COMMUNITY] ~ "3356:"`))
+	assert.False(t, evalFilter(t, m, `attr[COMMUNITY] ~ "9999:"`))
+
+	// existence
+	assert.True(t, evalFilter(t, m, `attr[ORIGIN]`))
+	assert.False(t, evalFilter(t, m, `attr[LOCALPREF]`))
+
+	// case insensitive attr names
+	assert.True(t, evalFilter(t, m, `attr[origin] == IGP`))
+	assert.True(t, evalFilter(t, m, `attr[med] > 100`))
+}
+
+// --- time eval tests ---
+
+func TestEvalTime(t *testing.T) {
+	m := newUpdate()
+	addReach(m, "10.0.0.0/24")
+	m.Time = time.Date(2023, 3, 1, 12, 30, 45, 0, time.UTC)
+
+	// existence
+	assert.True(t, evalFilter(t, m, `time`))
+
+	// exact match
+	assert.True(t, evalFilter(t, m, `time == "2023-03-01T12:30:45.000"`))
+	assert.False(t, evalFilter(t, m, `time == "2023-03-01T12:30:46.000"`))
+
+	// regex
+	assert.True(t, evalFilter(t, m, `time ~ "^2023-03"`))
+	assert.True(t, evalFilter(t, m, `time ~ "^2023"`))
+	assert.False(t, evalFilter(t, m, `time ~ "^2024"`))
+
+	// string comparison (lexicographic, correct for ISO 8601)
+	assert.True(t, evalFilter(t, m, `time > "2023-01-01"`))
+	assert.True(t, evalFilter(t, m, `time < "2024-01-01"`))
+	assert.True(t, evalFilter(t, m, `time >= "2023-03-01T12:30:45.000"`))
+	assert.True(t, evalFilter(t, m, `time <= "2023-03-01T12:30:45.000"`))
+	assert.False(t, evalFilter(t, m, `time > "2023-03-01T12:30:45.000"`))
+	assert.False(t, evalFilter(t, m, `time < "2023-03-01T12:30:45.000"`))
+
+	// zero time
+	m2 := newUpdate()
+	addReach(m2, "10.0.0.0/24")
+	assert.False(t, evalFilter(t, m2, `time`))
+	assert.False(t, evalFilter(t, m2, `time != "2023-01-01"`)) // absent → false
+
+	// works on non-UPDATE (Types=true)
+	ka := msg.NewMsg()
+	ka.Switch(msg.KEEPALIVE)
+	ka.Time = time.Date(2023, 6, 15, 0, 0, 0, 0, time.UTC)
+	assert.True(t, evalFilter(t, ka, `time`))
+	assert.True(t, evalFilter(t, ka, `time ~ "^2023-06"`))
+
+	// timestamp alias
+	assert.True(t, evalFilter(t, m, `timestamp`))
+}
+
+// --- dir eval tests ---
+
+func TestEvalDir(t *testing.T) {
+	m := newUpdate()
+	addReach(m, "10.0.0.0/24")
+	m.Dir = dir.DIR_L
+
+	// existence
+	assert.True(t, evalFilter(t, m, `dir`))
+
+	// equality
+	assert.True(t, evalFilter(t, m, `dir == L`))
+	assert.False(t, evalFilter(t, m, `dir == R`))
+
+	// negation
+	assert.True(t, evalFilter(t, m, `dir != R`))
+	assert.False(t, evalFilter(t, m, `dir != L`))
+
+	// R direction
+	m.Dir = dir.DIR_R
+	assert.True(t, evalFilter(t, m, `dir == R`))
+	assert.False(t, evalFilter(t, m, `dir == L`))
+
+	// works on non-UPDATE (Types=true)
+	ka := msg.NewMsg()
+	ka.Switch(msg.KEEPALIVE)
+	ka.Dir = dir.DIR_R
+	assert.True(t, evalFilter(t, ka, `dir == R`))
+
+	// zero dir
+	m2 := newUpdate()
+	assert.False(t, evalFilter(t, m2, `dir`))
+	assert.False(t, evalFilter(t, m2, `dir != L`)) // absent → false
+}
+
+// --- seq eval tests ---
+
+func TestEvalSeq(t *testing.T) {
+	m := newUpdate()
+	addReach(m, "10.0.0.0/24")
+	m.Seq = 42
+
+	// existence
+	assert.True(t, evalFilter(t, m, `seq`))
+
+	// equality
+	assert.True(t, evalFilter(t, m, `seq == 42`))
+	assert.False(t, evalFilter(t, m, `seq == 100`))
+
+	// comparison
+	assert.True(t, evalFilter(t, m, `seq > 10`))
+	assert.True(t, evalFilter(t, m, `seq >= 42`))
+	assert.True(t, evalFilter(t, m, `seq < 100`))
+	assert.True(t, evalFilter(t, m, `seq <= 42`))
+	assert.False(t, evalFilter(t, m, `seq > 42`))
+	assert.False(t, evalFilter(t, m, `seq < 42`))
+
+	// negation
+	assert.True(t, evalFilter(t, m, `seq != 100`))
+	assert.False(t, evalFilter(t, m, `seq != 42`))
+
+	// zero seq
+	m2 := newUpdate()
+	assert.False(t, evalFilter(t, m2, `seq`))
+	assert.False(t, evalFilter(t, m2, `seq != 42`)) // absent → false
+
+	// works on non-UPDATE (Types=true)
+	ka := msg.NewMsg()
+	ka.Switch(msg.KEEPALIVE)
+	ka.Seq = 5
+	assert.True(t, evalFilter(t, ka, `seq == 5`))
 }

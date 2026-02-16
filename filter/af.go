@@ -54,16 +54,16 @@ func (e *Expr) afParse() error {
 	return nil
 }
 
-func (e *Expr) afEval(ev *Eval) bool {
+func (e *Expr) afEval(ev *Eval) Res {
 	as := ev.Msg.Update.AfiSafi()
 
 	switch v := e.Val.(type) {
 	case afi.AFI:
-		return as.Afi() == v
+		return resBool(as.Afi() == v)
 	case afi.SAFI:
-		return as.Safi() == v
+		return resBool(as.Safi() == v)
 	case afi.AS:
-		return as == v
+		return resBool(as == v)
 	}
 
 	panic("unreachable")

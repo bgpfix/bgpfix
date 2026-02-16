@@ -11,7 +11,7 @@ func (e *Expr) originParse() error {
 	}
 
 	switch e.Op {
-	case OP_TRUE:
+	case OP_PRESENT:
 		return nil
 	case OP_EQ:
 		// accept int or string
@@ -41,13 +41,13 @@ func (e *Expr) originParse() error {
 	return nil
 }
 
-func (e *Expr) originEval(ev *Eval) bool {
+func (e *Expr) originEval(ev *Eval) Res {
 	origin, ok := ev.Msg.Update.Origin()
 	if !ok {
-		return false
+		return RES_ABSENT
 	}
-	if e.Op == OP_TRUE {
-		return true
+	if e.Op == OP_PRESENT {
+		return RES_TRUE
 	}
-	return origin == e.Val.(byte)
+	return resBool(origin == e.Val.(byte))
 }

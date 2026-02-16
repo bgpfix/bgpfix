@@ -39,36 +39,81 @@ type Expr struct {
 type (
 	Attr = int
 	Op   = int
+	Res  = int8
 )
 
 const (
-	ATTR_EXPR       Attr = iota // sub-expression in value (nested)
-	ATTR_TAG                    // message tag (from pipe context)
-	ATTR_TYPE                   // BGP message type
-	ATTR_AF                     // address family / subsequent address family
-	ATTR_REACH                  // reachable prefixes
-	ATTR_UNREACH                // unreachable prefixes
-	ATTR_PREFIX                 // prefix, either reachable or unreachable
-	ATTR_ASPATH                 // AS_PATH attribute
-	ATTR_ASPATH_LEN             // AS_PATH length
-	ATTR_NEXTHOP                // NEXT_HOP attribute
-	ATTR_ORIGIN                 // ORIGIN attribute (IGP/EGP/INCOMPLETE)
-	ATTR_MED                    // MULTI_EXIT_DISC attribute
-	ATTR_LOCALPREF              // LOCAL_PREF attribute
-	ATTR_COMM                   // COMMUNITY attribute
-	ATTR_COMM_EXT               // EXTENDED_COMMUNITY attribute
-	ATTR_COMM_LARGE             // LARGE_COMMUNITY attribute
+	RES_FALSE  Res = -1 // evaluated to false
+	RES_ABSENT Res = 0  // referenced attribute not found
+	RES_TRUE   Res = 1  // evaluated to true
 )
 
 const (
-	OP_TRUE Op = iota // is true? (no value)
-	OP_EQ             // ==
-	OP_LT             // <
-	OP_LE             // <=
-	OP_GT             // >
-	OP_GE             // >=
-	OP_LIKE           // ~ (match)
+	ATTR_EXPR        Attr = iota // sub-expression in value (nested)
+	ATTR_TAG                     // message tag (from pipe context)
+	ATTR_TYPE                    // BGP message type
+	ATTR_AF                      // address family / subsequent address family
+	ATTR_REACH                   // reachable prefixes
+	ATTR_UNREACH                 // unreachable prefixes
+	ATTR_PREFIX                  // prefix, either reachable or unreachable
+	ATTR_ASPATH                  // AS_PATH attribute
+	ATTR_ASPATH_LEN              // AS_PATH length
+	ATTR_ASPATH_HOPS             // AS_PATH unique hop count (ignore prepending)
+	ATTR_NEXTHOP                 // NEXT_HOP attribute
+	ATTR_ORIGIN                  // ORIGIN attribute (IGP/EGP/INCOMPLETE)
+	ATTR_MED                     // MULTI_EXIT_DISC attribute
+	ATTR_LOCALPREF               // LOCAL_PREF attribute
+	ATTR_COMM                    // COMMUNITY attribute
+	ATTR_COMM_EXT                // EXTENDED_COMMUNITY attribute
+	ATTR_COMM_LARGE              // LARGE_COMMUNITY attribute
+	ATTR_OTC                     // OTC attribute (Only To Customer, RFC 9234)
+	ATTR_DIR                     // message direction (L/R)
+	ATTR_SEQ                     // message sequence number
+	ATTR_TIME                    // message timestamp
+	ATTR_JSON                    // generic JSON path extractor
+	ATTR_JATTR                   // attribute-specific JSON extractor
 )
+
+const (
+	OP_PRESENT Op = iota // attribute exists? (no value)
+	OP_EQ                // ==
+	OP_LT                // <
+	OP_LE                // <=
+	OP_GT                // >
+	OP_GE                // >=
+	OP_LIKE              // ~ (match)
+)
+
+// resBool converts a bool to Res.
+func resBool(v bool) Res {
+	if v {
+		return RES_TRUE
+	} else {
+		return RES_FALSE
+	}
+}
+
+// resCmp evaluates a three-way comparison result against an operator.
+func resCmp(op Op, cmp int) Res {
+	var ok bool
+	switch op {
+	case OP_EQ:
+		ok = cmp == 0
+	case OP_LT:
+		ok = cmp < 0
+	case OP_LE:
+		ok = cmp <= 0
+	case OP_GT:
+		ok = cmp > 0
+	case OP_GE:
+		ok = cmp >= 0
+	}
+	if ok {
+		return RES_TRUE
+	} else {
+		return RES_FALSE
+	}
+}
 
 func NewFilter(filter string) (*Filter, error) {
 	f := &Filter{
@@ -404,6 +449,8 @@ func (e *Expr) parseAttr(attr string) bool {
 		e.Idx = 0
 	case "aspath_len", "as_path_len":
 		e.Attr = ATTR_ASPATH_LEN
+	case "aspath_hops", "as_path_hops":
+		e.Attr = ATTR_ASPATH_HOPS
 
 	case "nexthop", "nh":
 		e.Attr = ATTR_NEXTHOP
@@ -421,6 +468,20 @@ func (e *Expr) parseAttr(attr string) bool {
 		e.Attr = ATTR_COMM_EXT
 	case "com_large", "large_community", "large_com":
 		e.Attr = ATTR_COMM_LARGE
+
+	case "otc", "only_to_customer":
+		e.Attr = ATTR_OTC
+
+	case "dir", "direction":
+		e.Attr = ATTR_DIR
+	case "seq", "sequence":
+		e.Attr = ATTR_SEQ
+	case "time", "timestamp":
+		e.Attr = ATTR_TIME
+	case "json":
+		e.Attr = ATTR_JSON
+	case "attr":
+		e.Attr = ATTR_JATTR
 
 	default:
 		return false
@@ -447,6 +508,8 @@ func (e *Expr) parseCheck() error {
 		return e.aspathParse()
 	case ATTR_ASPATH_LEN:
 		return e.aspathLenParse()
+	case ATTR_ASPATH_HOPS:
+		return e.aspathLenParse() // same validation as aspath_len
 	case ATTR_ORIGIN:
 		return e.originParse()
 	case ATTR_MED:
@@ -455,12 +518,22 @@ func (e *Expr) parseCheck() error {
 		return e.u32Parse()
 	case ATTR_COMM, ATTR_COMM_EXT, ATTR_COMM_LARGE:
 		return e.communityParse()
+	case ATTR_OTC:
+		return e.u32Parse()
+	case ATTR_DIR:
+		return e.dirParse()
+	case ATTR_SEQ:
+		return e.seqParse()
+	case ATTR_TIME:
+		return e.timeParse()
+	case ATTR_JSON, ATTR_JATTR:
+		return e.jsonParse()
 	default:
 		return fmt.Errorf("unsupported attribute")
 	}
 }
 
-func (e *Expr) eval(ev *Eval) (res bool) {
+func (e *Expr) eval(ev *Eval) (res Res) {
 	switch e.Attr {
 	case ATTR_EXPR: // sub-expression
 		res = ev.exprEval(e.Val.(*Expr))
@@ -478,6 +551,8 @@ func (e *Expr) eval(ev *Eval) (res bool) {
 		res = e.aspathEval(ev)
 	case ATTR_ASPATH_LEN:
 		res = e.aspathLenEval(ev)
+	case ATTR_ASPATH_HOPS:
+		res = e.aspathHopsEval(ev)
 	case ATTR_ORIGIN:
 		res = e.originEval(ev)
 	case ATTR_MED:
@@ -486,13 +561,40 @@ func (e *Expr) eval(ev *Eval) (res bool) {
 		res = e.localprefEval(ev)
 	case ATTR_COMM, ATTR_COMM_EXT, ATTR_COMM_LARGE:
 		res = e.communityEval(ev)
+	case ATTR_OTC:
+		res = e.otcEval(ev)
+	case ATTR_DIR:
+		res = e.dirEval(ev)
+	case ATTR_SEQ:
+		res = e.seqEval(ev)
+	case ATTR_TIME:
+		res = e.timeEval(ev)
+	case ATTR_JSON, ATTR_JATTR:
+		res = e.jsonEval(ev)
 	default:
 		panic("not implemented")
 	}
 
+	// transform the raw result?
 	if e.Not {
-		return !res
+		switch res {
+		case RES_TRUE:
+			res = RES_FALSE
+		case RES_FALSE:
+			res = RES_TRUE
+		case RES_ABSENT:
+			if e.Op == OP_PRESENT {
+				res = RES_TRUE // treat as TRUE if !OP_PRESENT
+			}
+		}
 	} else {
-		return res
+		switch res {
+		case RES_ABSENT:
+			if e.Op == OP_PRESENT {
+				res = RES_FALSE // treat as FALSE if OP_PRESENT
+			}
+		}
 	}
+
+	return res
 }
