@@ -595,3 +595,64 @@ func TestNextHop_InvalidLength_Wire(t *testing.T) {
 	err := at.Unmarshal([]byte{0x01, 0x02, 0x03}, cps, dir.DIR_L)
 	require.Error(t, err)
 }
+
+func TestAspath_Flat(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(*Aspath)
+		want  []uint32
+	}{
+		{
+			"empty path",
+			func(a *Aspath) {},
+			nil,
+		},
+		{
+			"simple sequence",
+			func(a *Aspath) { a.Append([]uint32{65001}); a.Append([]uint32{65002}); a.Append([]uint32{65003}) },
+			[]uint32{65001, 65002, 65003},
+		},
+		{
+			"prepend dedup",
+			func(a *Aspath) {
+				a.Append([]uint32{65001})
+				a.Append([]uint32{65001})
+				a.Append([]uint32{65002})
+			},
+			[]uint32{65001, 65002},
+		},
+		{
+			"single ASN",
+			func(a *Aspath) { a.Append([]uint32{65001}) },
+			[]uint32{65001},
+		},
+		{
+			"AS_SET present",
+			func(a *Aspath) {
+				a.Append([]uint32{65001})
+				a.Append([]uint32{65002, 65003}) // AS_SET
+			},
+			nil,
+		},
+		{
+			"multiple prepend then new ASN",
+			func(a *Aspath) {
+				a.Append([]uint32{65001})
+				a.Append([]uint32{65001})
+				a.Append([]uint32{65001})
+				a.Append([]uint32{65002})
+				a.Append([]uint32{65002})
+				a.Append([]uint32{65003})
+			},
+			[]uint32{65001, 65002, 65003},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			a := NewAttr(ATTR_ASPATH).(*Aspath)
+			tc.setup(a)
+			require.Equal(t, tc.want, a.Flat())
+		})
+	}
+}
