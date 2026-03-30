@@ -27,8 +27,9 @@ func TestLive_Cloudflare(t *testing.T) {
 	cacheReady := make(chan struct{})
 	var cacheReadyOnce sync.Once
 
-	c := NewClient(Options{
-		Logger: &l,
+	c := NewClient(&Options{
+		Logger:  &l,
+		Version: VersionAuto,
 		OnROA: func(add bool, _ netip.Prefix, _ uint8, _ uint32) {
 			if add {
 				roaCount.Add(1)

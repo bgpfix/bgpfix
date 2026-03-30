@@ -4,7 +4,7 @@
 //
 // Usage:
 //
-//	c := rtr.NewClient(rtr.Options{
+//	c := rtr.NewClient(&rtr.Options{
 //	    OnROA:       func(...) { /* handle ROA */ },
 //	    OnASPA:      func(...) { /* handle ASPA */ },
 //	    OnEndOfData: func(...) { /* cache consistent */ },
@@ -40,15 +40,19 @@ type Client struct {
 }
 
 // NewClient returns a new Client with the given options.
-// Version defaults to VersionAuto if not set (zero value).
-// To force RTR v0, set c.Options.Version = VersionV0 after construction.
-func NewClient(opts Options) *Client {
-	if opts.Version == 0 {
-		opts.Version = VersionAuto
+// If opts is nil, DefaultOptions is used (VersionAuto + default logger).
+// When opts is non-nil, all fields are used as-is, including Version:
+//   - VersionAuto (255): auto-negotiate v2 → v1 → v0 on ErrUnsupVersion
+//   - VersionV0/V1/V2: use that version with no fallback
+func NewClient(opts *Options) *Client {
+	c := &Client{}
+	if opts != nil {
+		c.Options = *opts
+	} else {
+		c.Options = DefaultOptions
 	}
-	c := &Client{Options: opts}
-	if opts.Logger != nil {
-		c.Logger = opts.Logger
+	if c.Options.Logger != nil {
+		c.Logger = c.Options.Logger
 	} else {
 		l := zerolog.Nop()
 		c.Logger = &l
@@ -241,8 +245,8 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 		code := h.Session
 		text := parseErrorText(payload)
 		c.Warn().Uint16("code", code).Str("text", text).Msg("RTR error report")
-		// non-fatal: downgrade protocol version and retry
-		if code == ErrUnsupVersion && ver != nil && *ver > VersionV0 {
+		// auto-negotiate: downgrade protocol version and retry
+		if code == ErrUnsupVersion && c.Options.Version == VersionAuto && ver != nil && *ver > VersionV0 {
 			*ver--
 			c.Info().Uint8("version", *ver).Msg("RTR downgrading protocol version")
 			if w != nil {

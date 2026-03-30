@@ -204,7 +204,7 @@ func TestIPv4Prefix_Announce(t *testing.T) {
 	var gotPrefix netip.Prefix
 	var gotMaxLen uint8
 	var gotASN uint32
-	c := NewClient(Options{
+	c := NewClient(&Options{
 		OnROA: func(add bool, prefix netip.Prefix, maxLen uint8, asn uint32) {
 			gotAdd, gotPrefix, gotMaxLen, gotASN = add, prefix, maxLen, asn
 		},
@@ -220,7 +220,7 @@ func TestIPv4Prefix_Withdraw(t *testing.T) {
 	wire := buildIPv4Prefix(VersionV1, FlagWithdraw, 24, 24, [4]byte{192, 0, 2, 0}, 65001)
 	h, payload := parsePDU(t, wire)
 	var gotAdd = true
-	c := NewClient(Options{
+	c := NewClient(&Options{
 		OnROA: func(add bool, _ netip.Prefix, _ uint8, _ uint32) { gotAdd = add },
 	})
 	require.NoError(t, c.dispatch(nil, h, payload, nil))
@@ -233,7 +233,7 @@ func TestIPv4Prefix_MaxLenVariant(t *testing.T) {
 	h, payload := parsePDU(t, wire)
 	var gotPrefix netip.Prefix
 	var gotMaxLen uint8
-	c := NewClient(Options{
+	c := NewClient(&Options{
 		OnROA: func(_ bool, prefix netip.Prefix, maxLen uint8, _ uint32) {
 			gotPrefix, gotMaxLen = prefix, maxLen
 		},
@@ -256,7 +256,7 @@ func TestIPv6Prefix_Announce(t *testing.T) {
 
 	var gotPrefix netip.Prefix
 	var gotMaxLen uint8
-	c := NewClient(Options{
+	c := NewClient(&Options{
 		OnROA: func(_ bool, prefix netip.Prefix, maxLen uint8, _ uint32) {
 			gotPrefix, gotMaxLen = prefix, maxLen
 		},
@@ -272,7 +272,7 @@ func TestIPv6Prefix_Withdraw(t *testing.T) {
 	wire := buildIPv6Prefix(VersionV1, FlagWithdraw, 32, 48, addr, 65001)
 	h, payload := parsePDU(t, wire)
 	var gotAdd = true
-	c := NewClient(Options{
+	c := NewClient(&Options{
 		OnROA: func(add bool, _ netip.Prefix, _ uint8, _ uint32) { gotAdd = add },
 	})
 	require.NoError(t, c.dispatch(nil, h, payload, nil))
@@ -291,7 +291,7 @@ func TestEndOfData_V0(t *testing.T) {
 
 	var gotSessid uint16
 	var gotSerial uint32
-	c := NewClient(Options{
+	c := NewClient(&Options{
 		OnEndOfData: func(sessid uint16, serial uint32) {
 			gotSessid, gotSerial = sessid, serial
 		},
@@ -312,7 +312,7 @@ func TestEndOfData_V1(t *testing.T) {
 	require.Equal(t, uint32(24), h.Length)
 
 	var gotSerial uint32
-	c := NewClient(Options{
+	c := NewClient(&Options{
 		OnEndOfData: func(_ uint16, serial uint32) { gotSerial = serial },
 	})
 	require.NoError(t, c.dispatch(nil, h, payload, nil))
@@ -335,7 +335,7 @@ func TestASPA_Announce(t *testing.T) {
 	var gotAdd bool
 	var gotCAS uint32
 	var gotProviders []uint32
-	c := NewClient(Options{
+	c := NewClient(&Options{
 		OnASPA: func(add bool, cas uint32, providers []uint32) {
 			gotAdd, gotCAS, gotProviders = add, cas, providers
 		},
@@ -355,7 +355,7 @@ func TestASPA_Withdraw(t *testing.T) {
 	h, payload := parsePDU(t, wire)
 	var gotAdd = true
 	var gotProviders = []uint32{99} // should be cleared to nil
-	c := NewClient(Options{
+	c := NewClient(&Options{
 		OnASPA: func(add bool, _ uint32, providers []uint32) {
 			gotAdd, gotProviders = add, providers
 		},
@@ -372,7 +372,7 @@ func TestASPA_IgnoredOnV1(t *testing.T) {
 	h.Version = VersionV1 // override version in header to v1
 
 	called := false
-	c := NewClient(Options{
+	c := NewClient(&Options{
 		OnASPA: func(_ bool, _ uint32, _ []uint32) { called = true },
 	})
 	require.NoError(t, c.dispatch(nil, h, payload, nil))
@@ -385,7 +385,7 @@ func TestASPA_NoProviders_AnnounceIsEmpty(t *testing.T) {
 	h, payload := parsePDU(t, wire)
 
 	var gotProviders []uint32
-	c := NewClient(Options{
+	c := NewClient(&Options{
 		OnASPA: func(_ bool, _ uint32, providers []uint32) { gotProviders = providers },
 	})
 	require.NoError(t, c.dispatch(nil, h, payload, nil))
@@ -398,7 +398,7 @@ func TestCacheResponse(t *testing.T) {
 	require.Equal(t, byte(PDUCacheResponse), h.Type)
 	require.Nil(t, payload)
 
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	ver := VersionV1
 	require.NoError(t, c.dispatch(nil, h, payload, &ver))
 	c.mu.Lock()
@@ -413,7 +413,7 @@ func TestCacheReset_SendsResetQuery(t *testing.T) {
 
 	resetCalled := false
 	var sendBuf bytes.Buffer
-	c := NewClient(Options{
+	c := NewClient(&Options{
 		OnCacheReset: func() { resetCalled = true },
 	})
 	ver := VersionV1
@@ -425,7 +425,7 @@ func TestCacheReset_SendsResetQuery(t *testing.T) {
 
 func TestSerialNotify_SendsSerialQuery(t *testing.T) {
 	// Set up client with a known serial
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	c.mu.Lock()
 	c.hasSerial = true
 	c.sessid = 0x0042
@@ -452,7 +452,7 @@ func TestSerialNotify_SendsSerialQuery(t *testing.T) {
 
 func TestSerialNotify_SameSerial_NoQuery(t *testing.T) {
 	// If serial matches, no query should be sent
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	c.mu.Lock()
 	c.hasSerial = true
 	c.serial = 100
@@ -469,7 +469,7 @@ func TestSerialNotify_SameSerial_NoQuery(t *testing.T) {
 
 func TestSerialNotify_NoSerial_NoQuery(t *testing.T) {
 	// If we haven't received a full cache yet, don't send serial query
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	wire := buildSerialNotify(VersionV1, 0, 100)
 	h, payload := parsePDU(t, wire)
 
@@ -487,7 +487,7 @@ func TestErrorReport_Parse(t *testing.T) {
 
 	var gotCode uint16
 	var gotText string
-	c := NewClient(Options{
+	c := NewClient(&Options{
 		OnError: func(code uint16, text string) { gotCode, gotText = code, text },
 	})
 	ver := VersionV1
@@ -500,7 +500,7 @@ func TestErrorReport_EmptyText(t *testing.T) {
 	wire := buildErrorReport(VersionV1, ErrInternal, "")
 	h, payload := parsePDU(t, wire)
 	var gotText = "unchanged"
-	c := NewClient(Options{
+	c := NewClient(&Options{
 		OnError: func(_ uint16, text string) { gotText = text },
 	})
 	ver := VersionV1
@@ -513,7 +513,7 @@ func TestVersionDowngrade_V2ToV1(t *testing.T) {
 	h, payload := parsePDU(t, wire)
 
 	var sendBuf bytes.Buffer
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	ver := VersionV2 // we're trying v2, server says no
 	require.NoError(t, c.dispatch(&sendBuf, h, payload, &ver))
 
@@ -528,7 +528,7 @@ func TestVersionDowngrade_V1ToV0(t *testing.T) {
 	h, payload := parsePDU(t, wire)
 
 	var sendBuf bytes.Buffer
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	ver := VersionV1
 	require.NoError(t, c.dispatch(&sendBuf, h, payload, &ver))
 
@@ -541,7 +541,7 @@ func TestVersionDowngrade_V0_NoFurtherDowngrade(t *testing.T) {
 	h, payload := parsePDU(t, wire)
 
 	var sendBuf bytes.Buffer
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	ver := VersionV0
 	require.NoError(t, c.dispatch(&sendBuf, h, payload, &ver))
 	// still v0, no query sent (can't go lower)
@@ -553,7 +553,7 @@ func TestUnknownPDUType_Ignored(t *testing.T) {
 	// Unknown PDU type should not cause panic or error
 	wire := buildHeader(VersionV1, 0xFF, 0, 8) // type 0xFF unknown
 	h, payload := parsePDU(t, wire)
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	require.NoError(t, c.dispatch(nil, h, payload, nil))
 }
 
@@ -565,7 +565,7 @@ func TestRouterKey_Ignored(t *testing.T) {
 	// pad to length
 	wire = append(wire, make([]byte, keyLen-8)...)
 	h, payload := parsePDU(t, wire)
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	require.NoError(t, c.dispatch(nil, h, payload, nil))
 }
 
@@ -652,7 +652,8 @@ func TestSession_BasicROVFlow(t *testing.T) {
 	var endOfDataCalled bool
 	eodSignal, eodCh := waitChan(1)
 
-	c := NewClient(Options{
+	c := NewClient(&Options{
+		Version: VersionAuto,
 		OnROA: func(add bool, prefix netip.Prefix, maxLen uint8, asn uint32) {
 			mu.Lock()
 			roas = append(roas, struct {
@@ -722,7 +723,8 @@ func TestSession_ASPAFlow(t *testing.T) {
 	var aspas []aspaEntry
 
 	eodSignal, eodCh := waitChan(1)
-	c := NewClient(Options{
+	c := NewClient(&Options{
+		Version: VersionAuto,
 		OnASPA: func(add bool, cas uint32, providers []uint32) {
 			mu.Lock()
 			aspas = append(aspas, aspaEntry{add, cas, append([]uint32(nil), providers...)})
@@ -771,7 +773,8 @@ func TestSession_ASPAWithdraw(t *testing.T) {
 	var events []bool // add/withdraw events
 
 	eodSignal, eodCh := waitChan(2)
-	c := NewClient(Options{
+	c := NewClient(&Options{
+		Version: VersionAuto,
 		OnASPA: func(add bool, _ uint32, _ []uint32) {
 			mu.Lock()
 			events = append(events, add)
@@ -822,7 +825,8 @@ func TestSession_VersionNegotiation_V2ToV1(t *testing.T) {
 	var roaCount int
 
 	eodSignal, eodCh := waitChan(1)
-	c := NewClient(Options{
+	c := NewClient(&Options{
+		Version: VersionAuto,
 		OnROA: func(_ bool, _ netip.Prefix, _ uint8, _ uint32) {
 			mu.Lock()
 			roaCount++
@@ -874,7 +878,8 @@ func TestSession_CacheReset(t *testing.T) {
 
 	resetCount := 0
 	resetSignal, resetCh := waitChan(1)
-	c := NewClient(Options{
+	c := NewClient(&Options{
+		Version:      VersionAuto,
 		OnCacheReset: func() { resetCount++; resetSignal() },
 	})
 
@@ -915,7 +920,8 @@ func TestSession_SerialQuery_Flow(t *testing.T) {
 
 	eodSignal1, eodCh1 := waitChan(1)
 	eodSignal2, eodCh2 := waitChan(2)
-	c := NewClient(Options{
+	c := NewClient(&Options{
+		Version: VersionAuto,
 		OnROA: func(add bool, _ netip.Prefix, _ uint8, asn uint32) {
 			if add {
 				mu.Lock()
@@ -972,7 +978,7 @@ func TestSession_ContextCancel(t *testing.T) {
 	client, server := net.Pipe()
 	defer server.Close()
 
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	ctx, cancel := ctxWithTimeout(t)
 
 	done := make(chan error, 1)
@@ -995,7 +1001,7 @@ func TestSession_ContextCancel(t *testing.T) {
 func TestSession_ConnDrop(t *testing.T) {
 	client, server := net.Pipe()
 
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	ctx, cancel := ctxWithTimeout(t)
 	defer cancel()
 
@@ -1017,7 +1023,7 @@ func TestSession_ConnDrop(t *testing.T) {
 }
 
 func TestSendSerial_NotConnected(t *testing.T) {
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	// not connected, not hasSerial → should return false gracefully
 	require.False(t, c.SendSerial())
 }
@@ -1026,7 +1032,7 @@ func TestSendSerial_NoCache(t *testing.T) {
 	client, server := net.Pipe()
 	defer server.Close()
 
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	ctx, cancel := ctxWithTimeout(t)
 	defer cancel()
 
@@ -1042,35 +1048,35 @@ func TestSendSerial_NoCache(t *testing.T) {
 func TestIPv4Prefix_TruncatedPayload(t *testing.T) {
 	h := pduHeader{Type: PDUIPv4Prefix, Version: VersionV1, Length: 14}
 	payload := make([]byte, 6) // need 12
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	require.Error(t, c.dispatch(nil, h, payload, nil))
 }
 
 func TestIPv6Prefix_TruncatedPayload(t *testing.T) {
 	h := pduHeader{Type: PDUIPv6Prefix, Version: VersionV1, Length: 18}
 	payload := make([]byte, 10) // need 24
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	require.Error(t, c.dispatch(nil, h, payload, nil))
 }
 
 func TestASPA_TruncatedPayload(t *testing.T) {
 	h := pduHeader{Type: PDUAspa, Version: VersionV2, Session: 0x0100, Length: 10}
 	payload := make([]byte, 2) // need >= 4
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	require.Error(t, c.dispatch(nil, h, payload, nil))
 }
 
 func TestEndOfData_TruncatedPayload(t *testing.T) {
 	h := pduHeader{Type: PDUEndOfData, Version: VersionV1, Session: 1, Length: 10}
 	payload := make([]byte, 2) // need >= 4
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	require.Error(t, c.dispatch(nil, h, payload, nil))
 }
 
 func TestSerialNotify_TruncatedPayload(t *testing.T) {
 	h := pduHeader{Type: PDUSerialNotify, Version: VersionV1, Session: 1, Length: 10}
 	payload := make([]byte, 2) // need >= 4
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	require.Error(t, c.dispatch(nil, h, payload, nil))
 }
 
@@ -1079,7 +1085,7 @@ func TestASPA_NonAlignedPayload(t *testing.T) {
 	h := pduHeader{Type: PDUAspa, Version: VersionV2, Session: 0x0100, Length: 17}
 	payload := make([]byte, 9)
 	binary.BigEndian.PutUint32(payload[0:4], 65001)
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	require.Error(t, c.dispatch(nil, h, payload, nil))
 }
 
@@ -1109,7 +1115,7 @@ func TestReadPayload_TooSmall(t *testing.T) {
 // --- Session ID change in SerialNotify ---
 
 func TestSerialNotify_SessionChange_SendsResetQuery(t *testing.T) {
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	c.mu.Lock()
 	c.hasSerial = true
 	c.sessid = 0x0001
@@ -1135,7 +1141,7 @@ func TestSerialNotify_SessionChange_SendsResetQuery(t *testing.T) {
 func TestRun_NoGoroutineLeak_OnIOError(t *testing.T) {
 	client, server := net.Pipe()
 
-	c := NewClient(Options{})
+	c := NewClient(nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -1170,7 +1176,8 @@ func TestSendSerial_ConcurrentWithRun(t *testing.T) {
 	defer server.Close()
 
 	eodSignal, eodCh := waitChan(1)
-	c := NewClient(Options{
+	c := NewClient(&Options{
+		Version:     VersionAuto,
 		OnEndOfData: func(_ uint16, _ uint32) { eodSignal() },
 	})
 	ctx, cancel := ctxWithTimeout(t)
@@ -1221,7 +1228,8 @@ func TestRun_ReconnectionPreservesSerial(t *testing.T) {
 	// first connection: establish serial state
 	client1, server1 := net.Pipe()
 	eodSignal, eodCh := waitChan(1)
-	c := NewClient(Options{
+	c := NewClient(&Options{
+		Version:     VersionAuto,
 		OnEndOfData: func(_ uint16, _ uint32) { eodSignal() },
 	})
 	ctx1, cancel1 := ctxWithTimeout(t)
