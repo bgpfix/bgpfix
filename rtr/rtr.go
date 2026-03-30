@@ -40,7 +40,12 @@ type Client struct {
 }
 
 // NewClient returns a new Client with the given options.
+// Version defaults to VersionAuto if not set (zero value).
+// To force RTR v0, set c.Options.Version = VersionV0 after construction.
 func NewClient(opts Options) *Client {
+	if opts.Version == 0 {
+		opts.Version = VersionAuto
+	}
 	c := &Client{Options: opts}
 	if opts.Logger != nil {
 		c.Logger = opts.Logger
@@ -62,6 +67,10 @@ func NewClient(opts Options) *Client {
 // this goroutine exits when Run returns.
 func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 	c.mu.Lock()
+	if c.conn != nil {
+		c.mu.Unlock()
+		return fmt.Errorf("rtr: Run already active")
+	}
 	c.conn = conn
 	c.mu.Unlock()
 
@@ -82,10 +91,10 @@ func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 		}
 	}()
 
-	// determine starting version
+	// determine starting version (VersionAuto or any value > V2 starts at V2)
 	ver := c.Options.Version
-	if ver == 0 || ver == VersionAuto {
-		ver = VersionV2 // auto: start with highest supported version
+	if ver > VersionV2 {
+		ver = VersionV2
 	}
 
 	// send initial Reset Query

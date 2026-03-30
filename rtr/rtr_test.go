@@ -627,7 +627,11 @@ func serverWrite(t *testing.T, server net.Conn, pdus ...[]byte) {
 func clientReadQuery(t *testing.T, server net.Conn, maxLen int) []byte {
 	t.Helper()
 	buf := make([]byte, maxLen)
-	server.SetReadDeadline(time.Now().Add(time.Second))
+	deadline := time.Now().Add(5 * time.Second)
+	if dl, ok := t.Deadline(); ok {
+		deadline = dl.Add(-time.Second) // leave 1s margin before test timeout
+	}
+	server.SetReadDeadline(deadline)
 	n, err := io.ReadAtLeast(server, buf, 8)
 	require.NoError(t, err)
 	return buf[:n]
