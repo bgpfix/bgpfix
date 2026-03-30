@@ -80,13 +80,14 @@ func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 
 	runDone := make(chan struct{})
 	defer func() {
+		conn.Close()
 		close(runDone)
 		c.mu.Lock()
 		c.conn = nil
 		c.mu.Unlock()
 	}()
 
-	// close conn when ctx is cancelled or Run exits
+	// interrupt blocking reads when ctx is cancelled
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -96,10 +97,7 @@ func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 	}()
 
 	// determine starting version (VersionAuto or any value > V2 starts at V2)
-	ver := c.Options.Version
-	if ver > VersionV2 {
-		ver = VersionV2
-	}
+	ver := min(c.Options.Version, VersionV2)
 
 	// send initial Reset Query
 	c.wmu.Lock()
@@ -130,6 +128,9 @@ func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 		}
 
 		if err := c.dispatch(conn, h, payload, &ver); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return err
 		}
 	}
@@ -245,6 +246,9 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 		code := h.Session
 		text := parseErrorText(payload)
 		c.Warn().Uint16("code", code).Str("text", text).Msg("RTR error report")
+		if c.Options.OnError != nil {
+			c.Options.OnError(code, text)
+		}
 		// auto-negotiate: downgrade protocol version and retry
 		if code == ErrUnsupVersion && c.Options.Version == VersionAuto && ver != nil && *ver > VersionV0 {
 			*ver--
@@ -255,9 +259,6 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 				c.wmu.Unlock()
 				return err
 			}
-		}
-		if c.Options.OnError != nil {
-			c.Options.OnError(code, text)
 		}
 
 	case PDURouterKey:
@@ -285,7 +286,7 @@ func (c *Client) dispatchIPv4(payload []byte) error {
 		return fmt.Errorf("rtr: invalid IPv4 prefix /%d: %w", pfxLen, err)
 	}
 	if c.Options.OnROA != nil {
-		c.Options.OnROA(flags == FlagAnnounce, prefix.Masked(), maxLen, asn)
+		c.Options.OnROA(flags&FlagAnnounce != 0, prefix.Masked(), maxLen, asn)
 	}
 	return nil
 }
@@ -307,7 +308,7 @@ func (c *Client) dispatchIPv6(payload []byte) error {
 		return fmt.Errorf("rtr: invalid IPv6 prefix /%d: %w", pfxLen, err)
 	}
 	if c.Options.OnROA != nil {
-		c.Options.OnROA(flags == FlagAnnounce, prefix.Masked(), maxLen, asn)
+		c.Options.OnROA(flags&FlagAnnounce != 0, prefix.Masked(), maxLen, asn)
 	}
 	return nil
 }
