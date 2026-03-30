@@ -61,14 +61,12 @@ func NewClient(opts *Options) *Client {
 }
 
 // Run starts an RTR session over conn, processing PDUs until conn closes or ctx is done.
-// It sends a Reset Query immediately on connect.
-// On receiving Error code ErrUnsupVersion, it automatically downgrades the protocol
-// version (v2 → v1 → v0) and retries.
+// It sends a Reset Query immediately on connect. Run always closes conn before returning.
+// On receiving ErrUnsupVersion with VersionAuto, it downgrades version (v2→v1→v0) and retries.
 // Returns ctx.Err() if ctx is cancelled, otherwise the connection error.
 // The caller is responsible for reconnection.
 //
-// NB: Run starts one internal goroutine to close conn on ctx cancellation;
-// this goroutine exits when Run returns.
+// NB: Run starts one internal goroutine that exits when Run returns.
 func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 	c.mu.Lock()
 	if c.conn != nil {
@@ -137,7 +135,7 @@ func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 }
 
 // SendSerial sends a Serial Query to request incremental updates since the last serial.
-// Returns false if no serial is available yet (no full cache received) or not connected.
+// Returns false if not connected, no full cache has been received yet, or the write fails.
 // Safe to call concurrently with Run from a different goroutine.
 func (c *Client) SendSerial() bool {
 	c.mu.Lock()
