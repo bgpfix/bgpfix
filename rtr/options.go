@@ -10,14 +10,14 @@ import (
 // DefaultOptions are the default RTR client options.
 var DefaultOptions = Options{
 	Logger:  &log.Logger,
-	Version: 0, // auto: try v2, fall back to v1, then v0
+	Version: VersionAuto,
 }
 
 // Options configures the RTR client behavior and callbacks.
 // All callbacks are called serially from the Run goroutine.
 type Options struct {
 	Logger  *zerolog.Logger // if nil, logging is disabled
-	Version byte            // preferred RTR protocol version (0 = auto: try v2, v1, v0)
+	Version byte            // preferred RTR protocol version (VersionAuto = negotiate v2 → v1 → v0)
 
 	// OnROA is called for each ROA announcement or withdrawal.
 	// add=true means announcement; false means withdrawal.

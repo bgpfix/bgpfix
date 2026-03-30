@@ -33,9 +33,10 @@ const (
 
 // RTR protocol version numbers.
 const (
-	VersionV0 byte = 0 // original (draft-ietf-sidr-rpki-rtr)
-	VersionV1 byte = 1 // RFC 8210
-	VersionV2 byte = 2 // draft-ietf-sidrops-8210bis (adds ASPA)
+	VersionV0   byte = 0   // original (draft-ietf-sidr-rpki-rtr)
+	VersionV1   byte = 1   // RFC 8210
+	VersionV2   byte = 2   // draft-ietf-sidrops-8210bis (adds ASPA)
+	VersionAuto byte = 255 // auto-negotiate: try v2, fall back to v1, then v0
 )
 
 // Error codes from Error Report PDUs.
@@ -101,7 +102,7 @@ func readPayload(r io.Reader, h pduHeader) ([]byte, error) {
 	if h.Length == 8 {
 		return nil, nil
 	}
-	payload := make([]byte, h.Length-8)
+	payload := make([]byte, int(h.Length-8))
 	if _, err := io.ReadFull(r, payload); err != nil {
 		return nil, fmt.Errorf("rtr: type %d payload read: %w", h.Type, err)
 	}

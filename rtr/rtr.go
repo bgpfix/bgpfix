@@ -84,12 +84,15 @@ func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 
 	// determine starting version
 	ver := c.Options.Version
-	if ver == 0 {
+	if ver == 0 || ver == VersionAuto {
 		ver = VersionV2 // auto: start with highest supported version
 	}
 
 	// send initial Reset Query
-	if err := writeResetQuery(conn, ver); err != nil {
+	c.wmu.Lock()
+	err := writeResetQuery(conn, ver)
+	c.wmu.Unlock()
+	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}

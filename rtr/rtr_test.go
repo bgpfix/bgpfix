@@ -646,6 +646,7 @@ func TestSession_BasicROVFlow(t *testing.T) {
 		asn    uint32
 	}
 	var endOfDataCalled bool
+	eodSignal, eodCh := waitChan(1)
 
 	c := NewClient(Options{
 		OnROA: func(add bool, prefix netip.Prefix, maxLen uint8, asn uint32) {
@@ -662,6 +663,7 @@ func TestSession_BasicROVFlow(t *testing.T) {
 			mu.Lock()
 			endOfDataCalled = true
 			mu.Unlock()
+			eodSignal()
 		},
 	})
 
@@ -688,8 +690,8 @@ func TestSession_BasicROVFlow(t *testing.T) {
 		buildEndOfData(VersionV1, 0x0001, 1, 3600, 600, 7200),
 	)
 
-	// wait for processing
-	time.Sleep(50 * time.Millisecond)
+	// wait for EndOfData callback
+	<-eodCh
 	cancel()
 	<-done
 
@@ -715,12 +717,14 @@ func TestSession_ASPAFlow(t *testing.T) {
 	}
 	var aspas []aspaEntry
 
+	eodSignal, eodCh := waitChan(1)
 	c := NewClient(Options{
 		OnASPA: func(add bool, cas uint32, providers []uint32) {
 			mu.Lock()
 			aspas = append(aspas, aspaEntry{add, cas, append([]uint32(nil), providers...)})
 			mu.Unlock()
 		},
+		OnEndOfData: func(_ uint16, _ uint32) { eodSignal() },
 	})
 
 	ctx, cancel := ctxWithTimeout(t)
@@ -741,7 +745,7 @@ func TestSession_ASPAFlow(t *testing.T) {
 		buildEndOfData(VersionV2, 0x0001, 1, 3600, 600, 7200),
 	)
 
-	time.Sleep(50 * time.Millisecond)
+	<-eodCh
 	cancel()
 	<-done
 
@@ -762,12 +766,14 @@ func TestSession_ASPAWithdraw(t *testing.T) {
 	var mu sync.Mutex
 	var events []bool // add/withdraw events
 
+	eodSignal, eodCh := waitChan(2)
 	c := NewClient(Options{
 		OnASPA: func(add bool, _ uint32, _ []uint32) {
 			mu.Lock()
 			events = append(events, add)
 			mu.Unlock()
 		},
+		OnEndOfData: func(_ uint16, _ uint32) { eodSignal() },
 	})
 
 	ctx, cancel := ctxWithTimeout(t)
@@ -792,7 +798,7 @@ func TestSession_ASPAWithdraw(t *testing.T) {
 		buildEndOfData(VersionV2, 0x0001, 2, 3600, 600, 7200),
 	)
 
-	time.Sleep(50 * time.Millisecond)
+	<-eodCh
 	cancel()
 	<-done
 
@@ -811,12 +817,14 @@ func TestSession_VersionNegotiation_V2ToV1(t *testing.T) {
 	var mu sync.Mutex
 	var roaCount int
 
+	eodSignal, eodCh := waitChan(1)
 	c := NewClient(Options{
 		OnROA: func(_ bool, _ netip.Prefix, _ uint8, _ uint32) {
 			mu.Lock()
 			roaCount++
 			mu.Unlock()
 		},
+		OnEndOfData: func(_ uint16, _ uint32) { eodSignal() },
 	})
 
 	ctx, cancel := ctxWithTimeout(t)
@@ -845,7 +853,7 @@ func TestSession_VersionNegotiation_V2ToV1(t *testing.T) {
 		buildEndOfData(VersionV1, 0x0002, 5, 3600, 600, 7200),
 	)
 
-	time.Sleep(50 * time.Millisecond)
+	<-eodCh
 	cancel()
 	<-done
 
@@ -861,8 +869,9 @@ func TestSession_CacheReset(t *testing.T) {
 	defer server.Close()
 
 	resetCount := 0
+	resetSignal, resetCh := waitChan(1)
 	c := NewClient(Options{
-		OnCacheReset: func() { resetCount++ },
+		OnCacheReset: func() { resetCount++; resetSignal() },
 	})
 
 	ctx, cancel := ctxWithTimeout(t)
@@ -881,11 +890,11 @@ func TestSession_CacheReset(t *testing.T) {
 		buildCacheReset(VersionV1),
 	)
 
-	// client should send a new Reset Query after receiving CacheReset
+	// wait for cache reset callback, then read the new Reset Query
+	<-resetCh
 	q := clientReadQuery(t, server, 8)
 	require.Equal(t, byte(PDUResetQuery), q[1])
 
-	time.Sleep(20 * time.Millisecond)
 	cancel()
 	<-done
 
@@ -900,6 +909,8 @@ func TestSession_SerialQuery_Flow(t *testing.T) {
 	var mu sync.Mutex
 	var roas []uint32 // ASNs of received ROAs
 
+	eodSignal1, eodCh1 := waitChan(1)
+	eodSignal2, eodCh2 := waitChan(2)
 	c := NewClient(Options{
 		OnROA: func(add bool, _ netip.Prefix, _ uint8, asn uint32) {
 			if add {
@@ -907,6 +918,10 @@ func TestSession_SerialQuery_Flow(t *testing.T) {
 				roas = append(roas, asn)
 				mu.Unlock()
 			}
+		},
+		OnEndOfData: func(_ uint16, _ uint32) {
+			eodSignal1()
+			eodSignal2()
 		},
 	})
 
@@ -923,7 +938,7 @@ func TestSession_SerialQuery_Flow(t *testing.T) {
 		buildIPv4Prefix(VersionV1, FlagAnnounce, 24, 24, [4]byte{1, 0, 0, 0}, 65001),
 		buildEndOfData(VersionV1, 0x0001, 10, 3600, 600, 7200),
 	)
-	time.Sleep(30 * time.Millisecond)
+	<-eodCh1
 
 	// trigger incremental update via SerialNotify
 	serverWrite(t, server, buildSerialNotify(VersionV1, 0x0001, 11))
@@ -940,7 +955,7 @@ func TestSession_SerialQuery_Flow(t *testing.T) {
 		buildEndOfData(VersionV1, 0x0001, 11, 3600, 600, 7200),
 	)
 
-	time.Sleep(30 * time.Millisecond)
+	<-eodCh2
 	cancel()
 	<-done
 
@@ -1136,10 +1151,7 @@ func TestRun_NoGoroutineLeak_OnIOError(t *testing.T) {
 		t.Fatal("Run did not return after conn close")
 	}
 
-	// give goroutines time to clean up
-	time.Sleep(50 * time.Millisecond)
-
-	// verify the client is not connected (goroutine cleaned up)
+	// verify the client is not connected (Run's defer already ran)
 	c.mu.Lock()
 	conn := c.conn
 	c.mu.Unlock()
@@ -1153,7 +1165,10 @@ func TestSendSerial_ConcurrentWithRun(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
-	c := NewClient(Options{})
+	eodSignal, eodCh := waitChan(1)
+	c := NewClient(Options{
+		OnEndOfData: func(_ uint16, _ uint32) { eodSignal() },
+	})
 	ctx, cancel := ctxWithTimeout(t)
 	defer cancel()
 
@@ -1169,7 +1184,7 @@ func TestSendSerial_ConcurrentWithRun(t *testing.T) {
 		buildIPv4Prefix(VersionV1, FlagAnnounce, 24, 24, [4]byte{1, 0, 0, 0}, 65001),
 		buildEndOfData(VersionV1, 0x0001, 10, 3600, 600, 7200),
 	)
-	time.Sleep(50 * time.Millisecond)
+	<-eodCh
 
 	// drain server side so writes don't block on the synchronous net.Pipe
 	go func() {
@@ -1201,7 +1216,10 @@ func TestSendSerial_ConcurrentWithRun(t *testing.T) {
 func TestRun_ReconnectionPreservesSerial(t *testing.T) {
 	// first connection: establish serial state
 	client1, server1 := net.Pipe()
-	c := NewClient(Options{})
+	eodSignal, eodCh := waitChan(1)
+	c := NewClient(Options{
+		OnEndOfData: func(_ uint16, _ uint32) { eodSignal() },
+	})
 	ctx1, cancel1 := ctxWithTimeout(t)
 
 	done1 := make(chan error, 1)
@@ -1212,7 +1230,7 @@ func TestRun_ReconnectionPreservesSerial(t *testing.T) {
 		buildCacheResponse(VersionV1, 0x0001),
 		buildEndOfData(VersionV1, 0x0001, 42, 3600, 600, 7200),
 	)
-	time.Sleep(50 * time.Millisecond)
+	<-eodCh
 
 	// verify state was set
 	c.mu.Lock()
@@ -1251,4 +1269,24 @@ func TestRun_ReconnectionPreservesSerial(t *testing.T) {
 func ctxWithTimeout(t *testing.T) (context.Context, context.CancelFunc) {
 	t.Helper()
 	return context.WithTimeout(context.Background(), 5*time.Second)
+}
+
+// waitChan returns a channel that is closed after n sends.
+// Call the returned function from a callback to signal completion.
+func waitChan(n int) (signal func(), ch <-chan struct{}) {
+	c := make(chan struct{})
+	var cnt int
+	var mu sync.Mutex
+	return func() {
+		mu.Lock()
+		cnt++
+		if cnt >= n {
+			select {
+			case <-c:
+			default:
+				close(c)
+			}
+		}
+		mu.Unlock()
+	}, c
 }

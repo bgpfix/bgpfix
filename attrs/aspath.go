@@ -84,7 +84,8 @@ func (a *Aspath) UniqueLen() (l int) {
 }
 
 // Unique returns the AS_PATH as a deduplicated flat slice of ASNs (prepend-collapsed).
-// Returns nil if any AS_SET segment is present; ASPA verification treats AS_SET as invalid.
+// Returns nil if the path is empty or any AS_SET segment is present;
+// ASPA verification treats AS_SET as invalid.
 func (a *Aspath) Unique() []uint32 {
 	n := a.Len()
 	if n == 0 {
