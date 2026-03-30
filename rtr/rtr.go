@@ -14,7 +14,6 @@ package rtr
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -58,6 +57,9 @@ func NewClient(opts Options) *Client {
 // version (v2 → v1 → v0) and retries.
 // Returns ctx.Err() if ctx is cancelled, otherwise the connection error.
 // The caller is responsible for reconnection.
+//
+// NB: Run starts one internal goroutine to close conn on ctx cancellation;
+// this goroutine exits when Run returns.
 func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 	c.mu.Lock()
 	c.conn = conn
@@ -196,7 +198,7 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 		if len(payload) < 4 {
 			return fmt.Errorf("rtr: SerialNotify payload %d < 4", len(payload))
 		}
-		newSerial := binary.BigEndian.Uint32(payload[0:4])
+		newSerial := msb.Uint32(payload[0:4])
 		c.mu.Lock()
 		hasSerial := c.hasSerial
 		curSerial := c.serial
@@ -261,7 +263,7 @@ func (c *Client) dispatchIPv4(payload []byte) error {
 	maxLen := payload[2]
 	// payload[3] = reserved
 	addr := netip.AddrFrom4([4]byte{payload[4], payload[5], payload[6], payload[7]})
-	asn := binary.BigEndian.Uint32(payload[8:12])
+	asn := msb.Uint32(payload[8:12])
 	prefix, err := addr.Prefix(int(pfxLen))
 	if err != nil {
 		return fmt.Errorf("rtr: invalid IPv4 prefix /%d: %w", pfxLen, err)
@@ -283,7 +285,7 @@ func (c *Client) dispatchIPv6(payload []byte) error {
 	var raw [16]byte
 	copy(raw[:], payload[4:20])
 	addr := netip.AddrFrom16(raw)
-	asn := binary.BigEndian.Uint32(payload[20:24])
+	asn := msb.Uint32(payload[20:24])
 	prefix, err := addr.Prefix(int(pfxLen))
 	if err != nil {
 		return fmt.Errorf("rtr: invalid IPv6 prefix /%d: %w", pfxLen, err)
@@ -310,7 +312,7 @@ func (c *Client) dispatchASPA(h pduHeader, payload []byte) error {
 	// which is the high byte of h.Session (uint16 from bytes 2-3 of the header).
 	flags := byte(h.Session >> 8)
 	add := flags&FlagAnnounce != 0
-	cas := binary.BigEndian.Uint32(payload[0:4])
+	cas := msb.Uint32(payload[0:4])
 
 	var providers []uint32
 	if add {
@@ -318,7 +320,7 @@ func (c *Client) dispatchASPA(h pduHeader, payload []byte) error {
 		provCount := (len(payload) - 4) / 4
 		providers = make([]uint32, provCount)
 		for i := range provCount {
-			providers[i] = binary.BigEndian.Uint32(payload[4+i*4:])
+			providers[i] = msb.Uint32(payload[4+i*4:])
 		}
 	}
 
@@ -334,7 +336,7 @@ func (c *Client) dispatchEndOfData(h pduHeader, payload []byte) error {
 	if len(payload) < 4 {
 		return fmt.Errorf("rtr: EndOfData payload %d < 4", len(payload))
 	}
-	serial := binary.BigEndian.Uint32(payload[0:4])
+	serial := msb.Uint32(payload[0:4])
 
 	c.mu.Lock()
 	// NB: check for session ID change (server restarted or config changed)

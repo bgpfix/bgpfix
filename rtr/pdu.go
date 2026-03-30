@@ -1,10 +1,13 @@
 package rtr
 
 import (
-	"encoding/binary"
 	"fmt"
 	"io"
+
+	"github.com/bgpfix/bgpfix/binary"
 )
+
+var msb = binary.Msb
 
 // PDU type codes.
 // Direction: S=Server->Client, C=Client->Server.
@@ -58,9 +61,9 @@ const (
 // The session/flags field carries:
 //   - Session ID for: SerialNotify, SerialQuery, CacheResponse, EndOfData
 //   - Error Code for: ErrorReport
-//   - Flags for: IPv4Prefix, IPv6Prefix, ASPA (low byte = flags, high byte unused or reserved)
-//     NB: for ASPA, flags is in the HIGH byte (buf[2]) per draft-ietf-sidrops-8210bis §6.12
-//   - Zero for: ResetQuery, CacheReset, RouterKey
+//   - Zero/reserved for: IPv4Prefix, IPv6Prefix, ResetQuery, CacheReset, RouterKey
+//     NB: IPv4/IPv6 Prefix flags are in payload byte 0, not in this header field
+//   - ASPA: flags in HIGH byte (buf[2]) per draft-ietf-sidrops-8210bis §6.12
 type pduHeader struct {
 	Version byte
 	Type    byte
@@ -77,8 +80,8 @@ func readHeader(r io.Reader) (pduHeader, error) {
 	return pduHeader{
 		Version: buf[0],
 		Type:    buf[1],
-		Session: binary.BigEndian.Uint16(buf[2:4]),
-		Length:  binary.BigEndian.Uint32(buf[4:8]),
+		Session: msb.Uint16(buf[2:4]),
+		Length:  msb.Uint32(buf[4:8]),
 	}, nil
 }
 
@@ -116,9 +119,9 @@ func writeSerialQuery(w io.Writer, version byte, sessid uint16, serial uint32) e
 	var buf [12]byte
 	buf[0] = version
 	buf[1] = PDUSerialQuery
-	binary.BigEndian.PutUint16(buf[2:4], sessid)
-	binary.BigEndian.PutUint32(buf[4:8], 12)
-	binary.BigEndian.PutUint32(buf[8:12], serial)
+	msb.PutUint16(buf[2:4], sessid)
+	msb.PutUint32(buf[4:8], 12)
+	msb.PutUint32(buf[8:12], serial)
 	_, err := w.Write(buf[:])
 	return err
 }
@@ -133,15 +136,18 @@ func parseErrorText(payload []byte) string {
 	if len(payload) < 4 {
 		return ""
 	}
-	encLen := int(binary.BigEndian.Uint32(payload[0:4]))
-	off := 4 + encLen
+	encLen := msb.Uint32(payload[0:4])
+	if encLen > uint32(len(payload)-4) {
+		return ""
+	}
+	off := 4 + int(encLen)
 	if off+4 > len(payload) {
 		return ""
 	}
-	textLen := int(binary.BigEndian.Uint32(payload[off : off+4]))
-	off += 4
-	if off+textLen > len(payload) || textLen == 0 {
+	textLen := msb.Uint32(payload[off : off+4])
+	if textLen == 0 || textLen > uint32(len(payload)-off-4) {
 		return ""
 	}
-	return string(payload[off : off+textLen])
+	off += 4
+	return string(payload[off : off+int(textLen)])
 }
