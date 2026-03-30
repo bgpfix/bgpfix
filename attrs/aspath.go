@@ -83,23 +83,25 @@ func (a *Aspath) UniqueLen() (l int) {
 	return l
 }
 
-// Flat returns the AS_PATH as a deduplicated flat slice of ASNs (prepend-collapsed).
+// Unique returns the AS_PATH as a deduplicated flat slice of ASNs (prepend-collapsed).
 // Returns nil if any AS_SET segment is present; ASPA verification treats AS_SET as invalid.
-func (a *Aspath) Flat() []uint32 {
+func (a *Aspath) Unique() []uint32 {
 	n := a.Len()
 	if n == 0 {
 		return nil
 	}
 	out := make([]uint32, 0, n)
 	var prev uint32
+	first := true
 	for _, seg := range a.Segments {
 		if seg.IsSet {
 			return nil
 		}
 		for _, asn := range seg.List {
-			if asn != prev {
+			if first || asn != prev {
 				out = append(out, asn)
 				prev = asn
+				first = false
 			}
 		}
 	}

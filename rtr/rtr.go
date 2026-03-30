@@ -32,11 +32,12 @@ type Client struct {
 	Options Options
 
 	mu        sync.Mutex
-	conn      net.Conn // current connection (nil when Run is not active)
-	version   byte     // negotiated protocol version (0 until first CacheResponse)
-	sessid    uint16   // current session ID (from CacheResponse)
-	serial    uint32   // last serial number received (from EndOfData)
-	hasSerial bool     // true once the first EndOfData has been received
+	wmu       sync.Mutex // protects writes to conn (SendSerial vs dispatch)
+	conn      net.Conn   // current connection (nil when Run is not active)
+	version   byte       // negotiated protocol version (0 until first CacheResponse)
+	sessid    uint16     // current session ID (from CacheResponse)
+	serial    uint32     // last serial number received (from EndOfData)
+	hasSerial bool       // true once the first EndOfData has been received
 }
 
 // NewClient returns a new Client with the given options.
@@ -62,16 +63,21 @@ func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 	c.conn = conn
 	c.mu.Unlock()
 
+	runDone := make(chan struct{})
 	defer func() {
+		close(runDone)
 		c.mu.Lock()
 		c.conn = nil
 		c.mu.Unlock()
 	}()
 
-	// close conn when ctx is cancelled
+	// close conn when ctx is cancelled or Run exits
 	go func() {
-		<-ctx.Done()
-		conn.Close()
+		select {
+		case <-ctx.Done():
+			conn.Close()
+		case <-runDone:
+		}
 	}()
 
 	// determine starting version
@@ -126,7 +132,10 @@ func (c *Client) SendSerial() bool {
 	if conn == nil || !hasSerial {
 		return false
 	}
-	return writeSerialQuery(conn, version, sessid, serial) == nil
+	c.wmu.Lock()
+	err := writeSerialQuery(conn, version, sessid, serial)
+	c.wmu.Unlock()
+	return err == nil
 }
 
 // Version returns the negotiated protocol version (0 before first CacheResponse).
@@ -177,7 +186,10 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 			c.Options.OnCacheReset()
 		}
 		if w != nil && ver != nil {
-			return writeResetQuery(w, *ver)
+			c.wmu.Lock()
+			err := writeResetQuery(w, *ver)
+			c.wmu.Unlock()
+			return err
 		}
 
 	case PDUSerialNotify:
@@ -191,8 +203,24 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 		sessid := c.sessid
 		c.mu.Unlock()
 		c.Debug().Uint32("serial", newSerial).Msg("RTR serial notify")
-		if w != nil && ver != nil && hasSerial && newSerial != curSerial {
-			return writeSerialQuery(w, *ver, sessid, curSerial)
+		if w != nil && ver != nil && hasSerial {
+			// NB: session ID change means the cache was reset (RFC 8210 §5.4)
+			if h.Session != sessid {
+				c.Info().
+					Uint16("old", sessid).
+					Uint16("new", h.Session).
+					Msg("RTR session ID changed in SerialNotify, sending Reset Query")
+				c.wmu.Lock()
+				err := writeResetQuery(w, *ver)
+				c.wmu.Unlock()
+				return err
+			}
+			if newSerial != curSerial {
+				c.wmu.Lock()
+				err := writeSerialQuery(w, *ver, sessid, curSerial)
+				c.wmu.Unlock()
+				return err
+			}
 		}
 
 	case PDUErrorReport:
@@ -204,7 +232,10 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 			*ver--
 			c.Info().Uint8("version", *ver).Msg("RTR downgrading protocol version")
 			if w != nil {
-				return writeResetQuery(w, *ver)
+				c.wmu.Lock()
+				err := writeResetQuery(w, *ver)
+				c.wmu.Unlock()
+				return err
 			}
 		}
 		if c.Options.OnError != nil {
@@ -271,6 +302,9 @@ func (c *Client) dispatchASPA(h pduHeader, payload []byte) error {
 	}
 	if len(payload) < 4 {
 		return fmt.Errorf("rtr: ASPA payload %d < 4", len(payload))
+	}
+	if (len(payload)-4)%4 != 0 {
+		return fmt.Errorf("rtr: ASPA payload not 4-byte aligned: %d", len(payload))
 	}
 	// NB: per draft-ietf-sidrops-8210bis §6.12, flags is in header byte 2,
 	// which is the high byte of h.Session (uint16 from bytes 2-3 of the header).

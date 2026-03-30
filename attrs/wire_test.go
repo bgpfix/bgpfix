@@ -596,7 +596,7 @@ func TestNextHop_InvalidLength_Wire(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestAspath_Flat(t *testing.T) {
+func TestAspath_Unique(t *testing.T) {
 	tests := []struct {
 		name  string
 		setup func(*Aspath)
@@ -646,13 +646,31 @@ func TestAspath_Flat(t *testing.T) {
 			},
 			[]uint32{65001, 65002, 65003},
 		},
+		{
+			"ASN 0 not dropped",
+			func(a *Aspath) {
+				a.Append([]uint32{0})
+				a.Append([]uint32{65001})
+				a.Append([]uint32{65002})
+			},
+			[]uint32{0, 65001, 65002},
+		},
+		{
+			"ASN 0 dedup",
+			func(a *Aspath) {
+				a.Append([]uint32{0})
+				a.Append([]uint32{0})
+				a.Append([]uint32{65001})
+			},
+			[]uint32{0, 65001},
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			a := NewAttr(ATTR_ASPATH).(*Aspath)
 			tc.setup(a)
-			require.Equal(t, tc.want, a.Flat())
+			require.Equal(t, tc.want, a.Unique())
 		})
 	}
 }

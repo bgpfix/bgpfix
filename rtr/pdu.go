@@ -7,7 +7,7 @@ import (
 )
 
 // PDU type codes.
-// Direction: S=Server→Client, C=Client→Server.
+// Direction: S=Server->Client, C=Client->Server.
 const (
 	PDUSerialNotify  byte = 0  // S: new data available since serial
 	PDUSerialQuery   byte = 1  // C: request incremental update since serial
@@ -82,11 +82,18 @@ func readHeader(r io.Reader) (pduHeader, error) {
 	}, nil
 }
 
+// maxPDULength is the maximum accepted PDU size (header + payload).
+// Real RTR PDUs are at most a few hundred bytes; 64 KiB is generous.
+const maxPDULength = 64 * 1024
+
 // readPayload reads the PDU payload (h.Length - 8 bytes) from r.
 // Returns nil, nil when the PDU has no payload (header-only PDUs).
 func readPayload(r io.Reader, h pduHeader) ([]byte, error) {
 	if h.Length < 8 {
 		return nil, fmt.Errorf("rtr: type %d length %d < 8", h.Type, h.Length)
+	}
+	if h.Length > maxPDULength {
+		return nil, fmt.Errorf("rtr: type %d length %d exceeds max %d", h.Type, h.Length, maxPDULength)
 	}
 	if h.Length == 8 {
 		return nil, nil

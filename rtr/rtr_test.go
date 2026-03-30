@@ -1018,6 +1018,235 @@ func TestSendSerial_NoCache(t *testing.T) {
 	require.False(t, c.SendSerial())
 }
 
+// --- Malformed payload tests ---
+
+func TestIPv4Prefix_TruncatedPayload(t *testing.T) {
+	h := pduHeader{Type: PDUIPv4Prefix, Version: VersionV1, Length: 14}
+	payload := make([]byte, 6) // need 12
+	c := NewClient(Options{})
+	require.Error(t, c.dispatch(nil, h, payload, nil))
+}
+
+func TestIPv6Prefix_TruncatedPayload(t *testing.T) {
+	h := pduHeader{Type: PDUIPv6Prefix, Version: VersionV1, Length: 18}
+	payload := make([]byte, 10) // need 24
+	c := NewClient(Options{})
+	require.Error(t, c.dispatch(nil, h, payload, nil))
+}
+
+func TestASPA_TruncatedPayload(t *testing.T) {
+	h := pduHeader{Type: PDUAspa, Version: VersionV2, Session: 0x0100, Length: 10}
+	payload := make([]byte, 2) // need >= 4
+	c := NewClient(Options{})
+	require.Error(t, c.dispatch(nil, h, payload, nil))
+}
+
+func TestEndOfData_TruncatedPayload(t *testing.T) {
+	h := pduHeader{Type: PDUEndOfData, Version: VersionV1, Session: 1, Length: 10}
+	payload := make([]byte, 2) // need >= 4
+	c := NewClient(Options{})
+	require.Error(t, c.dispatch(nil, h, payload, nil))
+}
+
+func TestSerialNotify_TruncatedPayload(t *testing.T) {
+	h := pduHeader{Type: PDUSerialNotify, Version: VersionV1, Session: 1, Length: 10}
+	payload := make([]byte, 2) // need >= 4
+	c := NewClient(Options{})
+	require.Error(t, c.dispatch(nil, h, payload, nil))
+}
+
+func TestASPA_NonAlignedPayload(t *testing.T) {
+	// 4 (CAS) + 5 bytes = not 4-byte aligned after CAS
+	h := pduHeader{Type: PDUAspa, Version: VersionV2, Session: 0x0100, Length: 17}
+	payload := make([]byte, 9)
+	binary.BigEndian.PutUint32(payload[0:4], 65001)
+	c := NewClient(Options{})
+	require.Error(t, c.dispatch(nil, h, payload, nil))
+}
+
+// --- Oversized PDU test ---
+
+func TestReadPayload_Oversized(t *testing.T) {
+	h := pduHeader{Type: PDUIPv4Prefix, Version: VersionV1, Length: 0xFFFFFFFF}
+	_, err := readPayload(bytes.NewReader(nil), h)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "exceeds max")
+}
+
+func TestReadPayload_HeaderOnly(t *testing.T) {
+	h := pduHeader{Type: PDUResetQuery, Version: VersionV1, Length: 8}
+	payload, err := readPayload(bytes.NewReader(nil), h)
+	require.NoError(t, err)
+	require.Nil(t, payload)
+}
+
+func TestReadPayload_TooSmall(t *testing.T) {
+	h := pduHeader{Type: PDUIPv4Prefix, Version: VersionV1, Length: 5}
+	_, err := readPayload(bytes.NewReader(nil), h)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "< 8")
+}
+
+// --- Session ID change in SerialNotify ---
+
+func TestSerialNotify_SessionChange_SendsResetQuery(t *testing.T) {
+	c := NewClient(Options{})
+	c.mu.Lock()
+	c.hasSerial = true
+	c.sessid = 0x0001
+	c.serial = 99
+	c.version = VersionV1
+	c.mu.Unlock()
+
+	// SerialNotify with a different session ID
+	wire := buildSerialNotify(VersionV1, 0x0002, 100)
+	h, payload := parsePDU(t, wire)
+
+	var sendBuf bytes.Buffer
+	ver := VersionV1
+	require.NoError(t, c.dispatch(&sendBuf, h, payload, &ver))
+
+	// should send Reset Query, not Serial Query
+	require.Equal(t, 8, sendBuf.Len(), "expected 8-byte Reset Query, got %d bytes", sendBuf.Len())
+	require.Equal(t, byte(PDUResetQuery), sendBuf.Bytes()[1])
+}
+
+// --- Goroutine leak test ---
+
+func TestRun_NoGoroutineLeak_OnIOError(t *testing.T) {
+	client, server := net.Pipe()
+
+	c := NewClient(Options{})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() { done <- c.Run(ctx, client) }()
+
+	// read initial Reset Query
+	clientReadQuery(t, server, 8)
+
+	// close server side to cause I/O error (ctx still active)
+	server.Close()
+
+	select {
+	case <-done:
+		// Run returned due to I/O error, good
+	case <-time.After(time.Second):
+		t.Fatal("Run did not return after conn close")
+	}
+
+	// give goroutines time to clean up
+	time.Sleep(50 * time.Millisecond)
+
+	// verify the client is not connected (goroutine cleaned up)
+	c.mu.Lock()
+	conn := c.conn
+	c.mu.Unlock()
+	require.Nil(t, conn, "conn should be nil after Run exits")
+}
+
+// --- Concurrent SendSerial test ---
+
+func TestSendSerial_ConcurrentWithRun(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	c := NewClient(Options{})
+	ctx, cancel := ctxWithTimeout(t)
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() { done <- c.Run(ctx, client) }()
+
+	// read initial Reset Query
+	clientReadQuery(t, server, 8)
+
+	// set up initial cache so SendSerial works
+	serverWrite(t, server,
+		buildCacheResponse(VersionV1, 0x0001),
+		buildIPv4Prefix(VersionV1, FlagAnnounce, 24, 24, [4]byte{1, 0, 0, 0}, 65001),
+		buildEndOfData(VersionV1, 0x0001, 10, 3600, 600, 7200),
+	)
+	time.Sleep(50 * time.Millisecond)
+
+	// drain server side so writes don't block on the synchronous net.Pipe
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			if _, err := server.Read(buf); err != nil {
+				return
+			}
+		}
+	}()
+
+	// call SendSerial concurrently — this would race without wmu
+	var wg sync.WaitGroup
+	for range 10 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c.SendSerial()
+		}()
+	}
+	wg.Wait()
+
+	cancel()
+	<-done
+}
+
+// --- Reconnection state test ---
+
+func TestRun_ReconnectionPreservesSerial(t *testing.T) {
+	// first connection: establish serial state
+	client1, server1 := net.Pipe()
+	c := NewClient(Options{})
+	ctx1, cancel1 := ctxWithTimeout(t)
+
+	done1 := make(chan error, 1)
+	go func() { done1 <- c.Run(ctx1, client1) }()
+
+	clientReadQuery(t, server1, 8) // consume Reset Query
+	serverWrite(t, server1,
+		buildCacheResponse(VersionV1, 0x0001),
+		buildEndOfData(VersionV1, 0x0001, 42, 3600, 600, 7200),
+	)
+	time.Sleep(50 * time.Millisecond)
+
+	// verify state was set
+	c.mu.Lock()
+	require.True(t, c.hasSerial)
+	require.Equal(t, uint32(42), c.serial)
+	c.mu.Unlock()
+
+	cancel1()
+	<-done1
+	server1.Close()
+
+	// second connection: state should persist
+	client2, server2 := net.Pipe()
+	defer server2.Close()
+	ctx2, cancel2 := ctxWithTimeout(t)
+	defer cancel2()
+
+	done2 := make(chan error, 1)
+	go func() { done2 <- c.Run(ctx2, client2) }()
+
+	// client should still send Reset Query (version auto-negotiation)
+	q := clientReadQuery(t, server2, 8)
+	require.Equal(t, byte(PDUResetQuery), q[1])
+
+	// verify serial persisted across reconnection
+	c.mu.Lock()
+	require.True(t, c.hasSerial)
+	require.Equal(t, uint32(42), c.serial)
+	c.mu.Unlock()
+
+	cancel2()
+	<-done2
+}
+
 // ctxWithTimeout returns a context with a 5-second timeout for tests.
 func ctxWithTimeout(t *testing.T) (context.Context, context.CancelFunc) {
 	t.Helper()
