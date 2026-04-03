@@ -237,7 +237,7 @@ func (a *Extcom) ToJSON(dst []byte) []byte {
 func (a *Extcom) FromJSON(src []byte) error {
 	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
 		if typ != json.OBJECT {
-			panic("not an object")
+			return ErrExtcomValue
 		}
 
 		// get community type
