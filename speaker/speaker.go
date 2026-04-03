@@ -90,10 +90,37 @@ func (s *Speaker) onEstablished(ev *pipe.Event) bool {
 }
 
 func (s *Speaker) onOpen(m *msg.Msg) bool {
-	// TODO: validate received OPEN - drop if wrong caps / other params
+	opts := &s.Options
+	o := &m.Open
+
+	// reject duplicate OPEN (session already established)
+	if s.down.Open.Load() != nil {
+		s.Warn().Msg("ignoring duplicate OPEN")
+		return false
+	}
+
+	// validate remote ASN
+	if opts.RemoteASN >= 0 && o.GetASN() != opts.RemoteASN {
+		s.Warn().Int("expected", opts.RemoteASN).Int("got", o.GetASN()).Msg("remote ASN mismatch, dropping OPEN")
+		s.cancel(ErrRemoteASN)
+		return false
+	}
+
+	// validate remote hold time (RFC 4271 §4.2: must be 0 or >= 3)
+	ht := int(o.HoldTime)
+	if ht != 0 && ht < 3 {
+		s.Warn().Int("hold", ht).Msg("remote hold time invalid (must be 0 or >= 3), dropping OPEN")
+		s.cancel(ErrHoldTime)
+		return false
+	}
+	if opts.RemoteHoldTime > 0 && ht > 0 && ht < opts.RemoteHoldTime {
+		s.Warn().Int("hold", ht).Int("min", opts.RemoteHoldTime).Msg("remote hold time below minimum, dropping OPEN")
+		s.cancel(ErrHoldTime)
+		return false
+	}
 
 	// send our OPEN (nop if we did that already)
-	s.sendOpen(&m.Open)
+	s.sendOpen(o)
 
 	// confirm the received OPEN is OK
 	s.sendKeepalive()
