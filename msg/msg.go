@@ -367,7 +367,7 @@ func (msg *Msg) WriteTo(w io.Writer) (n int64, err error) {
 
 	// data length ok?
 	l := msg.Len()
-	if l < HEADLEN || l > MAXLEN {
+	if l < HEADLEN || l > MAXLEN_EXT {
 		return 0, ErrLength
 	}
 
