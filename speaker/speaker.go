@@ -89,6 +89,12 @@ func (s *Speaker) onEstablished(ev *pipe.Event) bool {
 	return false // unregister the handler
 }
 
+// stop cancels the speaker and the attached pipe.
+func (s *Speaker) stop(err error) {
+	s.cancel(err)
+	s.pipe.Cancel(err)
+}
+
 func (s *Speaker) onOpen(m *msg.Msg) bool {
 	opts := &s.Options
 	o := &m.Open
@@ -102,7 +108,7 @@ func (s *Speaker) onOpen(m *msg.Msg) bool {
 	// validate remote ASN
 	if opts.RemoteASN >= 0 && o.GetASN() != opts.RemoteASN {
 		s.Warn().Int("expected", opts.RemoteASN).Int("got", o.GetASN()).Msg("remote ASN mismatch, dropping OPEN")
-		s.cancel(ErrRemoteASN)
+		s.stop(ErrRemoteASN)
 		return false
 	}
 
@@ -110,12 +116,12 @@ func (s *Speaker) onOpen(m *msg.Msg) bool {
 	ht := int(o.HoldTime)
 	if ht != 0 && ht < 3 {
 		s.Warn().Int("hold", ht).Msg("remote hold time invalid (must be 0 or >= 3), dropping OPEN")
-		s.cancel(ErrHoldTime)
+		s.stop(ErrHoldTime)
 		return false
 	}
 	if opts.RemoteHoldTime > 0 && ht > 0 && ht < opts.RemoteHoldTime {
 		s.Warn().Int("hold", ht).Int("min", opts.RemoteHoldTime).Msg("remote hold time below minimum, dropping OPEN")
-		s.cancel(ErrHoldTime)
+		s.stop(ErrHoldTime)
 		return false
 	}
 
@@ -213,7 +219,7 @@ func (s *Speaker) keepaliver(negotiated int64) {
 		last_down = max(s.down.LastAlive.Load(), s.down.LastUpdate.Load(), last_down)
 		if delay := now_ts - last_down; delay > negotiated {
 			s.Warn().Int64("delay", delay).Msg("remote hold timer expired")
-			s.cancel(ErrHoldTime)
+			s.stop(ErrHoldTime)
 			ticker.Stop()
 			return
 		}
