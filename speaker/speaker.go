@@ -219,7 +219,7 @@ func (s *Speaker) keepaliver(negotiated int64) {
 		last_down = max(s.down.LastAlive.Load(), s.down.LastUpdate.Load(), last_down)
 		if delay := now_ts - last_down; delay > negotiated {
 			s.Warn().Int64("delay", delay).Msg("remote hold timer expired")
-			s.stop(ErrHoldTime)
+			s.stop(ErrPeerTimeout)
 			ticker.Stop()
 			return
 		}

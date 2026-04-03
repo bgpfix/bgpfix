@@ -223,8 +223,8 @@ func (a *MPFlowspec) Marshal(cps caps.Caps, _ dir.Dir) {
 		}
 		buf = fr.Marshal(buf[:0], cps)
 		bl := len(buf)
-		if bl >= 0xf000 {
-			continue // rule too long, skip
+		if bl > 0x0FFF {
+			continue // rule too long for 12-bit length field, skip
 		}
 		if bl < 0xf0 {
 			data = append(data, byte(bl))
