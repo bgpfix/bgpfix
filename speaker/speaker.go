@@ -212,9 +212,10 @@ func (s *Speaker) keepaliver(negotiated int64) {
 		// remote timeout?
 		last_down = max(s.down.LastAlive.Load(), s.down.LastUpdate.Load(), last_down)
 		if delay := now_ts - last_down; delay > negotiated {
-			last_down = now_ts
-			s.Warn().Msg("remote hold timer expired")
-			s.pipe.Event(EVENT_PEER_TIMEOUT, delay)
+			s.Warn().Int64("delay", delay).Msg("remote hold timer expired")
+			s.cancel(ErrHoldTime)
+			ticker.Stop()
+			return
 		}
 
 		// local timeout?
