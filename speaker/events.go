@@ -1,6 +1,10 @@
 package speaker
 
+import "errors"
+
 var (
-	// remote hold timer expired
-	EVENT_PEER_TIMEOUT = "bgpfix/speaker.PEER_TIMEOUT"
+	ErrRemoteASN    = errors.New("remote ASN mismatch")
+	ErrHoldTime     = errors.New("remote hold time rejected")
+	ErrPeerTimeout  = errors.New("remote hold timer expired")
+	ErrDuplicateOPEN = errors.New("duplicate OPEN received")
 )

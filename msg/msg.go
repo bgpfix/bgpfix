@@ -294,7 +294,11 @@ func (msg *Msg) Parse(cps caps.Caps) error {
 		if len(msg.Data) != 0 {
 			err = ErrLength
 		}
-	case NOTIFY, REFRESH:
+	case NOTIFY:
+		if len(msg.Data) < 2 {
+			err = ErrShort
+		}
+	case REFRESH:
 		// err = ErrTODO // TODO
 	default:
 		err = ErrType
@@ -363,7 +367,7 @@ func (msg *Msg) WriteTo(w io.Writer) (n int64, err error) {
 
 	// data length ok?
 	l := msg.Len()
-	if l < HEADLEN || l > MAXLEN {
+	if l < HEADLEN || l > MAXLEN_EXT {
 		return 0, ErrLength
 	}
 
@@ -443,7 +447,11 @@ func (msg *Msg) GetJSON() []byte {
 		dst = append(dst, json.Null...)
 	case NOTIFY:
 		dst = append(dst, '"')
-		dst = json.Ascii(dst, msg.Data[2:]) // FIXME
+		if len(msg.Data) >= 2 {
+			dst = json.Ascii(dst, msg.Data[2:])
+		} else {
+			dst = json.Ascii(dst, msg.Data)
+		}
 		dst = append(dst, '"')
 	default:
 		dst = json.Hex(dst, msg.Data)

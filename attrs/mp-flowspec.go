@@ -189,7 +189,9 @@ func (a *MPFlowspec) Unmarshal(cps caps.Caps, _ dir.Dir) error {
 
 			// store, move on
 			rule[ft] = fv
-			n = min(n, len(val))
+			if n > len(val) {
+				return ErrLength
+			}
 			val = val[n:]
 		}
 
@@ -220,11 +222,14 @@ func (a *MPFlowspec) Marshal(cps caps.Caps, _ dir.Dir) {
 			continue
 		}
 		buf = fr.Marshal(buf[:0], cps)
-		if bl := len(buf); bl < 0xf0 {
+		bl := len(buf)
+		if bl > 0x0FFF {
+			continue // rule too long for 12-bit length field, skip
+		}
+		if bl < 0xf0 {
 			data = append(data, byte(bl))
 		} else {
-			bl |= 0xf000
-			data = msb.AppendUint16(data, uint16(bl))
+			data = msb.AppendUint16(data, uint16(bl|0xf000))
 		}
 		data = append(data, buf...)
 	}

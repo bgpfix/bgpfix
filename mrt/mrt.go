@@ -180,7 +180,7 @@ func (mrt *Mrt) FromBytes(raw []byte) (off int, err error) {
 	data = raw[off:]
 
 	// enough bytes for data?
-	if len(data) < l {
+	if l < 0 || len(data) < l {
 		return off, io.ErrUnexpectedEOF
 	}
 

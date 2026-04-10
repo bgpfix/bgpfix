@@ -83,6 +83,32 @@ func (a *Aspath) UniqueLen() (l int) {
 	return l
 }
 
+// Unique returns the AS_PATH as a deduplicated flat slice of ASNs (prepend-collapsed).
+// Returns nil if the path is empty or any AS_SET segment is present;
+// ASPA verification treats AS_SET as invalid.
+func (a *Aspath) Unique() []uint32 {
+	n := a.Len()
+	if n == 0 {
+		return nil
+	}
+	out := make([]uint32, 0, n)
+	var prev uint32
+	first := true
+	for _, seg := range a.Segments {
+		if seg.IsSet {
+			return nil
+		}
+		for _, asn := range seg.List {
+			if first || asn != prev {
+				out = append(out, asn)
+				prev = asn
+				first = false
+			}
+		}
+	}
+	return out
+}
+
 // Hops returns an iterator over the AS_PATH hops.
 // Each hop is either a single ASN (len=1) or a list of AS_SET members (len>1).
 func (a *Aspath) Hops() iter.Seq2[int, []uint32] {
