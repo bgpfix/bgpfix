@@ -218,6 +218,9 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 		hasSerial := c.hasSerial
 		curSerial := c.serial
 		sessid := c.sessid
+		if hasSerial && h.Session != sessid {
+			c.hasSerial = false // clear now so SendSerial fails fast until new EndOfData
+		}
 		c.mu.Unlock()
 		c.Debug().Uint32("serial", newSerial).Msg("RTR serial notify")
 		if w != nil && ver != nil && hasSerial {

@@ -101,7 +101,8 @@ func (s *Speaker) onOpen(m *msg.Msg) bool {
 
 	// reject duplicate OPEN (session already established)
 	if s.down.Open.Load() != nil {
-		s.Warn().Msg("ignoring duplicate OPEN")
+		s.Warn().Msg("duplicate OPEN received, dropping session")
+		s.stop(ErrDuplicateOPEN)
 		return false
 	}
 
@@ -119,7 +120,7 @@ func (s *Speaker) onOpen(m *msg.Msg) bool {
 		s.stop(ErrHoldTime)
 		return false
 	}
-	if opts.RemoteHoldTime > 0 && ht > 0 && ht < opts.RemoteHoldTime {
+	if opts.RemoteHoldTime > 0 && (ht == 0 || ht < opts.RemoteHoldTime) {
 		s.Warn().Int("hold", ht).Int("min", opts.RemoteHoldTime).Msg("remote hold time below minimum, dropping OPEN")
 		s.stop(ErrHoldTime)
 		return false

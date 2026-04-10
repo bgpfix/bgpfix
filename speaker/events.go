@@ -3,7 +3,8 @@ package speaker
 import "errors"
 
 var (
-	ErrRemoteASN   = errors.New("remote ASN mismatch")
-	ErrHoldTime    = errors.New("remote hold time rejected")
-	ErrPeerTimeout = errors.New("remote hold timer expired")
+	ErrRemoteASN    = errors.New("remote ASN mismatch")
+	ErrHoldTime     = errors.New("remote hold time rejected")
+	ErrPeerTimeout  = errors.New("remote hold timer expired")
+	ErrDuplicateOPEN = errors.New("duplicate OPEN received")
 )
