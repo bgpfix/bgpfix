@@ -10,9 +10,13 @@ func ParseNH(buf []byte) (addr, ll netip.Addr, ok bool) {
 	case 4:
 		ok = true
 		addr = netip.AddrFrom4([4]byte(buf))
-	case 16, 24:
+	case 16:
 		ok = true
 		addr = netip.AddrFrom16([16]byte(buf[:16]))
+	case 24:
+		// NB: VPN nexthop = RD(8) + global(16), per RFC 4659
+		ok = true
+		addr = netip.AddrFrom16([16]byte(buf[8:24]))
 	case 32:
 		ok = true
 		addr = netip.AddrFrom16([16]byte(buf[0:16]))
