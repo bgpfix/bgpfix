@@ -108,7 +108,8 @@ func (c *Cache) ParseJSON(data []byte) error {
 }
 
 // ParseCSV parses CSV VRP data (prefix,maxLength,asn) into the pending set.
-// Invalid lines are skipped with a warning.
+// The Routinator column order (asn,prefix,maxLength[,trustAnchor]) is
+// auto-detected per line. Invalid lines are skipped with a warning.
 func (c *Cache) ParseCSV(data []byte) error {
 	lines := strings.Split(string(data), "\n")
 
@@ -132,13 +133,20 @@ func (c *Cache) ParseCSV(data []byte) error {
 			continue
 		}
 
-		prefix, err := netip.ParsePrefix(strings.TrimSpace(parts[0]))
+		// column order: native prefix,maxLength,asn; if the first field is
+		// not a prefix, assume Routinator's asn,prefix,maxLength[,TA]
+		p0, p1, p2 := parts[0], parts[1], parts[2]
+		if _, err := netip.ParsePrefix(strings.TrimSpace(p0)); err != nil {
+			p0, p1, p2 = p1, p2, parts[0]
+		}
+
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(p0))
 		if err != nil {
-			c.Warn().Int("line", i+1).Err(err).Str("prefix", parts[0]).Msg("invalid prefix, skipping")
+			c.Warn().Int("line", i+1).Err(err).Str("prefix", p0).Msg("invalid prefix, skipping")
 			continue
 		}
 
-		maxLen, err := strconv.Atoi(strings.TrimSpace(parts[1]))
+		maxLen, err := strconv.Atoi(strings.TrimSpace(p1))
 		if err != nil {
 			c.Warn().Int("line", i+1).Err(err).Msg("invalid maxLength, skipping")
 			continue
@@ -148,7 +156,7 @@ func (c *Cache) ParseCSV(data []byte) error {
 			continue
 		}
 
-		asn, err := parseASN(parts[2])
+		asn, err := parseASN(p2)
 		if err != nil {
 			c.Warn().Err(err).Int("line", i+1).Msg("invalid ASN, skipping")
 			continue

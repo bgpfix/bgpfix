@@ -186,6 +186,31 @@ func TestParseCSV_NoHeader(t *testing.T) {
 	}
 }
 
+func TestParseCSV_Routinator(t *testing.T) {
+	c := NewCache(nil)
+
+	csv := []byte(`ASN,IP Prefix,Max Length,Trust Anchor
+AS65001,192.0.2.0/24,24,ripe
+AS65003,2001:db8::/32,48,arin
+65002,203.0.113.0/24,26,apnic
+`)
+
+	if err := c.ParseCSV(csv); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	if len(c.next4) != 2 {
+		t.Errorf("expected 2 IPv4 VRPs, got %d", len(c.next4))
+	}
+	if len(c.next6) != 1 {
+		t.Errorf("expected 1 IPv6 VRP, got %d", len(c.next6))
+	}
+	p := netip.MustParsePrefix("192.0.2.0/24")
+	if e := c.next4[p]; len(e) != 1 || e[0].ASN != 65001 || e[0].MaxLen != 24 {
+		t.Errorf("wrong VRP for %s: %+v", p, e)
+	}
+}
+
 func TestParseCSV_Comments(t *testing.T) {
 	c := NewCache(nil)
 
