@@ -390,3 +390,29 @@ func TestMPFlowspec_JSON_Roundtrip(t *testing.T) {
 	fs2.Marshal(cps, dir.DIR_L)
 	require.True(t, bytes.Equal(mp.Data, mp2.Data))
 }
+
+// TestFlowGeneric_FromJSONLen tests that FromJSON derives the wire value
+// length from the value when no explicit "len" is given (issue found in
+// a JSON->wire->JSON round trip: 8000 was truncated to one byte = 64).
+func TestFlowGeneric_FromJSONLen(t *testing.T) {
+	var cps caps.Caps
+
+	fg := NewFlowGeneric(FLOW_PORT_DST).(*FlowGeneric)
+	src := `[{"op":">=","val":8000},{"and":true,"op":"<=","val":9000}]`
+	require.NoError(t, fg.FromJSON([]byte(src)))
+
+	// marshal to wire and parse back
+	wire := fg.Marshal(nil, cps)
+	fg2 := NewFlowGeneric(FLOW_PORT_DST).(*FlowGeneric)
+	_, err := fg2.Unmarshal(wire, cps)
+	require.NoError(t, err)
+
+	require.Equal(t, []uint64{8000, 9000}, fg2.Val)
+	require.JSONEq(t, src, string(fg2.ToJSON(nil)))
+
+	// explicit "len" still wins
+	fg3 := NewFlowGeneric(FLOW_PORT_DST).(*FlowGeneric)
+	require.NoError(t, fg3.FromJSON([]byte(`[{"op":"==","val":80,"len":2}]`)))
+	wire3 := fg3.Marshal(nil, cps)
+	require.Equal(t, []byte{0x91, 0x00, 0x50}, wire3) // last|len=2|==, val 80 in 2 bytes
+}

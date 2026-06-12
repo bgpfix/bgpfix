@@ -704,6 +704,7 @@ func (f *FlowGeneric) FromJSON(src []byte) (err error) {
 		// parse op+val definition
 		var fop FlowOp
 		var fval uint64
+		var has_len bool
 		err := json.ObjectEach(val, func(key string, val []byte, typ json.Type) error {
 			switch key {
 			case "and":
@@ -753,6 +754,7 @@ func (f *FlowGeneric) FromJSON(src []byte) (err error) {
 				fval = val
 
 			case "len":
+				has_len = true
 				l, err := strconv.ParseUint(json.SQ(val), 10, 64)
 				if err != nil {
 					return err
@@ -778,6 +780,18 @@ func (f *FlowGeneric) FromJSON(src []byte) (err error) {
 		})
 		if err != nil {
 			return err
+		}
+
+		// derive the minimal value length, unless given explicitly
+		if !has_len {
+			switch {
+			case fval > 0xFFFFFFFF:
+				fop |= 0b11 << 4
+			case fval > 0xFFFF:
+				fop |= 0b10 << 4
+			case fval > 0xFF:
+				fop |= 0b01 << 4
+			}
 		}
 
 		// add to f, iterate to next (operator, value) element
