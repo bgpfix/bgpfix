@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -31,7 +32,8 @@ func parseASN(s string) (uint32, error) {
 }
 
 // ParseJSON parses Routinator/rpki-client JSON with VRPs and ASPA records
-// into the pending set. Invalid entries are skipped with a warning.
+// into the pending set. Malformed JSON returns an error; entries with
+// invalid values are skipped with a warning.
 func (c *Cache) ParseJSON(data []byte) error {
 	var doc struct {
 		ROAs []struct {
@@ -75,6 +77,10 @@ func (c *Cache) ParseJSON(data []byte) error {
 				continue
 			}
 		case float64:
+			if v < 0 || v > math.MaxUint32 || v != math.Trunc(v) {
+				c.Warn().Float64("asn", v).Msg("ASN out of range, skipping")
+				continue
+			}
 			asn = uint32(v)
 		default:
 			c.Warn().Str("asn", fmt.Sprint(roa.ASN)).Msg("invalid ASN type, skipping")

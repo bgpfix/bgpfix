@@ -76,6 +76,12 @@ func TestAddVRPDelete(t *testing.T) {
 	if entries[0].ASN != 65002 {
 		t.Errorf("wrong entry remaining: ASN=%d", entries[0].ASN)
 	}
+
+	// deleting the last entry must drop the map key
+	c.AddVRP(false, p, 24, 65002)
+	if _, ok := c.next4[p]; ok {
+		t.Errorf("expected key removed after deleting the last entry")
+	}
 }
 
 func TestAddVRPDeleteNonExistent(t *testing.T) {

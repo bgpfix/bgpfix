@@ -99,6 +99,9 @@ func TestParseJSON_InvalidInputs(t *testing.T) {
 		{"maxLength too small", `{"roas": [{"prefix": "192.0.2.0/24", "maxLength": 23, "asn": 65001}]}`},
 		{"maxLength too large", `{"roas": [{"prefix": "192.0.2.0/24", "maxLength": 129, "asn": 65001}]}`},
 		{"invalid ASN string", `{"roas": [{"prefix": "192.0.2.0/24", "maxLength": 24, "asn": "invalid"}]}`},
+		{"negative ASN", `{"roas": [{"prefix": "192.0.2.0/24", "maxLength": 24, "asn": -1}]}`},
+		{"fractional ASN", `{"roas": [{"prefix": "192.0.2.0/24", "maxLength": 24, "asn": 65001.5}]}`},
+		{"ASN over 32 bits", `{"roas": [{"prefix": "192.0.2.0/24", "maxLength": 24, "asn": 4294967296}]}`},
 	}
 
 	for _, tt := range tests {

@@ -122,7 +122,11 @@ func (c *Cache) addVRP(add bool, prefix netip.Prefix, maxLen uint8, asn uint32) 
 		}
 	} else {
 		if i >= 0 {
-			next[p] = slices.Delete(next[p], i, i+1)
+			if len(next[p]) == 1 {
+				delete(next, p) // last entry, drop the key
+			} else {
+				next[p] = slices.Delete(next[p], i, i+1)
+			}
 		}
 	}
 }
@@ -159,7 +163,8 @@ func (c *Cache) addASPA(add bool, cas uint32, providers []uint32) {
 // subsequent incremental updates continue from the published state.
 func (c *Cache) Apply() {
 	c.mu.Lock()
-	if c.next4 != nil {
+	published := c.next4 != nil
+	if published {
 		v4, v6, aspa := c.next4, c.next6, c.nextAspa
 		c.vrp4.Store(&v4)
 		c.vrp6.Store(&v6)
@@ -170,8 +175,10 @@ func (c *Cache) Apply() {
 	}
 	c.mu.Unlock()
 
-	vrps4, vrps6, aspas := c.Sizes()
-	c.Info().Int("vrps4", vrps4).Int("vrps6", vrps6).Int("aspas", aspas).Msg("RPKI cache updated")
+	if published {
+		vrps4, vrps6, aspas := c.Sizes()
+		c.Info().Int("vrps4", vrps4).Int("vrps6", vrps6).Int("aspas", aspas).Msg("RPKI cache updated")
+	}
 	c.once.Do(func() { close(c.ready) })
 }
 
