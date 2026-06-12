@@ -32,8 +32,9 @@ func parseASN(s string) (uint32, error) {
 }
 
 // ParseJSON parses Routinator/rpki-client JSON with VRPs and ASPA records
-// into the pending set. Malformed JSON returns an error; entries with
-// invalid values are skipped with a warning.
+// into the pending set. Malformed JSON or unexpected field types (eg. a
+// string customer_asid) return an error; well-typed entries with invalid
+// values (bad prefix, out-of-range maxLength/ASN) are skipped with a warning.
 func (c *Cache) ParseJSON(data []byte) error {
 	var doc struct {
 		ROAs []struct {
@@ -91,10 +92,6 @@ func (c *Cache) ParseJSON(data []byte) error {
 	}
 
 	for _, aspa := range doc.ASPAs {
-		if aspa.CustomerASID == 0 {
-			c.Warn().Msg("ASPA entry with zero customer ASN, skipping")
-			continue
-		}
 		// NB: Routinator uses provider_asids, rpki-client uses providers.
 		// rpki-client emits [0] for "no providers" — addASPA filters zeros.
 		provs := aspa.ProviderASIDs

@@ -36,6 +36,21 @@ func TestValidateOriginExactMatch(t *testing.T) {
 	}
 }
 
+func TestValidateOriginUnmaskedInput(t *testing.T) {
+	// VRP stored masked, as Cache.AddVRP would store it
+	v4 := VRPs{
+		netip.MustParsePrefix("192.0.2.0/24"): {
+			{MaxLen: 24, ASN: 65001},
+		},
+	}
+
+	// input with host bits set must still resolve to the masked key
+	p := netip.MustParsePrefix("192.0.2.123/24")
+	if got := ValidateOrigin(v4, nil, p, 65001); got != ROV_VALID {
+		t.Errorf("unmasked input: got %d, want ROV_VALID", got)
+	}
+}
+
 func TestValidateOriginMaxLen(t *testing.T) {
 	// VRP: 192.0.2.0/24-26 AS65001 (allows up to /26)
 	v4 := VRPs{

@@ -141,6 +141,10 @@ func (c *Cache) AddASPA(add bool, cas uint32, providers []uint32) {
 
 // addASPA is AddASPA with c.mu held.
 func (c *Cache) addASPA(add bool, cas uint32, providers []uint32) {
+	if add && cas == 0 {
+		c.Warn().Msg("ASPA entry with zero customer ASN, skipping")
+		return
+	}
 	c.ensureNext()
 	if add {
 		// normalize: remove zeros, deduplicate, sort for BinarySearch
