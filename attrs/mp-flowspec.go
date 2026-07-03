@@ -434,9 +434,9 @@ func (f *FlowPrefix6) Unmarshal(buf []byte, cps caps.Caps) (int, error) {
 	var tmp [16]byte
 	n += copy(tmp[o/8:], buf[:b]) // the rest of [16]tmp is zeroed
 
-	// offset%8 is 1-7?
-	if r := o % 8; r != 0 && n > 0 {
-		for i := (o / 8) + n - 1; i > o/8; i-- {
+	// offset%8 is 1-7? (NB: bound by b bytes copied, not n which includes the header)
+	if r := o % 8; r != 0 && b > 0 {
+		for i := (o / 8) + b - 1; i > o/8; i-- {
 			tmp[i] = tmp[i]>>r | tmp[i-1]<<(8-r)
 		}
 		tmp[o/8] >>= r
