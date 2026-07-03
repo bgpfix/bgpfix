@@ -132,9 +132,10 @@ func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			// NB: some caches reject unsupported versions by just closing the
-			// connection, without an Error Report; retry with a lower version
-			if !got && c.downgrade(false) {
+			// NB: some caches reject an unsupported version by just closing the
+			// connection (a clean EOF), without an Error Report; retry lower. Other
+			// errors (reset, timeout) are transient, not a version rejection.
+			if !got && errors.Is(err, io.EOF) && c.downgrade(false) {
 				return ErrDowngrade
 			}
 			return err
@@ -195,13 +196,16 @@ func (c *Client) downgrade(explicit bool) bool {
 		return false
 	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if !c.verInit || c.nextVer == VersionV0 || (c.verOK && !explicit) {
+		c.mu.Unlock()
 		return false
 	}
 	c.nextVer--
 	c.verOK = false
-	c.Info().Uint8("version", c.nextVer).Msg("RTR downgrading protocol version")
+	ver := c.nextVer
+	c.mu.Unlock()
+
+	c.Info().Uint8("version", ver).Msg("RTR downgrading protocol version")
 	return true
 }
 
@@ -245,10 +249,11 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 		if ver != nil {
 			*ver = h.Version
 		}
-		// NB: a Reset Query response is a full resync; flush stale pending state
-		// (from a previous session, or a prior connection that staged partial data
-		// but never reached EndOfData) so records absent from the new snapshot don't
-		// survive. Must run before the following prefix/ASPA PDUs stage their adds.
+		// NB: any Reset Query response is a full resync (initial connect, reconnect,
+		// session change, or server Cache Reset - not only the last); flush stale
+		// pending state (from a previous session, or a prior connection that staged
+		// partial data but never reached EndOfData) so records absent from the new
+		// snapshot don't survive. Must run before the following PDUs stage their adds.
 		if resync && c.Options.OnCacheReset != nil {
 			c.Options.OnCacheReset()
 		}

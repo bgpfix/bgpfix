@@ -31,8 +31,12 @@ type Options struct {
 	// sessid and serial reflect the server's current cache state.
 	OnEndOfData func(sessid uint16, serial uint32)
 
-	// OnCacheReset is called when the server requests a full cache reload.
-	// The client sends a new Reset Query automatically after this callback.
+	// OnCacheReset is called before a full cache resync is applied - on the
+	// initial connect, every reconnect, a session-ID change, and a server Cache
+	// Reset PDU (not only the latter). The callback should drop any staged pending
+	// state so records absent from the incoming snapshot do not survive; it runs
+	// before that resync's ROA/ASPA callbacks. On a server Cache Reset PDU the
+	// client also sends a new Reset Query.
 	OnCacheReset func()
 
 	// OnError is called when the server sends an Error Report PDU.
