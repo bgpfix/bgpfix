@@ -49,7 +49,6 @@ type Client struct {
 	verOK     bool       // version confirmed by a CacheResponse (stops silent-close downgrades)
 
 	resetPending bool // a Reset Query was sent; flush stale cache on the next CacheResponse
-	synced       bool // at least one full sync has completed (EndOfData seen)
 }
 
 // NewClient returns a new Client with the given options.
@@ -231,9 +230,7 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 
 	case PDUCacheResponse:
 		c.mu.Lock()
-		// resync=true only when a Reset Query response follows an earlier full
-		// sync (reconnect or session change) - the first sync has nothing stale.
-		resync := c.resetPending && c.synced
+		resync := c.resetPending
 		c.resetPending = false
 		c.version = h.Version
 		c.sessid = h.Session
@@ -249,8 +246,9 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 			*ver = h.Version
 		}
 		// NB: a Reset Query response is a full resync; flush stale pending state
-		// (from the previous session) so records absent from the new snapshot
-		// don't survive. Must run before the following prefix/ASPA PDUs stage adds.
+		// (from a previous session, or a prior connection that staged partial data
+		// but never reached EndOfData) so records absent from the new snapshot don't
+		// survive. Must run before the following prefix/ASPA PDUs stage their adds.
 		if resync && c.Options.OnCacheReset != nil {
 			c.Options.OnCacheReset()
 		}
@@ -435,7 +433,6 @@ func (c *Client) dispatchEndOfData(h pduHeader, payload []byte) error {
 	c.serial = serial
 	c.sessid = h.Session
 	c.hasSerial = true
-	c.synced = true
 	sessid := h.Session
 	c.mu.Unlock()
 

@@ -1014,7 +1014,8 @@ func TestSession_CacheReset(t *testing.T) {
 	cancel()
 	<-done
 
-	require.Equal(t, 1, resetCount)
+	// two flushes: the initial full-sync clean slate + the explicit Cache Reset
+	require.Equal(t, 2, resetCount)
 }
 
 func TestSession_SerialQuery_Flow(t *testing.T) {
