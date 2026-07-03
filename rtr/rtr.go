@@ -47,6 +47,9 @@ type Client struct {
 	nextVer   byte       // protocol version for the next connection (auto-negotiation state)
 	verInit   bool       // nextVer has been initialized
 	verOK     bool       // version confirmed by a CacheResponse (stops silent-close downgrades)
+
+	resetPending bool // a Reset Query was sent; flush stale cache on the next CacheResponse
+	synced       bool // at least one full sync has completed (EndOfData seen)
 }
 
 // NewClient returns a new Client with the given options.
@@ -114,10 +117,8 @@ func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 	ver := c.nextVer
 	c.mu.Unlock()
 
-	// send initial Reset Query
-	c.wmu.Lock()
-	err := writeResetQuery(conn, ver)
-	c.wmu.Unlock()
+	// send initial Reset Query (a full resync, so flush any stale cache on reconnect)
+	err := c.sendResetQuery(conn, ver)
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -205,6 +206,20 @@ func (c *Client) downgrade(explicit bool) bool {
 	return true
 }
 
+// sendResetQuery sends a Reset Query and marks the next CacheResponse as a full
+// resync, so dispatch flushes any stale cache state (left over from a previous
+// session or a reconnect) before the fresh VRP/ASPA data is applied.
+func (c *Client) sendResetQuery(w io.Writer, ver byte) error {
+	c.mu.Lock()
+	c.resetPending = true
+	c.mu.Unlock()
+
+	c.wmu.Lock()
+	err := writeResetQuery(w, ver)
+	c.wmu.Unlock()
+	return err
+}
+
 // dispatch processes a single PDU received from the server.
 // w is the writer for sending response PDUs (may be nil for read-only testing).
 // ver is a pointer to the currently negotiated version (updated on version negotiation).
@@ -213,6 +228,10 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 
 	case PDUCacheResponse:
 		c.mu.Lock()
+		// resync=true only when a Reset Query response follows an earlier full
+		// sync (reconnect or session change) - the first sync has nothing stale.
+		resync := c.resetPending && c.synced
+		c.resetPending = false
 		c.version = h.Version
 		c.sessid = h.Session
 		c.nextVer = h.Version // confirmed: reconnections start at this version
@@ -221,6 +240,12 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 		c.mu.Unlock()
 		if ver != nil {
 			*ver = h.Version
+		}
+		// NB: a Reset Query response is a full resync; flush stale pending state
+		// (from the previous session) so records absent from the new snapshot
+		// don't survive. Must run before the following prefix/ASPA PDUs stage adds.
+		if resync && c.Options.OnCacheReset != nil {
+			c.Options.OnCacheReset()
 		}
 		c.Debug().
 			Uint8("version", h.Version).
@@ -275,10 +300,7 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 					Uint16("old", sessid).
 					Uint16("new", h.Session).
 					Msg("RTR session ID changed in SerialNotify, sending Reset Query")
-				c.wmu.Lock()
-				err := writeResetQuery(w, *ver)
-				c.wmu.Unlock()
-				return err
+				return c.sendResetQuery(w, *ver)
 			}
 			if newSerial != curSerial {
 				c.wmu.Lock()
@@ -406,6 +428,7 @@ func (c *Client) dispatchEndOfData(h pduHeader, payload []byte) error {
 	c.serial = serial
 	c.sessid = h.Session
 	c.hasSerial = true
+	c.synced = true
 	sessid := h.Session
 	c.mu.Unlock()
 
