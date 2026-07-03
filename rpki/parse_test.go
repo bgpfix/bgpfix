@@ -120,7 +120,7 @@ func TestParseJSON_InvalidInputs(t *testing.T) {
 
 func TestParseJSON_ASPA_BothKeyVariants(t *testing.T) {
 	// Routinator uses `provider_asids`, rpki-client uses `providers`
-	// and encodes "no providers" as [0] — AddASPA must strip zeros.
+	// and encodes "no providers" as [0] - AddASPA must strip zeros.
 	json := []byte(`{
 		"roas": [],
 		"aspas": [

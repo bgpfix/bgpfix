@@ -380,7 +380,7 @@ func TestASPA_IgnoredOnV1(t *testing.T) {
 }
 
 func TestASPA_NoProviders_AnnounceIsEmpty(t *testing.T) {
-	// Per spec, announcement should have ≥1 provider, but we accept empty gracefully
+	// Per spec, announcement should have >=1 provider, but we accept empty gracefully
 	wire := buildASPA(VersionV2, true, 65001, []uint32{})
 	h, payload := parsePDU(t, wire)
 
@@ -512,41 +512,68 @@ func TestVersionDowngrade_V2ToV1(t *testing.T) {
 	wire := buildErrorReport(VersionV1, ErrUnsupVersion, "unsupported")
 	h, payload := parsePDU(t, wire)
 
-	var sendBuf bytes.Buffer
 	c := NewClient(nil)
-	ver := VersionV2 // we're trying v2, server says no
-	require.NoError(t, c.dispatch(&sendBuf, h, payload, &ver))
+	c.mu.Lock()
+	c.nextVer, c.verInit = VersionV2, true // we're trying v2, server says no
+	c.mu.Unlock()
 
-	// version should have been decremented to v1
-	require.Equal(t, VersionV1, ver)
-	// a Reset Query with v1 should have been sent
-	require.Equal(t, []byte{0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08}, sendBuf.Bytes())
+	ver := VersionV2
+	// NB: the server closes the connection after ErrUnsupVersion, so the
+	// downgrade must return ErrDowngrade and retry on a new connection
+	require.ErrorIs(t, c.dispatch(nil, h, payload, &ver), ErrDowngrade)
+	c.mu.Lock()
+	require.Equal(t, VersionV1, c.nextVer)
+	c.mu.Unlock()
 }
 
 func TestVersionDowngrade_V1ToV0(t *testing.T) {
 	wire := buildErrorReport(VersionV1, ErrUnsupVersion, "")
 	h, payload := parsePDU(t, wire)
 
-	var sendBuf bytes.Buffer
 	c := NewClient(nil)
-	ver := VersionV1
-	require.NoError(t, c.dispatch(&sendBuf, h, payload, &ver))
+	c.mu.Lock()
+	c.nextVer, c.verInit = VersionV1, true
+	c.mu.Unlock()
 
-	require.Equal(t, VersionV0, ver)
-	require.Equal(t, []byte{0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08}, sendBuf.Bytes())
+	ver := VersionV1
+	require.ErrorIs(t, c.dispatch(nil, h, payload, &ver), ErrDowngrade)
+	c.mu.Lock()
+	require.Equal(t, VersionV0, c.nextVer)
+	c.mu.Unlock()
 }
 
 func TestVersionDowngrade_V0_NoFurtherDowngrade(t *testing.T) {
 	wire := buildErrorReport(VersionV0, ErrUnsupVersion, "")
 	h, payload := parsePDU(t, wire)
 
-	var sendBuf bytes.Buffer
 	c := NewClient(nil)
+	c.mu.Lock()
+	c.nextVer, c.verInit = VersionV0, true
+	c.mu.Unlock()
+
 	ver := VersionV0
-	require.NoError(t, c.dispatch(&sendBuf, h, payload, &ver))
-	// still v0, no query sent (can't go lower)
-	require.Equal(t, VersionV0, ver)
-	require.Zero(t, sendBuf.Len())
+	// can't go lower than v0: no downgrade, no error
+	require.NoError(t, c.dispatch(nil, h, payload, &ver))
+	c.mu.Lock()
+	require.Equal(t, VersionV0, c.nextVer)
+	c.mu.Unlock()
+}
+
+func TestVersionDowngrade_FixedVersion_NoDowngrade(t *testing.T) {
+	wire := buildErrorReport(VersionV1, ErrUnsupVersion, "")
+	h, payload := parsePDU(t, wire)
+
+	// fixed version (no VersionAuto): never downgrade
+	c := NewClient(&Options{Version: VersionV2})
+	c.mu.Lock()
+	c.nextVer, c.verInit = VersionV2, true
+	c.mu.Unlock()
+
+	ver := VersionV2
+	require.NoError(t, c.dispatch(nil, h, payload, &ver))
+	c.mu.Lock()
+	require.Equal(t, VersionV2, c.nextVer)
+	c.mu.Unlock()
 }
 
 func TestUnknownPDUType_Ignored(t *testing.T) {
@@ -792,7 +819,7 @@ func TestSession_ASPAWithdraw(t *testing.T) {
 
 	serverWrite(t, server,
 		buildCacheResponse(VersionV2, 0x0001),
-		buildASPA(VersionV2, true, 65001, []uint32{65100}),  // announce
+		buildASPA(VersionV2, true, 65001, []uint32{65100}), // announce
 		buildEndOfData(VersionV2, 0x0001, 1, 3600, 600, 7200),
 		buildSerialNotify(VersionV2, 0x0001, 2),
 	)
@@ -817,9 +844,8 @@ func TestSession_ASPAWithdraw(t *testing.T) {
 }
 
 func TestSession_VersionNegotiation_V2ToV1(t *testing.T) {
-	client, server := net.Pipe()
-	defer client.Close()
-	defer server.Close()
+	// first connection: server rejects v2 and closes (per RFC 8210 section 7)
+	client1, server1 := net.Pipe()
 
 	var mu sync.Mutex
 	var roaCount int
@@ -839,23 +865,32 @@ func TestSession_VersionNegotiation_V2ToV1(t *testing.T) {
 	defer cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- c.Run(ctx, client) }()
+	go func() { done <- c.Run(ctx, client1) }()
 
 	// first query: client sends v2 Reset Query
-	q := clientReadQuery(t, server, 8)
+	q := clientReadQuery(t, server1, 8)
 	require.Equal(t, byte(VersionV2), q[0])
 	require.Equal(t, byte(PDUResetQuery), q[1])
 
-	// server rejects v2
-	serverWrite(t, server, buildErrorReport(VersionV1, ErrUnsupVersion, "use v1"))
+	// server rejects v2 and closes the connection
+	serverWrite(t, server1, buildErrorReport(VersionV1, ErrUnsupVersion, "use v1"))
+	server1.Close()
 
-	// client should retry with v1 Reset Query
-	q = clientReadQuery(t, server, 8)
+	// Run should return ErrDowngrade, asking the caller to reconnect
+	require.ErrorIs(t, <-done, ErrDowngrade)
+
+	// second connection: client should retry with v1 Reset Query
+	client2, server2 := net.Pipe()
+	defer client2.Close()
+	defer server2.Close()
+	go func() { done <- c.Run(ctx, client2) }()
+
+	q = clientReadQuery(t, server2, 8)
 	require.Equal(t, byte(VersionV1), q[0])
 	require.Equal(t, byte(PDUResetQuery), q[1])
 
 	// now send v1 data
-	serverWrite(t, server,
+	serverWrite(t, server2,
 		buildCacheResponse(VersionV1, 0x0002),
 		buildIPv4Prefix(VersionV1, FlagAnnounce, 24, 24, [4]byte{1, 2, 3, 0}, 65001),
 		buildEndOfData(VersionV1, 0x0002, 5, 3600, 600, 7200),
@@ -869,6 +904,78 @@ func TestSession_VersionNegotiation_V2ToV1(t *testing.T) {
 	defer mu.Unlock()
 	require.Equal(t, 1, roaCount)
 	require.Equal(t, VersionV1, c.Version())
+}
+
+func TestSession_VersionNegotiation_SilentClose(t *testing.T) {
+	// some caches reject unsupported versions by closing the connection
+	// without an Error Report; the client should still downgrade
+	c := NewClient(&Options{Version: VersionAuto})
+	ctx, cancel := ctxWithTimeout(t)
+	defer cancel()
+
+	done := make(chan error, 1)
+
+	// connections 1 and 2: server closes right after the Reset Query
+	for _, wantVer := range []byte{VersionV2, VersionV1} {
+		client, server := net.Pipe()
+		go func() { done <- c.Run(ctx, client) }()
+		q := clientReadQuery(t, server, 8)
+		require.Equal(t, wantVer, q[0])
+		server.Close()
+		require.ErrorIs(t, <-done, ErrDowngrade)
+	}
+
+	// connection 3: client is down to v0; another close is a plain error
+	client, server := net.Pipe()
+	go func() { done <- c.Run(ctx, client) }()
+	q := clientReadQuery(t, server, 8)
+	require.Equal(t, byte(VersionV0), q[0])
+	server.Close()
+	err := <-done
+	require.Error(t, err)
+	require.NotErrorIs(t, err, ErrDowngrade)
+}
+
+func TestSession_VersionConfirmed_NoSilentDowngrade(t *testing.T) {
+	// once a CacheResponse confirms the version, a silent connection close
+	// must not downgrade it (it is a network error, not version rejection)
+	eodSignal, eodCh := waitChan(1)
+	c := NewClient(&Options{
+		Version:     VersionAuto,
+		OnEndOfData: func(_ uint16, _ uint32) { eodSignal() },
+	})
+	ctx, cancel := ctxWithTimeout(t)
+	defer cancel()
+
+	// first connection: confirm v2
+	client1, server1 := net.Pipe()
+	done := make(chan error, 1)
+	go func() { done <- c.Run(ctx, client1) }()
+	clientReadQuery(t, server1, 8)
+	serverWrite(t, server1,
+		buildCacheResponse(VersionV2, 0x0001),
+		buildEndOfData(VersionV2, 0x0001, 1, 3600, 600, 7200),
+	)
+	<-eodCh
+	server1.Close()
+	require.NotErrorIs(t, <-done, ErrDowngrade)
+
+	// second connection: silent close must not downgrade the confirmed v2
+	client2, server2 := net.Pipe()
+	go func() { done <- c.Run(ctx, client2) }()
+	q := clientReadQuery(t, server2, 8)
+	require.Equal(t, byte(VersionV2), q[0])
+	server2.Close()
+	require.NotErrorIs(t, <-done, ErrDowngrade)
+
+	// third connection: still v2
+	client3, server3 := net.Pipe()
+	defer server3.Close()
+	go func() { done <- c.Run(ctx, client3) }()
+	q = clientReadQuery(t, server3, 8)
+	require.Equal(t, byte(VersionV2), q[0])
+	cancel()
+	<-done
 }
 
 func TestSession_CacheReset(t *testing.T) {
@@ -1024,7 +1131,7 @@ func TestSession_ConnDrop(t *testing.T) {
 
 func TestSendSerial_NotConnected(t *testing.T) {
 	c := NewClient(nil)
-	// not connected, not hasSerial → should return false gracefully
+	// not connected, not hasSerial -> should return false gracefully
 	require.False(t, c.SendSerial())
 }
 
@@ -1039,7 +1146,7 @@ func TestSendSerial_NoCache(t *testing.T) {
 	go c.Run(ctx, client)
 	clientReadQuery(t, server, 8) // consume Reset Query
 
-	// hasSerial is false → SendSerial returns false
+	// hasSerial is false -> SendSerial returns false
 	require.False(t, c.SendSerial())
 }
 
@@ -1207,7 +1314,7 @@ func TestSendSerial_ConcurrentWithRun(t *testing.T) {
 		}
 	}()
 
-	// call SendSerial concurrently — this would race without wmu
+	// call SendSerial concurrently - this would race without wmu
 	var wg sync.WaitGroup
 	for range 10 {
 		wg.Add(1)

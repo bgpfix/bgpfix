@@ -64,7 +64,7 @@ const (
 //   - Error Code for: ErrorReport
 //   - Zero/reserved for: IPv4Prefix, IPv6Prefix, ResetQuery, CacheReset, RouterKey
 //     NB: IPv4/IPv6 Prefix flags are in payload byte 0, not in this header field
-//   - ASPA: flags in HIGH byte (buf[2]) per draft-ietf-sidrops-8210bis §6.12
+//   - ASPA: flags in HIGH byte (buf[2]) per draft-ietf-sidrops-8210bis section 6.12
 type pduHeader struct {
 	Version byte
 	Type    byte

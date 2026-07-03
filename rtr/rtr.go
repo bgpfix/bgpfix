@@ -14,6 +14,7 @@ package rtr
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -22,6 +23,12 @@ import (
 
 	"github.com/rs/zerolog"
 )
+
+// ErrDowngrade is returned by Run after the server rejected our protocol version:
+// the caller should reconnect immediately, the next Run will use a lower version.
+// NB: per RFC 8210 section 7, the cache closes the connection on version mismatch,
+// so version negotiation must happen across reconnections.
+var ErrDowngrade = errors.New("RTR protocol version downgraded, reconnect")
 
 // Client is a single-endpoint RTR protocol client.
 // It can be reused across multiple connections (reconnections).
@@ -37,12 +44,15 @@ type Client struct {
 	sessid    uint16     // current session ID (from CacheResponse)
 	serial    uint32     // last serial number received (from EndOfData)
 	hasSerial bool       // true once the first EndOfData has been received
+	nextVer   byte       // protocol version for the next connection (auto-negotiation state)
+	verInit   bool       // nextVer has been initialized
+	verOK     bool       // version confirmed by a CacheResponse (stops silent-close downgrades)
 }
 
 // NewClient returns a new Client with the given options.
 // If opts is nil, DefaultOptions is used (VersionAuto + default logger).
 // When opts is non-nil, all fields are used as-is, including Version:
-//   - VersionAuto (255): auto-negotiate v2 → v1 → v0 on ErrUnsupVersion
+//   - VersionAuto (255): auto-negotiate v2 -> v1 -> v0 across reconnections (see ErrDowngrade)
 //   - VersionV0/V1/V2: use that version with no fallback
 func NewClient(opts *Options) *Client {
 	c := &Client{}
@@ -62,9 +72,9 @@ func NewClient(opts *Options) *Client {
 
 // Run starts an RTR session over conn, processing PDUs until conn closes or ctx is done.
 // It sends a Reset Query immediately on connect. Run always closes conn before returning.
-// On receiving ErrUnsupVersion with VersionAuto, it downgrades version (v2→v1→v0) and retries.
-// Returns ctx.Err() if ctx is cancelled, otherwise the connection error.
-// The caller is responsible for reconnection.
+// Returns ctx.Err() if ctx is cancelled; ErrDowngrade if the protocol version was
+// downgraded (VersionAuto) and the caller should reconnect immediately;
+// otherwise the connection error. The caller is responsible for reconnection.
 //
 // NB: Run starts one internal goroutine that exits when Run returns.
 func (c *Client) Run(ctx context.Context, conn net.Conn) error {
@@ -94,8 +104,15 @@ func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 		}
 	}()
 
-	// determine starting version (VersionAuto or any value > V2 starts at V2)
-	ver := min(c.Options.Version, VersionV2)
+	// determine starting version, persisted across reconnections for auto-negotiation
+	// (VersionAuto or any value > V2 starts at V2)
+	c.mu.Lock()
+	if !c.verInit {
+		c.nextVer = min(c.Options.Version, VersionV2)
+		c.verInit = true
+	}
+	ver := c.nextVer
+	c.mu.Unlock()
 
 	// send initial Reset Query
 	c.wmu.Lock()
@@ -108,14 +125,21 @@ func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 		return err
 	}
 
+	got := false // any PDU received on this connection?
 	for {
 		h, err := readHeader(conn)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
+			// NB: some caches reject unsupported versions by just closing the
+			// connection, without an Error Report; retry with a lower version
+			if !got && c.downgrade(false) {
+				return ErrDowngrade
+			}
 			return err
 		}
+		got = true
 
 		payload, err := readPayload(conn, h)
 		if err != nil {
@@ -163,6 +187,24 @@ func (c *Client) Version() byte {
 	return c.version
 }
 
+// downgrade lowers the protocol version for future connections, iff auto-negotiating.
+// A version already confirmed by a CacheResponse blocks the downgrade, unless explicit
+// (an ErrUnsupVersion report from the server). Returns true if the version was lowered.
+func (c *Client) downgrade(explicit bool) bool {
+	if c.Options.Version != VersionAuto {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.verInit || c.nextVer == VersionV0 || (c.verOK && !explicit) {
+		return false
+	}
+	c.nextVer--
+	c.verOK = false
+	c.Info().Uint8("version", c.nextVer).Msg("RTR downgrading protocol version")
+	return true
+}
+
 // dispatch processes a single PDU received from the server.
 // w is the writer for sending response PDUs (may be nil for read-only testing).
 // ver is a pointer to the currently negotiated version (updated on version negotiation).
@@ -173,6 +215,9 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 		c.mu.Lock()
 		c.version = h.Version
 		c.sessid = h.Session
+		c.nextVer = h.Version // confirmed: reconnections start at this version
+		c.verInit = true
+		c.verOK = true
 		c.mu.Unlock()
 		if ver != nil {
 			*ver = h.Version
@@ -224,7 +269,7 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 		c.mu.Unlock()
 		c.Debug().Uint32("serial", newSerial).Msg("RTR serial notify")
 		if w != nil && ver != nil && hasSerial {
-			// NB: session ID change means the cache was reset (RFC 8210 §5.4)
+			// NB: session ID change means the cache was reset (RFC 8210 section 5.4)
 			if h.Session != sessid {
 				c.Info().
 					Uint16("old", sessid).
@@ -250,16 +295,10 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 		if c.Options.OnError != nil {
 			c.Options.OnError(code, text)
 		}
-		// auto-negotiate: downgrade protocol version and retry
-		if code == ErrUnsupVersion && c.Options.Version == VersionAuto && ver != nil && *ver > VersionV0 {
-			*ver--
-			c.Info().Uint8("version", *ver).Msg("RTR downgrading protocol version")
-			if w != nil {
-				c.wmu.Lock()
-				err := writeResetQuery(w, *ver)
-				c.wmu.Unlock()
-				return err
-			}
+		// NB: the cache closes the connection after ErrUnsupVersion (RFC 8210
+		// section 7), so auto-negotiation must retry on a new connection
+		if code == ErrUnsupVersion && c.downgrade(true) {
+			return ErrDowngrade
 		}
 
 	case PDURouterKey:
@@ -326,7 +365,7 @@ func (c *Client) dispatchASPA(h pduHeader, payload []byte) error {
 	if (len(payload)-4)%4 != 0 {
 		return fmt.Errorf("rtr: ASPA payload not 4-byte aligned: %d", len(payload))
 	}
-	// NB: per draft-ietf-sidrops-8210bis §6.12, flags is in header byte 2,
+	// NB: per draft-ietf-sidrops-8210bis section 6.12, flags is in header byte 2,
 	// which is the high byte of h.Session (uint16 from bytes 2-3 of the header).
 	flags := byte(h.Session >> 8)
 	add := flags&FlagAnnounce != 0

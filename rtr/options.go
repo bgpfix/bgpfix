@@ -17,7 +17,7 @@ var DefaultOptions = Options{
 // All callbacks are called serially from the Run goroutine.
 type Options struct {
 	Logger  *zerolog.Logger // if nil, logging is disabled
-	Version byte            // preferred RTR protocol version (VersionAuto = negotiate v2 → v1 → v0)
+	Version byte            // preferred RTR protocol version (VersionAuto = negotiate v2 -> v1 -> v0)
 
 	// OnROA is called for each ROA announcement or withdrawal.
 	// add=true means announcement; false means withdrawal.

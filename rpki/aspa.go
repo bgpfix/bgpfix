@@ -2,14 +2,14 @@ package rpki
 
 import "slices"
 
-// Hop authorization results (draft-ietf-sidrops-aspa-verification §5)
+// Hop authorization results (draft-ietf-sidrops-aspa-verification section 5)
 const (
 	HOP_NO_ATTESTATION = iota // CAS has no ASPA record
 	HOP_PROVIDER              // PAS is listed as a provider of CAS
 	HOP_NOT_PROVIDER          // CAS has an ASPA record that does not list PAS
 )
 
-// Hop checks ASPA authorization for a CAS→PAS hop.
+// Hop checks ASPA authorization for a CAS->PAS hop.
 // NB: provider lists must be sorted (see Cache.AddASPA).
 func Hop(aspa ASPA, cas, pas uint32) int {
 	provs, ok := aspa[cas]
@@ -32,7 +32,7 @@ func Hop(aspa ASPA, cas, pas uint32) int {
 // downstream=true when received from a provider or RS (downstream direction).
 // downstream=false when received from a customer, peer, or RS-client (upstream).
 //
-// NB: does not check path[0] == neighbor AS (draft §5.4/5.5 step 2).
+// NB: does not check path[0] == neighbor AS (draft section 5.4/5.5 step 2).
 // The caller must do that check, skipping it for RS peers (RFC 7947).
 func VerifyPath(aspa ASPA, path []uint32, downstream bool) (result int, failCAS, failPAS uint32) {
 	n := len(path)

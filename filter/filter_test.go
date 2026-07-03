@@ -280,11 +280,11 @@ func TestEvalPrefix(t *testing.T) {
 
 	// less/more specific
 	assert.True(t, evalFilter(t, m, "prefix < 10.0.0.0/8"))   // 10.1.0.0/16 is more specific than /8
-	assert.False(t, evalFilter(t, m, "prefix < 10.1.0.0/16"))  // not strictly more specific than self
-	assert.True(t, evalFilter(t, m, "prefix <= 10.1.0.0/16"))  // equal counts
-	assert.True(t, evalFilter(t, m, "prefix > 10.1.0.0/24"))   // 10.1.0.0/16 is less specific than /24
-	assert.False(t, evalFilter(t, m, "prefix > 10.1.0.0/16"))  // not strictly less specific than self
-	assert.True(t, evalFilter(t, m, "prefix >= 10.1.0.0/16"))  // equal counts
+	assert.False(t, evalFilter(t, m, "prefix < 10.1.0.0/16")) // not strictly more specific than self
+	assert.True(t, evalFilter(t, m, "prefix <= 10.1.0.0/16")) // equal counts
+	assert.True(t, evalFilter(t, m, "prefix > 10.1.0.0/24"))  // 10.1.0.0/16 is less specific than /24
+	assert.False(t, evalFilter(t, m, "prefix > 10.1.0.0/16")) // not strictly less specific than self
+	assert.True(t, evalFilter(t, m, "prefix >= 10.1.0.0/16")) // equal counts
 
 	// prefix[*] - all must match
 	assert.True(t, evalFilter(t, m, "prefix[*] ~ 0.0.0.0/0"))   // all overlap 0/0
@@ -331,10 +331,10 @@ func TestEvalAsPath(t *testing.T) {
 	assert.False(t, evalFilter(t, m, `aspath ~ "^15169"`))
 
 	// aspath[*] - any hop match (same as no index)
-	assert.True(t, evalFilter(t, m, "aspath[*] == 3356"))    // 3356 is in the path
-	assert.True(t, evalFilter(t, m, "aspath[*] > 10000"))    // 65001 and 15169 are > 10000
-	assert.False(t, evalFilter(t, m, "aspath[*] == 9999"))   // 9999 not in path
-	assert.True(t, evalFilter(t, m, "aspath[*] >= 3356"))    // 3356 matches
+	assert.True(t, evalFilter(t, m, "aspath[*] == 3356"))  // 3356 is in the path
+	assert.True(t, evalFilter(t, m, "aspath[*] > 10000"))  // 65001 and 15169 are > 10000
+	assert.False(t, evalFilter(t, m, "aspath[*] == 9999")) // 9999 not in path
+	assert.True(t, evalFilter(t, m, "aspath[*] >= 3356"))  // 3356 matches
 
 	// negation
 	assert.True(t, evalFilter(t, m, "as_origin != 9999"))
@@ -447,7 +447,7 @@ func TestEvalMed(t *testing.T) {
 	m2 := newUpdate()
 	addReach(m2, "10.0.0.0/24")
 	assert.False(t, evalFilter(t, m2, "med"))
-	assert.False(t, evalFilter(t, m2, "med != 100")) // absent → false, not true
+	assert.False(t, evalFilter(t, m2, "med != 100")) // absent -> false, not true
 }
 
 func TestEvalLocalPref(t *testing.T) {
@@ -528,8 +528,8 @@ func TestEvalCommunity(t *testing.T) {
 	m2 := newUpdate()
 	addReach(m2, "10.0.0.0/24")
 	assert.False(t, evalFilter(t, m2, "community"))
-	assert.False(t, evalFilter(t, m2, `community != "3356:100"`)) // absent → false
-	assert.False(t, evalFilter(t, m2, `com !~ "3356:"`))          // absent → false
+	assert.False(t, evalFilter(t, m2, `community != "3356:100"`)) // absent -> false
+	assert.False(t, evalFilter(t, m2, `com !~ "3356:"`))          // absent -> false
 }
 
 func TestEvalTag(t *testing.T) {
@@ -799,11 +799,11 @@ func TestEvalAttr(t *testing.T) {
 	setMed(m, 500)
 	setCommunity(m, "3356:100", "174:200")
 
-	// attr[ORIGIN] → attrs.ORIGIN.value
+	// attr[ORIGIN] -> attrs.ORIGIN.value
 	assert.True(t, evalFilter(t, m, `attr[ORIGIN] == IGP`))
 	assert.False(t, evalFilter(t, m, `attr[ORIGIN] == EGP`))
 
-	// attr[MED] → attrs.MED.value
+	// attr[MED] -> attrs.MED.value
 	assert.True(t, evalFilter(t, m, `attr[MED] > 100`))
 	assert.True(t, evalFilter(t, m, `attr[MED] == 500`))
 	assert.False(t, evalFilter(t, m, `attr[MED] < 100`))
@@ -852,7 +852,7 @@ func TestEvalTime(t *testing.T) {
 	m2 := newUpdate()
 	addReach(m2, "10.0.0.0/24")
 	assert.False(t, evalFilter(t, m2, `time`))
-	assert.False(t, evalFilter(t, m2, `time != "2023-01-01"`)) // absent → false
+	assert.False(t, evalFilter(t, m2, `time != "2023-01-01"`)) // absent -> false
 
 	// works on non-UPDATE (Types=true)
 	ka := msg.NewMsg()
@@ -897,7 +897,7 @@ func TestEvalDir(t *testing.T) {
 	// zero dir
 	m2 := newUpdate()
 	assert.False(t, evalFilter(t, m2, `dir`))
-	assert.False(t, evalFilter(t, m2, `dir != L`)) // absent → false
+	assert.False(t, evalFilter(t, m2, `dir != L`)) // absent -> false
 }
 
 // --- seq eval tests ---
@@ -929,7 +929,7 @@ func TestEvalSeq(t *testing.T) {
 	// zero seq
 	m2 := newUpdate()
 	assert.False(t, evalFilter(t, m2, `seq`))
-	assert.False(t, evalFilter(t, m2, `seq != 42`)) // absent → false
+	assert.False(t, evalFilter(t, m2, `seq != 42`)) // absent -> false
 
 	// works on non-UPDATE (Types=true)
 	ka := msg.NewMsg()

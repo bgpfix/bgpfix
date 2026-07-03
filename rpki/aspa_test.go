@@ -41,7 +41,7 @@ func TestHop_EmptyProviderList(t *testing.T) {
 // --- VerifyPath upstream tests ---
 
 func TestVerifyPath_Upstream_Valid(t *testing.T) {
-	// path: 65001 → 65002 → 65003 (origin)
+	// path: 65001 -> 65002 -> 65003 (origin)
 	// 65003 says 65002 is my provider, 65002 says 65001 is my provider
 	aspa := ASPA{
 		65003: {65002},
@@ -68,7 +68,7 @@ func TestVerifyPath_Upstream_Invalid(t *testing.T) {
 }
 
 func TestVerifyPath_Upstream_Unknown(t *testing.T) {
-	// 65002 has no ASPA record → unknown
+	// 65002 has no ASPA record -> unknown
 	aspa := ASPA{
 		65003: {65002},
 	}
@@ -88,7 +88,7 @@ func TestVerifyPath_Upstream_SingleHop(t *testing.T) {
 }
 
 func TestVerifyPath_Upstream_TwoHop_Valid(t *testing.T) {
-	// path: 65001 → 65002. 65002 says 65001 is provider.
+	// path: 65001 -> 65002. 65002 says 65001 is provider.
 	aspa := ASPA{
 		65002: {65001},
 	}
@@ -97,7 +97,7 @@ func TestVerifyPath_Upstream_TwoHop_Valid(t *testing.T) {
 }
 
 func TestVerifyPath_Upstream_TwoHop_Invalid(t *testing.T) {
-	// path: 65001 → 65002. 65002 says 65099 is provider, not 65001.
+	// path: 65001 -> 65002. 65002 says 65099 is provider, not 65001.
 	aspa := ASPA{
 		65002: {65099},
 	}
@@ -110,10 +110,10 @@ func TestVerifyPath_Upstream_TwoHop_Invalid(t *testing.T) {
 // --- VerifyPath downstream tests ---
 
 func TestVerifyPath_Downstream_ValleyFree(t *testing.T) {
-	// path: 65001 → 65002 → 65003 (origin)
+	// path: 65001 -> 65002 -> 65003 (origin)
 	// valley-free: origin goes up to 65002, then 65002 goes down to 65001
-	// up-ramp: 65003→65002 (65003 says 65002 is provider)
-	// down-ramp: 65001→65002 (65001 says 65002 is provider)
+	// up-ramp: 65003->65002 (65003 says 65002 is provider)
+	// down-ramp: 65001->65002 (65001 says 65002 is provider)
 	aspa := ASPA{
 		65003: {65002},
 		65001: {65002},
@@ -126,11 +126,11 @@ func TestVerifyPath_Downstream_ValleyFree(t *testing.T) {
 }
 
 func TestVerifyPath_Downstream_NotValleyFree(t *testing.T) {
-	// path: 65001 → 65002 → 65003 (origin)
+	// path: 65001 -> 65002 -> 65003 (origin)
 	// all ASes have ASPA records but the path is not valley-free:
-	// up-ramp: Hop(65003, 65002) → 65003 says 65099 → NOT_PROVIDER → break (maxUp=0, upCAS=65003, upPAS=65002)
-	// down-ramp: Hop(65001, 65002) → 65001 says 65099 → NOT_PROVIDER → break (maxDown=0, dnCAS=65001, dnPAS=65002)
-	// maxUp + maxDown = 0 < n-2 = 1 → invalid; down-ramp failure preferred (dnCAS != 0)
+	// up-ramp: Hop(65003, 65002) -> 65003 says 65099 -> NOT_PROVIDER -> break (maxUp=0, upCAS=65003, upPAS=65002)
+	// down-ramp: Hop(65001, 65002) -> 65001 says 65099 -> NOT_PROVIDER -> break (maxDown=0, dnCAS=65001, dnPAS=65002)
+	// maxUp + maxDown = 0 < n-2 = 1 -> invalid; down-ramp failure preferred (dnCAS != 0)
 	aspa := ASPA{
 		65003: {65099},
 		65002: {65099},
@@ -144,7 +144,7 @@ func TestVerifyPath_Downstream_NotValleyFree(t *testing.T) {
 }
 
 func TestVerifyPath_Downstream_ShortPathCanStillBeValid(t *testing.T) {
-	// path: 65001 → 65002 → 65003 (origin)
+	// path: 65001 -> 65002 -> 65003 (origin)
 	// 65003 says 65002 is provider, while 65001 has no ASPA.
 	// The draft still considers this valid: the up-ramp can extend all the way
 	// to the neighbor side, and the down-ramp can degenerate to the neighbor AS.
@@ -157,9 +157,9 @@ func TestVerifyPath_Downstream_ShortPathCanStillBeValid(t *testing.T) {
 }
 
 func TestVerifyPath_Downstream_LongValleyFree(t *testing.T) {
-	// 4-hop valley-free path: 65001 → 65002 → 65003 → 65004 (origin)
-	// origin goes up: 65004→65003 (provider), 65003→65002 (provider)
-	// peer goes down: 65001→65002 (provider)
+	// 4-hop valley-free path: 65001 -> 65002 -> 65003 -> 65004 (origin)
+	// origin goes up: 65004->65003 (provider), 65003->65002 (provider)
+	// peer goes down: 65001->65002 (provider)
 	aspa := ASPA{
 		65004: {65003},
 		65003: {65002},
@@ -171,7 +171,7 @@ func TestVerifyPath_Downstream_LongValleyFree(t *testing.T) {
 }
 
 func TestVerifyPath_Downstream_PeerPeering(t *testing.T) {
-	// 3-hop with peering at top: 65001 → 65002 → 65003 (origin)
+	// 3-hop with peering at top: 65001 -> 65002 -> 65003 (origin)
 	// The draft allows one central hop between the up-ramp apex and down-ramp
 	// apex. Here, 65002-65003 is that peer hop, so the path is still valid.
 	aspa := ASPA{
@@ -186,7 +186,7 @@ func TestVerifyPath_Downstream_PeerPeering(t *testing.T) {
 
 func TestVerifyPath_Downstream_Tier1PeeringIsUnknown(t *testing.T) {
 	// 4-hop path with a single Tier1-Tier1 peer hop in the middle:
-	// 65001 → 65002 → 65003 → 65004 (origin)
+	// 65001 -> 65002 -> 65003 -> 65004 (origin)
 	// 65002 and 65003 publish AS0 ASPAs (represented here as empty provider
 	// lists), so their mutual hop is a definitive NotProvider. The outer hops
 	// are unattested, so the path is deployable today but only UNKNOWN.
@@ -200,7 +200,7 @@ func TestVerifyPath_Downstream_Tier1PeeringIsUnknown(t *testing.T) {
 }
 
 func TestVerifyPath_EmptyASPA(t *testing.T) {
-	// no ASPA data → all hops are NoAttestation → unknown
+	// no ASPA data -> all hops are NoAttestation -> unknown
 	aspa := ASPA{}
 	path := []uint32{65001, 65002, 65003}
 	result1, cas1, _ := VerifyPath(aspa, path, false)
@@ -215,7 +215,7 @@ func TestVerifyPath_EmptyASPA(t *testing.T) {
 
 func TestVerifyPath_Upstream_HopAtFirstFail(t *testing.T) {
 	// path: [65001, 65002, 65003]; 65002 has ASPA but doesn't list 65001 as provider
-	// first check: Hop(65002, 65001) → NOT_PROVIDER → INVALID, CAS=65002, PAS=65001
+	// first check: Hop(65002, 65001) -> NOT_PROVIDER -> INVALID, CAS=65002, PAS=65001
 	aspa := ASPA{
 		65002: {65099},
 		65003: {65002},
@@ -229,8 +229,8 @@ func TestVerifyPath_Upstream_HopAtFirstFail(t *testing.T) {
 
 func TestVerifyPath_Upstream_HopAtSecondFail(t *testing.T) {
 	// path: [65001, 65002, 65003]; first hop OK, second fails
-	// Hop(65002, 65001) → PROVIDER ✓
-	// Hop(65003, 65002) → NOT_PROVIDER → INVALID, CAS=65003, PAS=65002
+	// Hop(65002, 65001) -> PROVIDER OK
+	// Hop(65003, 65002) -> NOT_PROVIDER -> INVALID, CAS=65003, PAS=65002
 	aspa := ASPA{
 		65002: {65001},
 		65003: {65099},
@@ -244,8 +244,8 @@ func TestVerifyPath_Upstream_HopAtSecondFail(t *testing.T) {
 
 func TestVerifyPath_Downstream_HopPrefersDnRamp(t *testing.T) {
 	// path: [65001, 65002, 65003, 65004]
-	// down-ramp: Hop(65001, 65002) → 65001 says 65099, not 65002 → NOT_PROVIDER (dnCAS=65001, dnPAS=65002)
-	// up-ramp: Hop(65004, 65003) → 65004 says 65099, not 65003 → NOT_PROVIDER (upCAS=65004, upPAS=65003)
+	// down-ramp: Hop(65001, 65002) -> 65001 says 65099, not 65002 -> NOT_PROVIDER (dnCAS=65001, dnPAS=65002)
+	// up-ramp: Hop(65004, 65003) -> 65004 says 65099, not 65003 -> NOT_PROVIDER (upCAS=65004, upPAS=65003)
 	// INVALID: prefer down-ramp (dnCAS != 0)
 	aspa := ASPA{
 		65001: {65099},
