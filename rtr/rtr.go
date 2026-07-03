@@ -212,6 +212,9 @@ func (c *Client) downgrade(explicit bool) bool {
 func (c *Client) sendResetQuery(w io.Writer, ver byte) error {
 	c.mu.Lock()
 	c.resetPending = true
+	// NB: a full resync invalidates the serial; block SendSerial (stale sessid/
+	// serial) until the new EndOfData re-establishes it.
+	c.hasSerial = false
 	c.mu.Unlock()
 
 	c.wmu.Lock()

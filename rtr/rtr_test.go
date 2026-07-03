@@ -1374,9 +1374,10 @@ func TestRun_ReconnectionPreservesSerial(t *testing.T) {
 	q := clientReadQuery(t, server2, 8)
 	require.Equal(t, byte(PDUResetQuery), q[1])
 
-	// verify serial persisted across reconnection
+	// the Reset Query invalidates the serial state: SendSerial must stay disabled
+	// until the new full sync completes, even though the serial value is retained
 	c.mu.Lock()
-	require.True(t, c.hasSerial)
+	require.False(t, c.hasSerial)
 	require.Equal(t, uint32(42), c.serial)
 	c.mu.Unlock()
 
