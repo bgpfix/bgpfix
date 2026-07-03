@@ -122,6 +122,55 @@ func buildErrorReport(version byte, code uint16, text string) []byte {
 	return buf
 }
 
+type blockingWriter struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func newBlockingWriter() *blockingWriter {
+	return &blockingWriter{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+}
+
+func (w *blockingWriter) Write(p []byte) (int, error) {
+	w.once.Do(func() { close(w.started) })
+	<-w.release
+	return len(p), nil
+}
+
+type recordConn struct {
+	mu     sync.Mutex
+	writes [][]byte
+}
+
+func (c *recordConn) Read(_ []byte) (int, error)         { return 0, io.EOF }
+func (c *recordConn) Close() error                       { return nil }
+func (c *recordConn) LocalAddr() net.Addr                { return &net.TCPAddr{} }
+func (c *recordConn) RemoteAddr() net.Addr               { return &net.TCPAddr{} }
+func (c *recordConn) SetDeadline(_ time.Time) error      { return nil }
+func (c *recordConn) SetReadDeadline(_ time.Time) error  { return nil }
+func (c *recordConn) SetWriteDeadline(_ time.Time) error { return nil }
+
+func (c *recordConn) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	c.writes = append(c.writes, append([]byte(nil), p...))
+	c.mu.Unlock()
+	return len(p), nil
+}
+
+func (c *recordConn) Writes() [][]byte {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make([][]byte, len(c.writes))
+	for i, p := range c.writes {
+		out[i] = append([]byte(nil), p...)
+	}
+	return out
+}
+
 // --- Wire format encoding tests ---
 
 func TestResetQuery_Wire(t *testing.T) {
@@ -936,9 +985,9 @@ func TestSession_VersionNegotiation_SilentClose(t *testing.T) {
 	require.NotErrorIs(t, err, ErrDowngrade)
 }
 
-func TestSession_VersionConfirmed_NoSilentDowngrade(t *testing.T) {
-	// once a CacheResponse confirms the version, a silent connection close
-	// must not downgrade it (it is a network error, not version rejection)
+func TestSession_VersionConfirmed_SilentCloseNeedsTwoStrikes(t *testing.T) {
+	// once a CacheResponse confirms the version, tolerate one silent close as a
+	// transient error, but downgrade after a second consecutive pre-PDU EOF.
 	eodSignal, eodCh := waitChan(1)
 	c := NewClient(&Options{
 		Version:     VersionAuto,
@@ -968,12 +1017,20 @@ func TestSession_VersionConfirmed_NoSilentDowngrade(t *testing.T) {
 	server2.Close()
 	require.NotErrorIs(t, <-done, ErrDowngrade)
 
-	// third connection: still v2
+	// third connection: still try the confirmed v2 once more
 	client3, server3 := net.Pipe()
-	defer server3.Close()
 	go func() { done <- c.Run(ctx, client3) }()
 	q = clientReadQuery(t, server3, 8)
 	require.Equal(t, byte(VersionV2), q[0])
+	server3.Close()
+	require.ErrorIs(t, <-done, ErrDowngrade)
+
+	// fourth connection: now downgraded to v1
+	client4, server4 := net.Pipe()
+	defer server4.Close()
+	go func() { done <- c.Run(ctx, client4) }()
+	q = clientReadQuery(t, server4, 8)
+	require.Equal(t, byte(VersionV1), q[0])
 	cancel()
 	<-done
 }
@@ -1328,6 +1385,41 @@ func TestSendSerial_ConcurrentWithRun(t *testing.T) {
 
 	cancel()
 	<-done
+}
+
+func TestSendSerial_WaitsForResetQuery(t *testing.T) {
+	c := NewClient(nil)
+	conn := &recordConn{}
+	c.mu.Lock()
+	c.conn = conn
+	c.hasSerial = true
+	c.sessid = 0x0042
+	c.serial = 99
+	c.version = VersionV1
+	c.mu.Unlock()
+
+	bw := newBlockingWriter()
+	errCh := make(chan error, 1)
+	go func() { errCh <- c.sendResetQuery(bw, VersionV1) }()
+	<-bw.started
+
+	done := make(chan bool, 1)
+	go func() { done <- c.SendSerial() }()
+
+	select {
+	case <-done:
+		t.Fatal("SendSerial returned before Reset Query write completed")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(bw.release)
+	require.NoError(t, <-errCh)
+	require.False(t, <-done)
+	require.Empty(t, conn.Writes())
+
+	c.mu.Lock()
+	require.False(t, c.hasSerial)
+	c.mu.Unlock()
 }
 
 // --- Reconnection state test ---

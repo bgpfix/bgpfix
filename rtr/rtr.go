@@ -38,7 +38,7 @@ type Client struct {
 	Options Options
 
 	mu        sync.Mutex
-	wmu       sync.Mutex // protects writes to conn (SendSerial vs dispatch)
+	wmu       sync.Mutex // protects conn writes and reset/query transitions
 	conn      net.Conn   // current connection (nil when Run is not active)
 	version   byte       // negotiated protocol version (0 until first CacheResponse)
 	sessid    uint16     // current session ID (from CacheResponse)
@@ -47,6 +47,7 @@ type Client struct {
 	nextVer   byte       // protocol version for the next connection (auto-negotiation state)
 	verInit   bool       // nextVer has been initialized
 	verOK     bool       // version confirmed by a CacheResponse (stops silent-close downgrades)
+	verEOFs   byte       // consecutive pre-PDU EOFs on a previously confirmed version
 
 	resetPending bool // a Reset Query was sent; flush stale cache on the next CacheResponse
 }
@@ -80,14 +81,6 @@ func NewClient(opts *Options) *Client {
 //
 // NB: Run starts one internal goroutine that exits when Run returns.
 func (c *Client) Run(ctx context.Context, conn net.Conn) error {
-	c.mu.Lock()
-	if c.conn != nil {
-		c.mu.Unlock()
-		return fmt.Errorf("rtr: Run already active")
-	}
-	c.conn = conn
-	c.mu.Unlock()
-
 	runDone := make(chan struct{})
 	defer func() {
 		conn.Close()
@@ -117,7 +110,7 @@ func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 	c.mu.Unlock()
 
 	// send initial Reset Query (a full resync, so flush any stale cache on reconnect)
-	err := c.sendResetQuery(conn, ver)
+	err := c.start(conn, ver)
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -135,12 +128,19 @@ func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 			// NB: some caches reject an unsupported version by just closing the
 			// connection (a clean EOF), without an Error Report; retry lower. Other
 			// errors (reset, timeout) are transient, not a version rejection.
-			if !got && errors.Is(err, io.EOF) && c.downgrade(false) {
-				return ErrDowngrade
+			if !got {
+				if errors.Is(err, io.EOF) {
+					if c.downgrade(false) {
+						return ErrDowngrade
+					}
+				} else {
+					c.resetVerEOFs()
+				}
 			}
 			return err
 		}
 		got = true
+		c.resetVerEOFs()
 
 		payload, err := readPayload(conn, h)
 		if err != nil {
@@ -163,20 +163,22 @@ func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 // Returns false if not connected, no full cache has been received yet, or the write fails.
 // Safe to call concurrently with Run from a different goroutine.
 func (c *Client) SendSerial() bool {
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
+
 	c.mu.Lock()
 	conn := c.conn
 	hasSerial := c.hasSerial
+	if conn == nil || !hasSerial {
+		c.mu.Unlock()
+		return false
+	}
 	sessid := c.sessid
 	serial := c.serial
 	version := c.version
 	c.mu.Unlock()
 
-	if conn == nil || !hasSerial {
-		return false
-	}
-	c.wmu.Lock()
 	err := writeSerialQuery(conn, version, sessid, serial)
-	c.wmu.Unlock()
 	return err == nil
 }
 
@@ -196,12 +198,20 @@ func (c *Client) downgrade(explicit bool) bool {
 		return false
 	}
 	c.mu.Lock()
-	if !c.verInit || c.nextVer == VersionV0 || (c.verOK && !explicit) {
+	if !c.verInit || c.nextVer == VersionV0 {
 		c.mu.Unlock()
 		return false
 	}
+	if !explicit && c.verOK {
+		c.verEOFs++
+		if c.verEOFs < 2 {
+			c.mu.Unlock()
+			return false
+		}
+	}
 	c.nextVer--
 	c.verOK = false
+	c.verEOFs = 0
 	ver := c.nextVer
 	c.mu.Unlock()
 
@@ -209,10 +219,40 @@ func (c *Client) downgrade(explicit bool) bool {
 	return true
 }
 
+func (c *Client) resetVerEOFs() {
+	c.mu.Lock()
+	c.verEOFs = 0
+	c.mu.Unlock()
+}
+
+// start publishes conn as the active connection, invalidates any stale serial
+// state, and sends the initial Reset Query as one serialized transition.
+func (c *Client) start(conn net.Conn, ver byte) error {
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
+
+	c.mu.Lock()
+	if c.conn != nil {
+		c.mu.Unlock()
+		return fmt.Errorf("rtr: Run already active")
+	}
+	c.conn = conn
+	c.resetPending = true
+	// NB: a full resync invalidates the serial; block SendSerial (stale sessid/
+	// serial) until the new EndOfData re-establishes it.
+	c.hasSerial = false
+	c.mu.Unlock()
+
+	return writeResetQuery(conn, ver)
+}
+
 // sendResetQuery sends a Reset Query and marks the next CacheResponse as a full
 // resync, so dispatch flushes any stale cache state (left over from a previous
 // session or a reconnect) before the fresh VRP/ASPA data is applied.
 func (c *Client) sendResetQuery(w io.Writer, ver byte) error {
+	c.wmu.Lock()
+	defer c.wmu.Unlock()
+
 	c.mu.Lock()
 	c.resetPending = true
 	// NB: a full resync invalidates the serial; block SendSerial (stale sessid/
@@ -220,10 +260,7 @@ func (c *Client) sendResetQuery(w io.Writer, ver byte) error {
 	c.hasSerial = false
 	c.mu.Unlock()
 
-	c.wmu.Lock()
-	err := writeResetQuery(w, ver)
-	c.wmu.Unlock()
-	return err
+	return writeResetQuery(w, ver)
 }
 
 // dispatch processes a single PDU received from the server.
@@ -245,6 +282,7 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 		}
 		c.verInit = true
 		c.verOK = true
+		c.verEOFs = 0
 		c.mu.Unlock()
 		if ver != nil {
 			*ver = h.Version
@@ -276,17 +314,11 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 
 	case PDUCacheReset:
 		c.Debug().Msg("RTR cache reset")
-		c.mu.Lock()
-		c.hasSerial = false
-		c.mu.Unlock()
 		if c.Options.OnCacheReset != nil {
 			c.Options.OnCacheReset()
 		}
 		if w != nil && ver != nil {
-			c.wmu.Lock()
-			err := writeResetQuery(w, *ver)
-			c.wmu.Unlock()
-			return err
+			return c.sendResetQuery(w, *ver)
 		}
 
 	case PDUSerialNotify:
