@@ -13,7 +13,7 @@ import (
 // Cache is an RPKI data cache for ROV and ASPA validation.
 //
 // Writers stage changes in a pending set and publish them with Apply.
-// Readers obtain immutable snapshots (VRPs, ASPAs) — the published maps
+// Readers obtain immutable snapshots (VRPs, ASPAs) - the published maps
 // must never be modified, so reads are lock-free.
 type Cache struct {
 	*zerolog.Logger

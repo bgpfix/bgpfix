@@ -93,7 +93,7 @@ func (c *Cache) ParseJSON(data []byte) error {
 
 	for _, aspa := range doc.ASPAs {
 		// NB: Routinator uses provider_asids, rpki-client uses providers.
-		// rpki-client emits [0] for "no providers" — addASPA filters zeros.
+		// rpki-client emits [0] for "no providers" - addASPA filters zeros.
 		provs := aspa.ProviderASIDs
 		if provs == nil {
 			provs = aspa.Providers

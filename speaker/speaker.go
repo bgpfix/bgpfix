@@ -113,7 +113,7 @@ func (s *Speaker) onOpen(m *msg.Msg) bool {
 		return false
 	}
 
-	// validate remote hold time (RFC 4271 §4.2: must be 0 or >= 3)
+	// validate remote hold time (RFC 4271 section 4.2: must be 0 or >= 3)
 	ht := int(o.HoldTime)
 	if ht != 0 && ht < 3 {
 		s.Warn().Int("hold", ht).Msg("remote hold time invalid (must be 0 or >= 3), dropping OPEN")

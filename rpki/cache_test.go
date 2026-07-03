@@ -101,21 +101,21 @@ func TestAddVRPDeleteNonExistent(t *testing.T) {
 func TestAddVRPInvalidMaxLength(t *testing.T) {
 	c := NewCache(nil)
 
-	// maxLen=33 exceeds IPv4 max of 32 → should be rejected
+	// maxLen=33 exceeds IPv4 max of 32 -> should be rejected
 	p4 := netip.MustParsePrefix("192.0.2.0/24")
 	c.AddVRP(true, p4, 33, 65001)
 	if len(c.next4[p4]) != 0 {
 		t.Error("maxLen=33 should be rejected for IPv4")
 	}
 
-	// maxLen=129 exceeds IPv6 max of 128 → should be rejected
+	// maxLen=129 exceeds IPv6 max of 128 -> should be rejected
 	p6 := netip.MustParsePrefix("2001:db8::/32")
 	c.AddVRP(true, p6, 129, 65002)
 	if len(c.next6[p6]) != 0 {
 		t.Error("maxLen=129 should be rejected for IPv6")
 	}
 
-	// maxLen < prefix length → should be rejected
+	// maxLen < prefix length -> should be rejected
 	c.AddVRP(true, p4, 20, 65001)
 	if len(c.next4[p4]) != 0 {
 		t.Error("maxLen < prefix length should be rejected")
