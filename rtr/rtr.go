@@ -234,7 +234,11 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 		c.resetPending = false
 		c.version = h.Version
 		c.sessid = h.Session
-		c.nextVer = h.Version // confirmed: reconnections start at this version
+		// NB: only auto-negotiation adjusts the next connection's version (lock in
+		// the confirmed one); a fixed-version client keeps its configured version.
+		if c.Options.Version == VersionAuto {
+			c.nextVer = h.Version
+		}
 		c.verInit = true
 		c.verOK = true
 		c.mu.Unlock()
