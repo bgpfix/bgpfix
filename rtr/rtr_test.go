@@ -1503,3 +1503,46 @@ func waitChan(n int) (signal func(), ch <-chan struct{}) {
 		mu.Unlock()
 	}, c
 }
+
+func TestCacheResponse_SessionChangeForcesResync(t *testing.T) {
+	resetCalled := false
+	c := NewClient(&Options{
+		OnCacheReset: func() { resetCalled = true },
+	})
+
+	// establish a session
+	h, payload := parsePDU(t, buildCacheResponse(VersionV1, 0x1111))
+	ver := VersionV1
+	require.NoError(t, c.dispatch(nil, h, payload, &ver))
+	h, payload = parsePDU(t, buildEndOfData(VersionV1, 0x1111, 100, 3600, 600, 7200))
+	require.NoError(t, c.dispatch(nil, h, payload, &ver))
+	require.False(t, resetCalled)
+
+	// unrequested CacheResponse with a new session ID must flush stale state
+	h, payload = parsePDU(t, buildCacheResponse(VersionV1, 0x2222))
+	require.NoError(t, c.dispatch(nil, h, payload, &ver))
+	require.True(t, resetCalled)
+	c.mu.Lock()
+	require.Equal(t, uint16(0x2222), c.sessid)
+	require.False(t, c.hasSerial)
+	c.mu.Unlock()
+}
+
+func TestEndOfData_SessionChangeErrors(t *testing.T) {
+	c := NewClient(nil)
+	ver := VersionV1
+
+	// establish a session
+	h, payload := parsePDU(t, buildCacheResponse(VersionV1, 0x1111))
+	require.NoError(t, c.dispatch(nil, h, payload, &ver))
+	h, payload = parsePDU(t, buildEndOfData(VersionV1, 0x1111, 100, 3600, 600, 7200))
+	require.NoError(t, c.dispatch(nil, h, payload, &ver))
+
+	// mid-stream session change in EndOfData must error out (data inconsistent)
+	eodCalled := false
+	c.Options.OnEndOfData = func(sessid uint16, serial uint32) { eodCalled = true }
+	h, payload = parsePDU(t, buildEndOfData(VersionV1, 0x2222, 101, 3600, 600, 7200))
+	require.Error(t, c.dispatch(nil, h, payload, &ver))
+	require.False(t, eodCalled)
+	require.False(t, c.hasSerial)
+}
