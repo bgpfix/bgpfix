@@ -266,7 +266,6 @@ func (o *Options) AddInput(dst dir.Dir, tpl ...*Input) *Input {
 		t := tpl[0]
 		in.Id = t.Id
 		in.Name = t.Name
-		in.Dir = t.Dir
 		in.In = t.In
 		in.Reverse = t.Reverse
 		in.CbFilter = t.CbFilter

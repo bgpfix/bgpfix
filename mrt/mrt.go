@@ -140,11 +140,6 @@ func (mrt *Mrt) CopyData() *Mrt {
 		mrt.ref = false // tag as owned
 	}
 
-	// special case: nothing to do
-	if mrt.Data == nil {
-		return mrt
-	}
-
 	switch {
 	case mrt.Data == nil: // no data
 		return mrt

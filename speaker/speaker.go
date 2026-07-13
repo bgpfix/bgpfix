@@ -212,6 +212,10 @@ func (s *Speaker) keepaliver(negotiated int64) {
 		case <-s.ctx.Done():
 			ticker.Stop()
 			return
+		case <-s.pipe.Ctx.Done():
+			// NB: don't outlive a stopped pipe for up to the full hold time
+			ticker.Stop()
+			return
 		case now := <-ticker.C:
 			now_ts = now.Unix()
 		}
