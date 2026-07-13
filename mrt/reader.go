@@ -111,6 +111,18 @@ func (br *Reader) WriteFunc(src []byte, cb pipe.CallbackFunc) (n int, err error)
 			return n, err
 		}
 
+		// NB: ADD-PATH records (RFC 8050) must be parsed now, with ADD_PATH
+		// enabled; mark as edited so the parsed message is the only source of
+		// truth (re-marshaling without path-ids, instead of mislabeled raw data)
+		if mrt.Sub.IsAddPath() {
+			if err := m.Parse(addPathCaps); err != nil {
+				stats.Garbled++
+				p.PutMsg(m)
+				continue
+			}
+			m.Edit()
+		}
+
 		// prepare m
 		if cb != nil && !cb(m) {
 			p.PutMsg(m)
@@ -156,5 +168,16 @@ func (br *Reader) FromBytes(buf []byte, bgp_msg *msg.Msg, mrt_msg *Mrt) (n int, 
 		return n, fmt.Errorf("BGP4MP: %w", err)
 	}
 
-	return n, bgp4.ToMsg(bgp_msg, !br.NoTags)
+	if err := bgp4.ToMsg(bgp_msg, !br.NoTags); err != nil {
+		return n, err
+	}
+
+	// NB: ADD-PATH records (RFC 8050) must be parsed now, with ADD_PATH enabled
+	if mrt_msg.Sub.IsAddPath() {
+		if err := bgp_msg.Parse(addPathCaps); err != nil {
+			return n, err
+		}
+		bgp_msg.Edit()
+	}
+	return n, nil
 }

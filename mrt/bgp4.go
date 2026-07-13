@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/afi"
+	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
 )
@@ -31,6 +32,31 @@ const (
 	// minimum MRT BgpMsg header length
 	BGPMSG_HEADLEN = 16
 )
+
+// IsAddPath returns true iff sub is a BGP4MP ADD-PATH subtype (RFC 8050),
+// ie. the encapsulated BGP message encodes its NLRI with Path Identifiers.
+func (s Sub) IsAddPath() bool {
+	switch s {
+	case BGP4_MESSAGE_ADDPATH, BGP4_MESSAGE_AS4_ADDPATH,
+		BGP4_MESSAGE_LOCAL_ADDPATH, BGP4_MESSAGE_AS4_LOCAL_ADDPATH:
+		return true
+	}
+	return false
+}
+
+// addPathCaps has ADD_PATH enabled in both directions for the AFIs seen in MRT
+// dumps, for parsing the BGP messages in *_ADDPATH records (RFC 8050).
+var addPathCaps = func() caps.Caps {
+	var cps caps.Caps
+	ap := cps.Use(caps.CAP_ADDPATH).(*caps.AddPath)
+	for _, as := range []afi.AS{
+		afi.AS_IPV4_UNICAST, afi.AS_IPV4_MULTICAST,
+		afi.AS_IPV6_UNICAST, afi.AS_IPV6_MULTICAST,
+	} {
+		ap.Add(as, caps.ADDPATH_BIDIR)
+	}
+	return cps
+}()
 
 // Bgp4 represents an MRT BGP4MP_MESSAGE message
 type Bgp4 struct {
@@ -167,13 +193,13 @@ func (b4 *Bgp4) Parse() error {
 	// read depending on subtype
 	var af afi.AFI
 	switch mrt.Sub {
-	case BGP4_MESSAGE, BGP4_MESSAGE_LOCAL:
+	case BGP4_MESSAGE, BGP4_MESSAGE_LOCAL, BGP4_MESSAGE_ADDPATH, BGP4_MESSAGE_LOCAL_ADDPATH:
 		b4.PeerAS = uint32(msb.Uint16(buf[0:2]))
 		b4.LocalAS = uint32(msb.Uint16(buf[2:4]))
 		b4.Interface = msb.Uint16(buf[4:6])
 		af = afi.NewAFIBytes(buf[6:8])
 		buf = buf[8:]
-	case BGP4_MESSAGE_AS4, BGP4_MESSAGE_AS4_LOCAL:
+	case BGP4_MESSAGE_AS4, BGP4_MESSAGE_AS4_LOCAL, BGP4_MESSAGE_AS4_ADDPATH, BGP4_MESSAGE_AS4_LOCAL_ADDPATH:
 		b4.PeerAS = msb.Uint32(buf[0:4])
 		b4.LocalAS = msb.Uint32(buf[4:8])
 		b4.Interface = msb.Uint16(buf[8:10])

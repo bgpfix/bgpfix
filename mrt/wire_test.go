@@ -8,6 +8,7 @@ import (
 
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/msg"
+	"github.com/bgpfix/bgpfix/nlri"
 	"github.com/stretchr/testify/require"
 )
 
@@ -196,4 +197,34 @@ func TestMRT_NonET_Parse(t *testing.T) {
 	err = m.Parse()
 	require.NoError(t, err)
 	require.Equal(t, uint32(65001), m.Bgp4.PeerAS)
+}
+
+func makeBgpUpdateAddPath(pathid uint32, pfxlen byte, pfx []byte) []byte {
+	body := appendUint16(nil, 0) // withdrawn routes length
+	body = appendUint16(body, 0) // total path attribute length
+	body = appendUint32(body, pathid)
+	body = append(body, pfxlen)
+	body = append(body, pfx...)
+	head := makeBgpHeader(uint16(msg.HEADLEN+len(body)), msg.UPDATE)
+	return append(head, body...)
+}
+
+func TestBGP4_AddPath(t *testing.T) {
+	bgp := makeBgpUpdateAddPath(7, 24, []byte{1, 2, 3})
+	peerIP := netip.AddrFrom4([4]byte{192, 0, 2, 1})
+	b4 := makeBGP4MPAS4(65001, 65002, 1, afi.AFI_IPV4, peerIP, peerIP, bgp)
+	raw := append(makeMrtHeader(1700000000, BGP4MP, BGP4_MESSAGE_AS4_ADDPATH, uint32(len(b4))), b4...)
+
+	m := msg.NewMsg()
+	br := NewReader(nil, nil)
+	off, err := br.FromBytes(raw, m, nil)
+	require.NoError(t, err)
+	require.Equal(t, len(raw), off)
+
+	// NLRI must be parsed already, with the Path Identifier decoded
+	require.Equal(t, msg.UPDATE, m.Upper)
+	require.Len(t, m.Update.Reach, 1)
+	p := m.Update.Reach[0]
+	require.Equal(t, netip.MustParsePrefix("1.2.3.0/24"), p.Prefix)
+	require.Equal(t, nlri.PathId(7), p.Add)
 }
