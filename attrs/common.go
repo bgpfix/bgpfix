@@ -192,9 +192,9 @@ func (a *Aggregator) Unmarshal(buf []byte, cps caps.Caps, meta *meta.Meta) error
 }
 
 func (a *Aggregator) Marshal(dst []byte, cps caps.Caps, meta *meta.Meta) []byte {
-	// asn length
+	// asn length, NB: not affected by meta - it pertains to parsing only
 	asnlen := 2
-	if a.Code() == ATTR_AS4AGGREGATOR || meta.HasAS4(cps.Has(caps.CAP_AS4)) {
+	if a.Code() == ATTR_AS4AGGREGATOR || cps.Has(caps.CAP_AS4) {
 		asnlen = 4
 	}
 

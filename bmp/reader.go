@@ -215,11 +215,7 @@ func (br *Reader) setMeta(m *msg.Msg, bmp *Bmp, obmp *OpenBmp) {
 
 	// the peer A flag determines the AS_PATH encoding (RFC 7854/4.2),
 	// possibly overriding session capabilities in parsers
-	if bmp.Peer.Is2ByteAS() {
-		m.AS4 = meta.TRI_OFF
-	} else {
-		m.AS4 = meta.TRI_ON
-	}
+	m.ParseAS4 = meta.TriBool(!bmp.Peer.Is2ByteAS())
 
 	if br.NoCtx {
 		return

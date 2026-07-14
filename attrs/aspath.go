@@ -336,9 +336,9 @@ func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, meta *meta.Meta) error {
 }
 
 func (a *Aspath) Marshal(dst []byte, cps caps.Caps, meta *meta.Meta) []byte {
-	// asn length
+	// asn length, NB: not affected by meta - it pertains to parsing only
 	asnlen := 2
-	if a.Code() == ATTR_AS4PATH || meta.HasAS4(cps.Has(caps.CAP_AS4)) {
+	if a.Code() == ATTR_AS4PATH || cps.Has(caps.CAP_AS4) {
 		asnlen = 4
 	}
 

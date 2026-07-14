@@ -224,8 +224,8 @@ func TestBGP4_AddPath(t *testing.T) {
 	require.Equal(t, len(raw), off)
 
 	// the MRT subtype must be captured in message metadata
-	require.Equal(t, meta.TRI_ON, m.AS4)
-	require.Equal(t, meta.TRI_ON, m.AddPath)
+	require.Equal(t, meta.TRI_ON, m.ParseAS4)
+	require.Equal(t, meta.TRI_ON, m.ParseAddPath)
 
 	// parse with empty session caps: the metadata must override ADD_PATH
 	err = m.Parse(caps.Caps{})
@@ -235,4 +235,10 @@ func TestBGP4_AddPath(t *testing.T) {
 	p := m.Update.Reach[0]
 	require.Equal(t, netip.MustParsePrefix("1.2.3.0/24"), p.Prefix)
 	require.Equal(t, nlri.PathId(7), p.Add)
+
+	// the parse metadata must survive a JSON round-trip
+	m2 := msg.NewMsg()
+	require.NoError(t, m2.FromJSON(m.GetJSON()))
+	require.Equal(t, meta.TRI_ON, m2.ParseAS4)
+	require.Equal(t, meta.TRI_ON, m2.ParseAddPath)
 }
