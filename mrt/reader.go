@@ -16,8 +16,8 @@ type Reader struct {
 	ibuf []byte // input buffer
 	mrt  *Mrt   // raw MRT message
 
-	NoTags bool        // ignore message tags?
-	Stats  ReaderStats // our stats
+	NoCtx bool        // ignore message context?
+	Stats ReaderStats // our stats
 }
 
 // BGP reader statistics
@@ -106,21 +106,9 @@ func (br *Reader) WriteFunc(src []byte, cb pipe.CallbackFunc) (n int, err error)
 
 		// write to BGP msg
 		m := p.GetMsg()
-		if err := mrt.Bgp4.ToMsg(m, !br.NoTags); err != nil {
+		if err := mrt.Bgp4.ToMsg(m, br.NoCtx); err != nil {
 			p.PutMsg(m)
 			return n, err
-		}
-
-		// NB: ADD-PATH records (RFC 8050) must be parsed now, with ADD_PATH
-		// enabled; mark as edited so the parsed message is the only source of
-		// truth (re-marshaling without path-ids, instead of mislabeled raw data)
-		if mrt.Sub.IsAddPath() {
-			if err := m.Parse(addPathCaps); err != nil {
-				stats.Garbled++
-				p.PutMsg(m)
-				continue
-			}
-			m.Edit()
 		}
 
 		// prepare m
@@ -168,16 +156,10 @@ func (br *Reader) FromBytes(buf []byte, bgp_msg *msg.Msg, mrt_msg *Mrt) (n int, 
 		return n, fmt.Errorf("BGP4MP: %w", err)
 	}
 
-	if err := bgp4.ToMsg(bgp_msg, !br.NoTags); err != nil {
+	// write to BGP msg
+	if err := bgp4.ToMsg(bgp_msg, br.NoCtx); err != nil {
 		return n, err
 	}
 
-	// NB: ADD-PATH records (RFC 8050) must be parsed now, with ADD_PATH enabled
-	if mrt_msg.Sub.IsAddPath() {
-		if err := bgp_msg.Parse(addPathCaps); err != nil {
-			return n, err
-		}
-		bgp_msg.Edit()
-	}
 	return n, nil
 }

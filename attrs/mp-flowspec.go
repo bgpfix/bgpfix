@@ -10,8 +10,8 @@ import (
 
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
-	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/nlri"
 )
 
@@ -152,7 +152,7 @@ func (op FlowOp) Len() int {
 	return 1 << (lcode >> 4)
 }
 
-func (a *MPFlowspec) Unmarshal(cps caps.Caps, _ dir.Dir) error {
+func (a *MPFlowspec) Unmarshal(cps caps.Caps, _ *meta.Meta) error {
 	// best-effort NH parser
 	if len(a.NH) > 0 {
 		a.NextHop, a.LinkLocal, _ = ParseNH(a.NH)
@@ -203,7 +203,7 @@ func (a *MPFlowspec) Unmarshal(cps caps.Caps, _ dir.Dir) error {
 	return nil
 }
 
-func (a *MPFlowspec) Marshal(cps caps.Caps, _ dir.Dir) {
+func (a *MPFlowspec) Marshal(cps caps.Caps, _ *meta.Meta) {
 	// best-effort
 	nh := a.NH[:0]
 	if a.NextHop.IsValid() {

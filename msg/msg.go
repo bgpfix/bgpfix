@@ -11,8 +11,8 @@ import (
 
 	"github.com/bgpfix/bgpfix/binary"
 	"github.com/bgpfix/bgpfix/caps"
-	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
+	"github.com/bgpfix/bgpfix/meta"
 )
 
 // Msg represents a BGP message.
@@ -25,11 +25,9 @@ type Msg struct {
 	json   []byte // JSON representation (own memory), can be nil
 	jupper []byte // upper layer JSON (subslice of json), can be nil
 
-	// optional metadata
+	// optional metadata: Dir, Seq, Time, and per-message parser overrides
 
-	Dir  dir.Dir   // message destination
-	Seq  int64     // sequence number
-	Time time.Time // message timestamp
+	meta.Meta
 
 	// raw contents
 
@@ -107,9 +105,7 @@ func NewMsg() *Msg {
 
 // Reset clears the message. It does not reset the upper layer.
 func (msg *Msg) Reset() *Msg {
-	msg.Dir = 0
-	msg.Seq = 0
-	msg.Time = time.Time{}
+	msg.Meta = meta.Meta{}
 	msg.Type = INVALID
 	msg.Upper = INVALID
 	msg.Version = 0
@@ -500,7 +496,7 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) (err error) {
 		switch key {
 		case 0: // dst
-			msg.Dir, err = dir.DirString(json.S(val))
+			msg.Dir, err = meta.DirString(json.S(val))
 
 		case 1: // seq number
 			if typ == json.NUMBER && len(val) > 0 {

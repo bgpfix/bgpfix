@@ -5,8 +5,8 @@ import (
 
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
-	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/nlri"
 )
 
@@ -38,7 +38,7 @@ func (a *MPPrefixes) Len() int {
 	}
 }
 
-func (a *MPPrefixes) Unmarshal(cps caps.Caps, dir dir.Dir) error {
+func (a *MPPrefixes) Unmarshal(cps caps.Caps, meta *meta.Meta) error {
 	var (
 		isv6 = a.IsIPv6()
 		err  error
@@ -69,11 +69,11 @@ func (a *MPPrefixes) Unmarshal(cps caps.Caps, dir dir.Dir) error {
 		}
 	}
 
-	a.Prefixes, err = nlri.Unmarshal(a.Prefixes, a.Data, a.AS, cps, dir)
+	a.Prefixes, err = nlri.Unmarshal(a.Prefixes, a.Data, a.AS, cps, meta)
 	return err
 }
 
-func (a *MPPrefixes) Marshal(cps caps.Caps, dir dir.Dir) {
+func (a *MPPrefixes) Marshal(cps caps.Caps, meta *meta.Meta) {
 	// next-hop
 	nh := a.NH[:0]
 	if a.NextHop.IsValid() {
@@ -85,7 +85,7 @@ func (a *MPPrefixes) Marshal(cps caps.Caps, dir dir.Dir) {
 	a.NH = nh
 
 	// prefixes
-	a.Data = nlri.Marshal(a.Data[:0], a.Prefixes, a.AS, cps, dir)
+	a.Data = nlri.Marshal(a.Data[:0], a.Prefixes, a.AS, cps, meta)
 }
 
 func (a *MPPrefixes) ToJSON(dst []byte) []byte {

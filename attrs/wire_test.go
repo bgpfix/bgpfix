@@ -11,7 +11,6 @@ import (
 
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
-	"github.com/bgpfix/bgpfix/dir"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,11 +18,11 @@ func TestOrigin_Wire(t *testing.T) {
 	at := NewAttr(ATTR_ORIGIN).(*Origin)
 	var cps caps.Caps
 
-	err := at.Unmarshal([]byte{0x00}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0x00}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, byte(0), at.Origin)
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{0x40, 0x01, 0x01, 0x00}, buf)
 }
 
@@ -31,11 +30,11 @@ func TestU32_Wire(t *testing.T) {
 	at := NewAttr(ATTR_MED).(*U32)
 	var cps caps.Caps
 
-	err := at.Unmarshal([]byte{0x00, 0x00, 0x03, 0xE8}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0x00, 0x00, 0x03, 0xE8}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, uint32(1000), at.Val)
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{0x80, 0x04, 0x04, 0x00, 0x00, 0x03, 0xE8}, buf)
 }
 
@@ -43,11 +42,11 @@ func TestNextHop_Wire(t *testing.T) {
 	at := NewAttr(ATTR_NEXTHOP).(*IP)
 	var cps caps.Caps
 
-	err := at.Unmarshal([]byte{192, 0, 2, 1}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{192, 0, 2, 1}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, netip.AddrFrom4([4]byte{192, 0, 2, 1}), at.Addr)
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{0x40, 0x03, 0x04, 192, 0, 2, 1}, buf)
 }
 
@@ -55,11 +54,11 @@ func TestAspath_Wire(t *testing.T) {
 	at := NewAttr(ATTR_ASPATH).(*Aspath)
 	var cps caps.Caps
 
-	err := at.Unmarshal([]byte{0x02, 0x02, 0xFD, 0xE9, 0x00, 0x64}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0x02, 0x02, 0xFD, 0xE9, 0x00, 0x64}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, 2, at.Len())
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{0x40, 0x02, 0x06, 0x02, 0x02, 0xFD, 0xE9, 0x00, 0x64}, buf)
 }
 
@@ -68,11 +67,11 @@ func TestAspath_AS4_Wire(t *testing.T) {
 	var cps caps.Caps
 	cps.Use(caps.CAP_AS4)
 
-	err := at.Unmarshal([]byte{0x02, 0x01, 0x00, 0x00, 0xFD, 0xE9}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0x02, 0x01, 0x00, 0x00, 0xFD, 0xE9}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, uint32(65001), at.Segments[0].List[0])
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{0x40, 0x02, 0x06, 0x02, 0x01, 0x00, 0x00, 0xFD, 0xE9}, buf)
 }
 
@@ -81,12 +80,12 @@ func TestAggregator_AS4_Wire(t *testing.T) {
 	var cps caps.Caps
 	cps.Use(caps.CAP_AS4)
 
-	err := at.Unmarshal([]byte{0x00, 0x00, 0xFD, 0xE9, 192, 0, 2, 1}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0x00, 0x00, 0xFD, 0xE9, 192, 0, 2, 1}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, uint32(65001), at.ASN)
 	require.Equal(t, netip.AddrFrom4([4]byte{192, 0, 2, 1}), at.Addr)
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{0xC0, 0x07, 0x08, 0x00, 0x00, 0xFD, 0xE9, 192, 0, 2, 1}, buf)
 }
 
@@ -94,11 +93,11 @@ func TestCommunity_Wire(t *testing.T) {
 	at := NewAttr(ATTR_COMMUNITY).(*Community)
 	var cps caps.Caps
 
-	err := at.Unmarshal([]byte{0x00, 0x64, 0x00, 0x01, 0x00, 0xC8, 0x00, 0x02}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0x00, 0x64, 0x00, 0x01, 0x00, 0xC8, 0x00, 0x02}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, 2, at.Len())
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{0xC0, 0x08, 0x08, 0x00, 0x64, 0x00, 0x01, 0x00, 0xC8, 0x00, 0x02}, buf)
 }
 
@@ -110,11 +109,11 @@ func TestLargeCommunity_Wire(t *testing.T) {
 		0x00, 0x00, 0xFD, 0xE9,
 		0x00, 0x00, 0x00, 0x01,
 		0x00, 0x00, 0x00, 0x02,
-	}, cps, dir.DIR_L)
+	}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, 1, at.Len())
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{0xC0, 0x20, 0x0C, 0x00, 0x00, 0xFD, 0xE9, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02}, buf)
 }
 
@@ -124,7 +123,7 @@ func TestMPReachUnreach_Wire(t *testing.T) {
 	// MP_REACH for 10.0.0.0/8 with NH 192.0.2.1
 	atr := NewAttr(ATTR_MP_REACH).(*MP)
 	reachVal := []byte{0x00, 0x01, 0x01, 0x04, 192, 0, 2, 1, 0x00, 0x08, 10}
-	err := atr.Unmarshal(reachVal, cps, dir.DIR_L)
+	err := atr.Unmarshal(reachVal, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, afi.AS_IPV4_UNICAST, atr.AS)
 	require.Equal(t, []byte{192, 0, 2, 1}, atr.NH)
@@ -132,20 +131,20 @@ func TestMPReachUnreach_Wire(t *testing.T) {
 	require.NotNil(t, atr.Prefixes())
 	require.Equal(t, 1, atr.Prefixes().Len())
 
-	reachBuf := atr.Marshal(nil, cps, dir.DIR_L)
+	reachBuf := atr.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{0x80, 0x0E, 0x0B, 0x00, 0x01, 0x01, 0x04, 192, 0, 2, 1, 0x00, 0x08, 10}, reachBuf)
 
 	// MP_UNREACH for 10.0.0.0/8
 	atu := NewAttr(ATTR_MP_UNREACH).(*MP)
 	unreachVal := []byte{0x00, 0x01, 0x01, 0x08, 10}
-	err = atu.Unmarshal(unreachVal, cps, dir.DIR_L)
+	err = atu.Unmarshal(unreachVal, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, afi.AS_IPV4_UNICAST, atu.AS)
 	require.Equal(t, []byte{0x08, 10}, atu.Data)
 	require.NotNil(t, atu.Prefixes())
 	require.Equal(t, 1, atu.Prefixes().Len())
 
-	unreachBuf := atu.Marshal(nil, cps, dir.DIR_L)
+	unreachBuf := atu.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{0x80, 0x0F, 0x05, 0x00, 0x01, 0x01, 0x08, 10}, unreachBuf)
 }
 
@@ -154,11 +153,11 @@ func TestAspath_EmptyPath_Wire(t *testing.T) {
 	var cps caps.Caps
 
 	// Empty AS_PATH (common for iBGP)
-	err := at.Unmarshal([]byte{}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, 0, at.Len())
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{0x40, 0x02, 0x00}, buf)
 }
 
@@ -167,7 +166,7 @@ func TestAspath_ASSet_Wire(t *testing.T) {
 	var cps caps.Caps
 
 	// AS_SET (type=1) with 2 ASNs
-	err := at.Unmarshal([]byte{0x01, 0x02, 0x00, 0x64, 0x00, 0xC8}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0x01, 0x02, 0x00, 0x64, 0x00, 0xC8}, cps, nil)
 	require.NoError(t, err)
 	require.Len(t, at.Segments, 1)
 	require.True(t, at.Segments[0].IsSet)
@@ -190,7 +189,7 @@ func TestOrigin_AllValues_Wire(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			at := NewAttr(ATTR_ORIGIN).(*Origin)
-			err := at.Unmarshal([]byte{tt.value}, cps, dir.DIR_L)
+			err := at.Unmarshal([]byte{tt.value}, cps, nil)
 			require.NoError(t, err)
 			require.Equal(t, tt.expect, at.Origin)
 		})
@@ -202,7 +201,7 @@ func TestCommunity_WellKnown_Wire(t *testing.T) {
 	var cps caps.Caps
 
 	// NO_EXPORT (0xFFFFFF01)
-	err := at.Unmarshal([]byte{0xFF, 0xFF, 0xFF, 0x01}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0xFF, 0xFF, 0xFF, 0x01}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, uint16(0xFFFF), at.ASN[0])
 	require.Equal(t, uint16(0xFF01), at.Value[0])
@@ -212,7 +211,7 @@ func TestRaw_Attr_Wire(t *testing.T) {
 	at := NewAttr(ATTR_SET).(*Raw)
 	var cps caps.Caps
 
-	err := at.Unmarshal([]byte{0xDE, 0xAD, 0xBE, 0xEF}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0xDE, 0xAD, 0xBE, 0xEF}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, []byte{0xDE, 0xAD, 0xBE, 0xEF}, at.Raw)
 }
@@ -230,13 +229,13 @@ func TestAspath_4Byte_Sequence_Wire(t *testing.T) {
 		0x02, 0x02, // SEQUENCE of length 2
 		0x00, 0x00, 0x00, 100,
 		0x00, 0x00, 0x00, 200,
-	}, cps, dir.DIR_L)
+	}, cps, nil)
 	require.NoError(t, err)
 	require.Len(t, at.Segments, 1)
 	require.False(t, at.Segments[0].IsSet)
 	require.Equal(t, []uint32{100, 200}, at.Segments[0].List)
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{
 		0x40, 0x02, 10,
 		0x02, 0x02,
@@ -254,12 +253,12 @@ func TestAggregator_Routecore_Wire(t *testing.T) {
 	err := at.Unmarshal([]byte{
 		0x00, 0x00, 0x00, 0x65, // AS101
 		0xc6, 0x33, 0x64, 0x01, // 198.51.100.1
-	}, cps, dir.DIR_L)
+	}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, uint32(101), at.ASN)
 	require.Equal(t, netip.MustParseAddr("198.51.100.1"), at.Addr)
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{
 		0xc0, 0x07, 0x08,
 		0x00, 0x00, 0x00, 0x65,
@@ -272,11 +271,11 @@ func TestU32_MED_Max_Wire(t *testing.T) {
 	at := NewAttr(ATTR_MED).(*U32)
 	var cps caps.Caps
 
-	err := at.Unmarshal([]byte{0x00, 0x00, 0x00, 0xff}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0x00, 0x00, 0x00, 0xff}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, uint32(255), at.Val)
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{0x80, 0x04, 0x04, 0x00, 0x00, 0x00, 0xff}, buf)
 }
 
@@ -285,11 +284,11 @@ func TestU32_LocalPref_Wire(t *testing.T) {
 	at := NewAttr(ATTR_LOCALPREF).(*U32)
 	var cps caps.Caps
 
-	err := at.Unmarshal([]byte{0x00, 0x00, 0x00, 0x0a}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0x00, 0x00, 0x00, 0x0a}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, uint32(10), at.Val)
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{0x40, 0x05, 0x04, 0x00, 0x00, 0x00, 0x0a}, buf)
 }
 
@@ -298,11 +297,11 @@ func TestAtomicAggregate_Wire(t *testing.T) {
 	at := NewAttr(ATTR_AGGREGATE).(*Raw)
 	var cps caps.Caps
 
-	err := at.Unmarshal([]byte{}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{}, cps, nil)
 	require.NoError(t, err)
 	require.Empty(t, at.Raw)
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{0x40, 0x06, 0x00}, buf)
 }
 
@@ -317,11 +316,11 @@ func TestCommunity_MultiValue_Routecore_Wire(t *testing.T) {
 		0xff, 0xff, 0xff, 0x01, // NO_EXPORT
 		0xff, 0xff, 0xff, 0x02, // NO_ADVERTISE
 		0xff, 0xff, 0xff, 0x03, // NO_EXPORT_SUBCONFED
-	}, cps, dir.DIR_L)
+	}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, 4, at.Len())
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{
 		0xc0, 0x08, 0x10,
 		0x00, 0x2a, 0x02, 0x06,
@@ -336,11 +335,11 @@ func TestOriginatorID_Wire(t *testing.T) {
 	at := NewAttr(ATTR_ORIGINATOR).(*IP)
 	var cps caps.Caps
 
-	err := at.Unmarshal([]byte{0x0a, 0x00, 0x00, 0x04}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0x0a, 0x00, 0x00, 0x04}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, netip.MustParseAddr("10.0.0.4"), at.Addr)
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{0x80, 0x09, 0x04, 0x0a, 0x00, 0x00, 0x04}, buf)
 }
 
@@ -349,12 +348,12 @@ func TestClusterList_Wire(t *testing.T) {
 	at := NewAttr(ATTR_CLUSTER_LIST).(*IPList)
 	var cps caps.Caps
 
-	err := at.Unmarshal([]byte{0x0a, 0x00, 0x00, 0x03}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0x0a, 0x00, 0x00, 0x03}, cps, nil)
 	require.NoError(t, err)
 	require.Len(t, at.Addr, 1)
 	require.Equal(t, netip.MustParseAddr("10.0.0.3"), at.Addr[0])
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{0x80, 0x0a, 0x04, 0x0a, 0x00, 0x00, 0x03}, buf)
 }
 
@@ -368,12 +367,12 @@ func TestAS4Path_Wire(t *testing.T) {
 		0x02, 0x02, // SEQUENCE of length 2
 		0x00, 0x00, 0x00, 100,
 		0x00, 0x00, 0x00, 200,
-	}, cps, dir.DIR_L)
+	}, cps, nil)
 	require.NoError(t, err)
 	require.Len(t, at.Segments, 1)
 	require.Equal(t, []uint32{100, 200}, at.Segments[0].List)
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	// bgpfix uses 0x80 (optional) for AS4_PATH by default
 	require.Equal(t, []byte{
 		0x80, 0x11, 10,
@@ -391,12 +390,12 @@ func TestAS4Aggregator_Wire(t *testing.T) {
 	err := at.Unmarshal([]byte{
 		0x00, 0x00, 0x04, 0xd2, // AS1234
 		10, 0, 0, 99, // 10.0.0.99
-	}, cps, dir.DIR_L)
+	}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, uint32(1234), at.ASN)
 	require.Equal(t, netip.MustParseAddr("10.0.0.99"), at.Addr)
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	// bgpfix uses 0x80 (optional) for AS4_AGGREGATOR by default
 	require.Equal(t, []byte{
 		0x80, 0x12, 0x08,
@@ -417,7 +416,7 @@ func TestLargeCommunity_Multi_Wire(t *testing.T) {
 		0x00, 0x00, 0xe2, 0x0a, 0x00, 0x00, 0x00, 0x65, 0x00, 0x00, 0x00, 0x64,
 		0x00, 0x00, 0xe2, 0x0a, 0x00, 0x00, 0x00, 0x67, 0x00, 0x00, 0x00, 0x01,
 		0x00, 0x00, 0xe2, 0x0a, 0x00, 0x00, 0x00, 0x68, 0x00, 0x00, 0x00, 0x1f,
-	}, cps, dir.DIR_L)
+	}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, 5, at.Len())
 	require.Equal(t, uint32(8283), at.ASN[0])
@@ -430,11 +429,11 @@ func TestOTC_Wire(t *testing.T) {
 	at := NewAttr(ATTR_OTC).(*U32)
 	var cps caps.Caps
 
-	err := at.Unmarshal([]byte{0x00, 0x00, 0x04, 0xd2}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0x00, 0x00, 0x04, 0xd2}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, uint32(1234), at.Val)
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	// 0xC0 = optional + transitive, 0x23 = 35 (OTC), 0x04 = length
 	require.Equal(t, []byte{0xC0, 0x23, 0x04, 0x00, 0x00, 0x04, 0xd2}, buf)
 }
@@ -444,10 +443,10 @@ func TestOTC_InvalidLength_Wire(t *testing.T) {
 	var cps caps.Caps
 
 	// OTC must be exactly 4 bytes
-	err := at.Unmarshal([]byte{0x00, 0x00, 0x00}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0x00, 0x00, 0x00}, cps, nil)
 	require.Error(t, err)
 
-	err = at.Unmarshal([]byte{0x00, 0x00, 0x00, 0x00, 0x00}, cps, dir.DIR_L)
+	err = at.Unmarshal([]byte{0x00, 0x00, 0x00, 0x00, 0x00}, cps, nil)
 	require.Error(t, err)
 }
 
@@ -456,11 +455,11 @@ func TestOTC_MaxASN_Wire(t *testing.T) {
 	var cps caps.Caps
 
 	// Test max 4-byte ASN (4294967295)
-	err := at.Unmarshal([]byte{0xFF, 0xFF, 0xFF, 0xFF}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0xFF, 0xFF, 0xFF, 0xFF}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, uint32(0xFFFFFFFF), at.Val)
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{0xC0, 0x23, 0x04, 0xFF, 0xFF, 0xFF, 0xFF}, buf)
 }
 
@@ -499,7 +498,7 @@ func TestMPReachIPv6_Wire(t *testing.T) {
 		0x80,
 		0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10,
-	}, cps, dir.DIR_L)
+	}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, afi.AS_IPV6_UNICAST, at.AS)
 	require.Len(t, at.NH, 32)
@@ -522,7 +521,7 @@ func TestMPUnreachIPv6Multi_Wire(t *testing.T) {
 		0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x02,
 		// 2001:db8:ffff:3::/64
 		0x40, 0x20, 0x01, 0x0d, 0xb8, 0xff, 0xff, 0x00, 0x03,
-	}, cps, dir.DIR_L)
+	}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, afi.AS_IPV6_UNICAST, at.AS)
 	prefs := at.Prefixes()
@@ -535,11 +534,11 @@ func TestNextHop_Routecore_Wire(t *testing.T) {
 	at := NewAttr(ATTR_NEXTHOP).(*IP)
 	var cps caps.Caps
 
-	err := at.Unmarshal([]byte{0x01, 0x02, 0x03, 0x04}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0x01, 0x02, 0x03, 0x04}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, netip.MustParseAddr("1.2.3.4"), at.Addr)
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{0x40, 0x03, 0x04, 0x01, 0x02, 0x03, 0x04}, buf)
 }
 
@@ -550,11 +549,11 @@ func TestExtendedCommunity_RT_Wire(t *testing.T) {
 
 	err := at.Unmarshal([]byte{
 		0x00, 0x02, 0xfc, 0x85, 0x00, 0x00, 0xcf, 0x08,
-	}, cps, dir.DIR_L)
+	}, cps, nil)
 	require.NoError(t, err)
 	require.Equal(t, 1, at.Len())
 
-	buf := at.Marshal(nil, cps, dir.DIR_L)
+	buf := at.Marshal(nil, cps, nil)
 	require.Equal(t, []byte{
 		0xc0, 0x10, 0x08,
 		0x00, 0x02, 0xfc, 0x85, 0x00, 0x00, 0xcf, 0x08,
@@ -568,10 +567,10 @@ func TestOrigin_InvalidLength_Wire(t *testing.T) {
 	var cps caps.Caps
 
 	// Origin must be exactly 1 byte
-	err := at.Unmarshal([]byte{0x00, 0x00}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0x00, 0x00}, cps, nil)
 	require.Error(t, err)
 
-	err = at.Unmarshal([]byte{}, cps, dir.DIR_L)
+	err = at.Unmarshal([]byte{}, cps, nil)
 	require.Error(t, err)
 }
 
@@ -580,10 +579,10 @@ func TestU32_InvalidLength_Wire(t *testing.T) {
 	var cps caps.Caps
 
 	// MED must be exactly 4 bytes
-	err := at.Unmarshal([]byte{0x00, 0x00, 0x00}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0x00, 0x00, 0x00}, cps, nil)
 	require.Error(t, err)
 
-	err = at.Unmarshal([]byte{0x00, 0x00, 0x00, 0x00, 0x00}, cps, dir.DIR_L)
+	err = at.Unmarshal([]byte{0x00, 0x00, 0x00, 0x00, 0x00}, cps, nil)
 	require.Error(t, err)
 }
 
@@ -592,7 +591,7 @@ func TestNextHop_InvalidLength_Wire(t *testing.T) {
 	var cps caps.Caps
 
 	// NEXT_HOP must be exactly 4 bytes for IPv4
-	err := at.Unmarshal([]byte{0x01, 0x02, 0x03}, cps, dir.DIR_L)
+	err := at.Unmarshal([]byte{0x01, 0x02, 0x03}, cps, nil)
 	require.Error(t, err)
 }
 

@@ -8,8 +8,8 @@ import (
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/attrs"
 	"github.com/bgpfix/bgpfix/caps"
-	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/filter"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 	"golang.org/x/time/rate"
 )
@@ -20,9 +20,9 @@ type Input struct {
 	Pipe *Pipe // attached to this Pipe (nil before pipe start)
 	Line *Line // attached to this Line (nil before pipe start)
 
-	Id   int     // optional input id
-	Name string  // optional input name
-	Dir  dir.Dir // input direction
+	Id   int      // optional input id
+	Name string   // optional input name
+	Dir  meta.Dir // input direction
 
 	In            chan *msg.Msg    // input channel for incoming messages
 	Reverse       bool             // if true, run callbacks in reverse order

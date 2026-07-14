@@ -4,8 +4,8 @@ import (
 	"slices"
 
 	"github.com/bgpfix/bgpfix/afi"
-	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
+	"github.com/bgpfix/bgpfix/meta"
 )
 
 // AddPath implements CAP_ADDPATH rfc7911
@@ -19,9 +19,9 @@ type AddPathDir uint8
 
 // re-use values used in the dir package; assume we're the L side
 const (
-	ADDPATH_RECEIVE AddPathDir = AddPathDir(dir.DIR_L)
-	ADDPATH_SEND    AddPathDir = AddPathDir(dir.DIR_R)
-	ADDPATH_BIDIR   AddPathDir = AddPathDir(dir.DIR_LR)
+	ADDPATH_RECEIVE AddPathDir = AddPathDir(meta.DIR_L)
+	ADDPATH_SEND    AddPathDir = AddPathDir(meta.DIR_R)
+	ADDPATH_BIDIR   AddPathDir = AddPathDir(meta.DIR_LR)
 )
 
 func NewAddPath(cc Code) Cap {
@@ -72,13 +72,13 @@ func (c *AddPath) Has(as afi.AS, dir AddPathDir) bool {
 }
 
 // AddPathEnabled returns true iff ADD_PATH is enabled in given direction for as
-func (cps *Caps) AddPathEnabled(as afi.AS, dst dir.Dir) bool {
+func (cps *Caps) AddPathEnabled(as afi.AS, dst meta.Dir) bool {
 	ap, ok := cps.Get(CAP_ADDPATH).(*AddPath)
 	if !ok {
 		return false
 	}
 
-	if dst&dir.DIR_R != 0 {
+	if dst&meta.DIR_R != 0 {
 		// ie. we are L sending to R
 		return ap.Has(as, ADDPATH_SEND)
 	} else {

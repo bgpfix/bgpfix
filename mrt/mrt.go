@@ -68,6 +68,30 @@ func (t Type) IsBGP4() bool {
 // MRT message subtype, see https://www.iana.org/assignments/mrt/mrt.xhtml
 type Sub uint16
 
+// IsBgpAS4 returns true iff sub is a BGP4MP AS4 subtype, ie. the encapsulated
+// BGP message uses 4-byte AS numbers.
+func (s Sub) IsBgpAS4() bool {
+	switch s {
+	case BGP4_MESSAGE_AS4, BGP4_MESSAGE_AS4_LOCAL,
+		BGP4_MESSAGE_AS4_ADDPATH, BGP4_MESSAGE_AS4_LOCAL_ADDPATH:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsBgpAddPath returns true iff sub is a BGP4MP ADD-PATH subtype (RFC 8050),
+// ie. the encapsulated BGP message encodes its NLRI with Path Identifiers.
+func (s Sub) IsBgpAddPath() bool {
+	switch s {
+	case BGP4_MESSAGE_ADDPATH, BGP4_MESSAGE_AS4_ADDPATH,
+		BGP4_MESSAGE_LOCAL_ADDPATH, BGP4_MESSAGE_AS4_LOCAL_ADDPATH:
+		return true
+	default:
+		return false
+	}
+}
+
 //go:generate go run github.com/dmarkham/enumer -type Sub
 
 const (

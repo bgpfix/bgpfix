@@ -7,8 +7,8 @@ import (
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
-	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
+	"github.com/bgpfix/bgpfix/meta"
 )
 
 // Aspath represents ATTR_ASPATH or ATTR_AS4PATH
@@ -247,7 +247,7 @@ func (ap *Aspath) IsValid() bool {
 	return ap != nil && len(ap.Segments) > 0 && len(ap.Segments[0].List) > 0
 }
 
-func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, dir dir.Dir) error {
+func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, meta *meta.Meta) error {
 	// support an actually common case: empty AS_PATH
 	if len(raw) == 0 {
 		return nil
@@ -257,13 +257,13 @@ func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, dir dir.Dir) error {
 
 	// asn length
 	asnlen := 2
-	if a.Code() == ATTR_AS4PATH || cps.Has(caps.CAP_AS4) {
+	if a.Code() == ATTR_AS4PATH || meta.HasAS4(cps.Has(caps.CAP_AS4)) {
 		asnlen = 4
 	}
 
-	// can retry with 2-byte ASNs?
+	// can retry with 2-byte ASNs? NB: not if the message explicitly says AS4
 	retry2 := func() bool {
-		if asnlen == 4 && a.Code() == ATTR_ASPATH && cps.Has(caps.CAP_AS_GUESS) {
+		if asnlen == 4 && a.Code() == ATTR_ASPATH && cps.Has(caps.CAP_AS_GUESS) && !meta.HasAS4(false) {
 			asnlen = 2
 			buf = raw
 			a.Segments = a.Segments[:sgl]
@@ -335,10 +335,10 @@ func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, dir dir.Dir) error {
 	}
 }
 
-func (a *Aspath) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
+func (a *Aspath) Marshal(dst []byte, cps caps.Caps, meta *meta.Meta) []byte {
 	// asn length
 	asnlen := 2
-	if a.Code() == ATTR_AS4PATH || cps.Has(caps.CAP_AS4) {
+	if a.Code() == ATTR_AS4PATH || meta.HasAS4(cps.Has(caps.CAP_AS4)) {
 		asnlen = 4
 	}
 

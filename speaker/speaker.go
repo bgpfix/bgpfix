@@ -8,7 +8,7 @@ import (
 
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
-	"github.com/bgpfix/bgpfix/dir"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
 	"github.com/rs/zerolog"
@@ -40,7 +40,7 @@ func NewSpeaker(ctx context.Context) *Speaker {
 
 // Attach attaches the speaker to given pipe input.
 // Must not be called more than once.
-func (s *Speaker) Attach(p *pipe.Pipe, dst dir.Dir) error {
+func (s *Speaker) Attach(p *pipe.Pipe, dst meta.Dir) error {
 	s.pipe = p
 	s.in = p.AddInput(dst)
 	s.up = p.LineFor(dst)

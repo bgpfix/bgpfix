@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/bgpfix/bgpfix/caps"
-	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
+	"github.com/bgpfix/bgpfix/meta"
 )
 
 // Attr represents a particular BGP path attribute
@@ -24,11 +24,13 @@ type Attr interface {
 	// SetFlags sets attribute flags
 	SetFlags(Flags)
 
-	// Unmarshal parses wire representation from src
-	Unmarshal(src []byte, cps caps.Caps, dir dir.Dir) error
+	// Unmarshal parses wire representation from src, given session capabilities
+	// in cps and message metadata in meta (may be nil)
+	Unmarshal(src []byte, cps caps.Caps, meta *meta.Meta) error
 
-	// Marshal appends wire representation to dst: type(16), length(8/16), and value
-	Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte
+	// Marshal appends wire representation to dst: type(16), length(8/16), and value,
+	// given session capabilities in cps and message metadata in meta (may be nil)
+	Marshal(dst []byte, cps caps.Caps, meta *meta.Meta) []byte
 
 	// ToJSON appends JSON representation of the value to dst
 	ToJSON(dst []byte) []byte

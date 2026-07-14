@@ -11,7 +11,7 @@ import (
 	"net/netip"
 	"os"
 
-	"github.com/bgpfix/bgpfix/dir"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
 	"github.com/bgpfix/bgpfix/speaker"
@@ -34,8 +34,8 @@ func main() {
 
 	// create a Pipe, add callback and event handlers
 	p := pipe.NewPipe(context.Background())
-	p.OnMsg(print, dir.DIR_LR) // call print() on every message in any direction
-	p.OnEvent(event)           // call event() on any pipe event
+	p.OnMsg(print, meta.DIR_LR) // call print() on every message in any direction
+	p.OnEvent(event)            // call event() on any pipe event
 
 	// L side: a TCP target, sending to R
 	conn, err := net.Dial("tcp", flag.Arg(0)) // assumes a ":179" suffix
@@ -49,7 +49,7 @@ func main() {
 	spk.Options.LocalASN = *opt_asn
 	spk.Options.LocalHoldTime = *opt_hold
 	spk.Options.LocalId = netip.MustParseAddr(*opt_id)
-	spk.Attach(p, dir.DIR_L)
+	spk.Attach(p, meta.DIR_L)
 
 	// copy from conn -> R
 	go func() {

@@ -3,7 +3,7 @@ package filter
 import (
 	"fmt"
 
-	"github.com/bgpfix/bgpfix/dir"
+	"github.com/bgpfix/bgpfix/meta"
 )
 
 func (e *Expr) dirParse() error {
@@ -16,7 +16,7 @@ func (e *Expr) dirParse() error {
 		// ok
 	case OP_EQ:
 		s := fmt.Sprintf("%v", e.Val)
-		d, err := dir.DirString(s)
+		d, err := meta.DirString(s)
 		if err != nil {
 			return fmt.Errorf("invalid direction: %s (expected L, R, or LR)", s)
 		}
@@ -36,5 +36,5 @@ func (e *Expr) dirEval(ev *Eval) Res {
 	if e.Op == OP_PRESENT {
 		return RES_TRUE
 	}
-	return resBool(ev.Msg.Dir == e.Val.(dir.Dir))
+	return resBool(ev.Msg.Dir == e.Val.(meta.Dir))
 }

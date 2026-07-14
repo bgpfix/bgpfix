@@ -9,8 +9,8 @@ import (
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/binary"
 	"github.com/bgpfix/bgpfix/caps"
-	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
+	"github.com/bgpfix/bgpfix/meta"
 )
 
 var msb = binary.Msb
@@ -205,10 +205,10 @@ func (p *Prefix) Unmarshal(src []byte, ipv6, addpath bool) (n int, err error) {
 }
 
 // Unmarshal unmarshals IP prefixes from src into dst
-func Unmarshal(dst []Prefix, src []byte, as afi.AS, cps caps.Caps, dir dir.Dir) ([]Prefix, error) {
+func Unmarshal(dst []Prefix, src []byte, as afi.AS, cps caps.Caps, meta *meta.Meta) ([]Prefix, error) {
 	var (
 		ipv6    = as.IsIPv6()
-		addpath = cps.AddPathEnabled(as, dir)
+		addpath = meta.HasAddPath(cps.AddPathEnabled(as, meta.Direction()))
 	)
 
 	for len(src) > 0 {
@@ -256,10 +256,10 @@ func (p *Prefix) Marshal(dst []byte, addpath bool) []byte {
 }
 
 // Marshal marshals prefixes in src to dst
-func Marshal(dst []byte, src []Prefix, as afi.AS, cps caps.Caps, dir dir.Dir) []byte {
+func Marshal(dst []byte, src []Prefix, as afi.AS, cps caps.Caps, meta *meta.Meta) []byte {
 	var (
 		ipv6    = as.IsIPv6()
-		addpath = cps.AddPathEnabled(as, dir)
+		addpath = meta.HasAddPath(cps.AddPathEnabled(as, meta.Direction()))
 	)
 	for _, p := range src {
 		if p.Addr().Is6() == ipv6 {

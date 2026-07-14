@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/filter"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -49,7 +49,7 @@ type Callback struct {
 	Raw  bool // if true, do not parse the message (which may already be parsed, but for other reasons)
 	Post bool // run after non-post callbacks?
 
-	Dir       dir.Dir          // if non-zero, limits the direction
+	Dir       meta.Dir         // if non-zero, limits the direction
 	Types     []msg.Type       // if non-empty, limits message types
 	Filter    []*filter.Filter // skip messages not matching all filters
 	LimitRate *rate.Limiter    // if non-nil, limits the rate of callback invocations
@@ -71,7 +71,7 @@ type Handler struct {
 	Pre  bool // run before non-pre handlers?
 	Post bool // run after non-post handlers?
 
-	Dir   dir.Dir  // if non-zero, limits the direction
+	Dir   meta.Dir // if non-zero, limits the direction
 	Types []string // if non-empty, limits event types
 
 	Func    HandlerFunc // the function to call
@@ -134,7 +134,7 @@ func (cb *Callback) String() string {
 }
 
 // OnMsg adds a callback for all messages of given types (or all types if not specified).
-func (o *Options) OnMsg(cbf CallbackFunc, dir dir.Dir, types ...msg.Type) *Callback {
+func (o *Options) OnMsg(cbf CallbackFunc, dir meta.Dir, types ...msg.Type) *Callback {
 	return o.AddCallback(cbf, &Callback{
 		Order: len(o.Callbacks) + 1,
 		Dir:   dir,
@@ -143,7 +143,7 @@ func (o *Options) OnMsg(cbf CallbackFunc, dir dir.Dir, types ...msg.Type) *Callb
 }
 
 // OnMsgPre is like OnMsg but requests to run cb before other callbacks
-func (o *Options) OnMsgPre(cbf CallbackFunc, dir dir.Dir, types ...msg.Type) *Callback {
+func (o *Options) OnMsgPre(cbf CallbackFunc, dir meta.Dir, types ...msg.Type) *Callback {
 	return o.AddCallback(cbf, &Callback{
 		Pre:   true,
 		Order: -len(o.Callbacks) - 1,
@@ -153,7 +153,7 @@ func (o *Options) OnMsgPre(cbf CallbackFunc, dir dir.Dir, types ...msg.Type) *Ca
 }
 
 // OnMsgPost is like OnMsg but requests to run cb after other callbacks
-func (o *Options) OnMsgPost(cbf CallbackFunc, dir dir.Dir, types ...msg.Type) *Callback {
+func (o *Options) OnMsgPost(cbf CallbackFunc, dir meta.Dir, types ...msg.Type) *Callback {
 	return o.AddCallback(cbf, &Callback{
 		Post:  true,
 		Order: len(o.Callbacks) + 1,
@@ -258,7 +258,7 @@ func (o *Options) OnParseError(hdf HandlerFunc) *Handler {
 }
 
 // AddInput adds input processor for given pipe direction, with optional details in tpl.
-func (o *Options) AddInput(dst dir.Dir, tpl ...*Input) *Input {
+func (o *Options) AddInput(dst meta.Dir, tpl ...*Input) *Input {
 	var in Input
 
 	// copy exported fields from tpl (avoids copying sync primitives)
@@ -288,10 +288,10 @@ func (o *Options) AddInput(dst dir.Dir, tpl ...*Input) *Input {
 	}
 
 	// dir
-	if dst == dir.DIR_L {
-		in.Dir = dir.DIR_L
+	if dst == meta.DIR_L {
+		in.Dir = meta.DIR_L
 	} else {
-		in.Dir = dir.DIR_R
+		in.Dir = meta.DIR_R
 	}
 
 	o.Inputs = append(o.Inputs, &in)

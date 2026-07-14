@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/bgpfix/bgpfix/caps"
-	"github.com/bgpfix/bgpfix/dir"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/puzpuzpuz/xsync/v4"
 	"github.com/rs/zerolog"
@@ -61,7 +61,7 @@ func NewPipe(ctx context.Context) *Pipe {
 
 	p.R = &Line{
 		Pipe: p,
-		Dir:  dir.DIR_R,
+		Dir:  meta.DIR_R,
 		Input: Input{
 			In: make(chan *msg.Msg, 100),
 		},
@@ -70,7 +70,7 @@ func NewPipe(ctx context.Context) *Pipe {
 
 	p.L = &Line{
 		Pipe: p,
-		Dir:  dir.DIR_L,
+		Dir:  meta.DIR_L,
 		Input: Input{
 			In: make(chan *msg.Msg, 100),
 		},
@@ -307,8 +307,8 @@ func (p *Pipe) ParseMsg(m *msg.Msg) error {
 
 // LineFor returns the line processing messages destined for dst.
 // Returns p.R if dst is bidir (DST_LR).
-func (p *Pipe) LineFor(dst dir.Dir) *Line {
-	if dst == dir.DIR_L {
+func (p *Pipe) LineFor(dst meta.Dir) *Line {
+	if dst == meta.DIR_L {
 		return p.L
 	} else {
 		return p.R

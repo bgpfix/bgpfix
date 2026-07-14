@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/bgpfix/bgpfix/afi"
+	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/nlri"
 	"github.com/stretchr/testify/require"
@@ -221,7 +223,13 @@ func TestBGP4_AddPath(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, len(raw), off)
 
-	// NLRI must be parsed already, with the Path Identifier decoded
+	// the MRT subtype must be captured in message metadata
+	require.Equal(t, meta.TRI_ON, m.AS4)
+	require.Equal(t, meta.TRI_ON, m.AddPath)
+
+	// parse with empty session caps: the metadata must override ADD_PATH
+	err = m.Parse(caps.Caps{})
+	require.NoError(t, err)
 	require.Equal(t, msg.UPDATE, m.Upper)
 	require.Len(t, m.Update.Reach, 1)
 	p := m.Update.Reach[0]

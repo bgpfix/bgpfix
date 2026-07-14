@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/bgpfix/bgpfix/caps"
-	"github.com/bgpfix/bgpfix/dir"
 	"github.com/stretchr/testify/require"
 )
 
@@ -121,7 +120,7 @@ func TestAspath_Sequence_JSON(t *testing.T) {
 		0x00, 0x00, 0xFC, 0x03, // 64515
 		0x00, 0x00, 0x4F, 0xF9, // 20473
 		0x00, 0x00, 0x3B, 0x41, // 15169
-	}, cps, dir.DIR_L)
+	}, cps, nil)
 	require.NoError(t, err)
 
 	buf := at.ToJSON(nil)
@@ -171,7 +170,7 @@ func TestCommunity_JSON(t *testing.T) {
 	err := at.Unmarshal([]byte{
 		0x00, 0x64, 0x00, 0x01,
 		0x00, 0xC8, 0x00, 0x02,
-	}, cps, dir.DIR_L)
+	}, cps, nil)
 	require.NoError(t, err)
 
 	buf := at.ToJSON(nil)
@@ -194,7 +193,7 @@ func TestLargeCommunity_JSON(t *testing.T) {
 		0x00, 0x00, 0xFD, 0xE9, // 65001
 		0x00, 0x00, 0x00, 0x64, // 100
 		0x00, 0x00, 0x00, 0xC8, // 200
-	}, cps, dir.DIR_L)
+	}, cps, nil)
 	require.NoError(t, err)
 
 	buf := at.ToJSON(nil)
@@ -216,7 +215,7 @@ func TestExtCommunity_RT_JSON(t *testing.T) {
 	// Route Target 64645:53000 (AS2 type, transitive)
 	err := at.Unmarshal([]byte{
 		0x00, 0x02, 0xFC, 0x85, 0x00, 0x00, 0xCF, 0x08,
-	}, cps, dir.DIR_L)
+	}, cps, nil)
 	require.NoError(t, err)
 
 	buf := at.ToJSON(nil)
@@ -241,7 +240,7 @@ func TestExtCommunity_FlowRate_JSON(t *testing.T) {
 	// type=0x8006, value: id=0(2bytes) + rate=0.0(float32)
 	err := at.Unmarshal([]byte{
 		0x80, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	}, cps, dir.DIR_L)
+	}, cps, nil)
 	require.NoError(t, err)
 
 	buf := at.ToJSON(nil)
