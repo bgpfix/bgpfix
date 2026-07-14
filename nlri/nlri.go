@@ -257,7 +257,8 @@ func (p *Prefix) Marshal(dst []byte, addpath bool) []byte {
 
 // Marshal marshals prefixes in src to dst
 func Marshal(dst []byte, src []Prefix, as afi.AS, cps caps.Caps, meta *meta.Meta) []byte {
-	// NB: meta pertains to parsing only - it must not affect the encoding here
+	// NB: the parse override flags in meta must not affect the encoding here,
+	// only the message direction is taken from it
 	var (
 		ipv6    = as.IsIPv6()
 		addpath = cps.AddPathEnabled(as, meta.Direction())
