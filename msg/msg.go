@@ -25,9 +25,9 @@ type Msg struct {
 	json   []byte // JSON representation (own memory), can be nil
 	jupper []byte // upper layer JSON (subslice of json), can be nil
 
-	// optional metadata
+	// metadata
 
-	meta.Meta // message metadata: Dir, Seq, Time + per-message parser options
+	meta.Meta // Dir, Seq, Time + parser options
 
 	// raw contents
 

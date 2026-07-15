@@ -38,7 +38,7 @@ func (a *MPPrefixes) Len() int {
 	}
 }
 
-func (a *MPPrefixes) Unmarshal(cps caps.Caps, mt *meta.Meta) error {
+func (a *MPPrefixes) Unmarshal(cps caps.Caps, mt meta.Meta) error {
 	var (
 		isv6 = a.IsIPv6()
 		err  error
@@ -73,7 +73,7 @@ func (a *MPPrefixes) Unmarshal(cps caps.Caps, mt *meta.Meta) error {
 	return err
 }
 
-func (a *MPPrefixes) Marshal(cps caps.Caps, mt *meta.Meta) {
+func (a *MPPrefixes) Marshal(cps caps.Caps, mt meta.Meta) {
 	// next-hop
 	nh := a.NH[:0]
 	if a.NextHop.IsValid() {

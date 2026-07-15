@@ -205,11 +205,20 @@ func (p *Prefix) Unmarshal(src []byte, ipv6, addpath bool) (n int, err error) {
 }
 
 // Unmarshal unmarshals IP prefixes from src into dst
-func Unmarshal(dst []Prefix, src []byte, as afi.AS, cps caps.Caps, mt *meta.Meta) ([]Prefix, error) {
+func Unmarshal(dst []Prefix, src []byte, as afi.AS, cps caps.Caps, mt meta.Meta) ([]Prefix, error) {
 	var (
 		ipv6    = as.IsIPv6()
-		addpath = mt.HasAddPath(cps.AddPathEnabled(as, mt.Direction()))
+		dir     = mt.Dir
+		addpath = cps.AddPathEnabled(as, dir)
 	)
+
+	// parser options override cps?
+	switch mt.ParseAddPath {
+	case -1:
+		addpath = false
+	case 1:
+		addpath = true
+	}
 
 	for len(src) > 0 {
 		l := len(dst)
@@ -256,12 +265,12 @@ func (p *Prefix) Marshal(dst []byte, addpath bool) []byte {
 }
 
 // Marshal marshals prefixes in src to dst
-func Marshal(dst []byte, src []Prefix, as afi.AS, cps caps.Caps, mt *meta.Meta) []byte {
+func Marshal(dst []byte, src []Prefix, as afi.AS, cps caps.Caps, mt meta.Meta) []byte {
 	// NB: the parser options in mt must not affect the encoding here,
 	// only the message direction is taken from it
 	var (
 		ipv6    = as.IsIPv6()
-		addpath = cps.AddPathEnabled(as, mt.Direction())
+		addpath = cps.AddPathEnabled(as, mt.Dir)
 	)
 	for _, p := range src {
 		if p.Addr().Is6() == ipv6 {

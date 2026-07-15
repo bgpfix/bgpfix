@@ -247,7 +247,7 @@ func (ap *Aspath) IsValid() bool {
 	return ap != nil && len(ap.Segments) > 0 && len(ap.Segments[0].List) > 0
 }
 
-func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, mt *meta.Meta) error {
+func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, mt meta.Meta) error {
 	// support an actually common case: empty AS_PATH
 	if len(raw) == 0 {
 		return nil
@@ -256,20 +256,34 @@ func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, mt *meta.Meta) error {
 	sgl := len(a.Segments)
 
 	// asn length
-	asnlen := 2
-	if a.Code() == ATTR_AS4PATH || mt.HasAS4(cps.Has(caps.CAP_AS4)) {
+	asnlen := 2 // default to 2-byte ASNs
+	switch {
+	case a.Code() == ATTR_AS4PATH: // explicitly AS4 by attribute code
+		asnlen = 4
+	case mt.ParseAS4 == -1: // explicitly disabled by meta
+		asnlen = 2
+	case mt.ParseAS4 == 1: // explicit AS4 by meta
+		asnlen = 4
+	case cps.Has(caps.CAP_AS4): // enabled by session capabilities
 		asnlen = 4
 	}
 
-	// can retry with 2-byte ASNs? NB: not if the message explicitly says AS4
+	// can retry with 2-byte ASNs?
 	retry2 := func() bool {
-		if asnlen == 4 && a.Code() == ATTR_ASPATH && cps.Has(caps.CAP_AS_GUESS) && !mt.HasAS4(false) {
+		switch {
+		case asnlen != 4: // already using 2-byte ASNs, cannot retry
+			return false
+		case mt.ParseAS4 == 1: // explicit AS4 by meta, cannot retry
+			return false
+		case !cps.Has(caps.CAP_AS_GUESS): // session does not allow guessing, cannot retry
+			return false
+		case a.Code() != ATTR_ASPATH: // only retry for AS_PATH, not AS4_PATH
+			return false
+		default: // retry with 2-byte ASNs
 			asnlen = 2
 			buf = raw
 			a.Segments = a.Segments[:sgl]
 			return true
-		} else {
-			return false
 		}
 	}
 
@@ -335,7 +349,7 @@ func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, mt *meta.Meta) error {
 	}
 }
 
-func (a *Aspath) Marshal(dst []byte, cps caps.Caps, mt *meta.Meta) []byte {
+func (a *Aspath) Marshal(dst []byte, cps caps.Caps, mt meta.Meta) []byte {
 	// asn length, NB: not affected by meta - it pertains to parsing only
 	asnlen := 2
 	if a.Code() == ATTR_AS4PATH || cps.Has(caps.CAP_AS4) {
