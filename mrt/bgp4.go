@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/afi"
-	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
 )
@@ -77,16 +76,16 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg) error {
 	mrt.Upper = BGP4MP_ET
 	mrt.Data = nil
 
-	// select the subtype matching the parse metadata,
+	// select the subtype matching the parser options in message metadata,
 	// defaulting to AS4 without ADD-PATH
-	if m.ParseAS4.Or(true) {
-		if m.ParseAddPath.Or(false) {
+	if m.ParseAS4 >= 0 {
+		if m.ParseAddPath > 0 {
 			mrt.Sub = BGP4_MESSAGE_AS4_ADDPATH
 		} else {
 			mrt.Sub = BGP4_MESSAGE_AS4
 		}
 	} else {
-		if m.ParseAddPath.Or(false) {
+		if m.ParseAddPath > 0 {
 			mrt.Sub = BGP4_MESSAGE_ADDPATH
 		} else {
 			mrt.Sub = BGP4_MESSAGE
@@ -147,8 +146,16 @@ func (b4 *Bgp4) ToMsg(m *msg.Msg, no_context bool) error {
 
 	// the BGP4MP subtype determines the encoding of the BGP message,
 	// possibly overriding session capabilities in parsers
-	m.ParseAS4 = meta.TriBool(mrt.Sub.IsBgpAS4())
-	m.ParseAddPath = meta.TriBool(mrt.Sub.IsBgpAddPath())
+	if mrt.Sub.IsBgpAS4() {
+		m.ParseAS4 = 1
+	} else {
+		m.ParseAS4 = -1
+	}
+	if mrt.Sub.IsBgpAddPath() {
+		m.ParseAddPath = 1
+	} else {
+		m.ParseAddPath = -1
+	}
 
 	// copy BGP4MP metadata?
 	if !no_context {

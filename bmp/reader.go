@@ -5,7 +5,6 @@ import (
 	"io"
 	"strconv"
 
-	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
 )
@@ -215,7 +214,11 @@ func (br *Reader) setMeta(m *msg.Msg, bmp *Bmp, obmp *OpenBmp) {
 
 	// the peer A flag determines the AS_PATH encoding (RFC 7854/4.2),
 	// possibly overriding session capabilities in parsers
-	m.ParseAS4 = meta.TriBool(!bmp.Peer.Is2ByteAS())
+	if bmp.Peer.Is2ByteAS() {
+		m.ParseAS4 = -1
+	} else {
+		m.ParseAS4 = 1
+	}
 
 	if br.NoCtx {
 		return

@@ -36,7 +36,7 @@ func (a *LargeCom) Len() int {
 	}
 }
 
-func (a *LargeCom) Unmarshal(buf []byte, cps caps.Caps, meta *meta.Meta) error {
+func (a *LargeCom) Unmarshal(buf []byte, cps caps.Caps, mt *meta.Meta) error {
 	exp := len(buf) / 12
 	if len(a.ASN) == 0 && cap(a.ASN) < exp {
 		a.ASN = make([]uint32, 0, exp)
@@ -63,7 +63,7 @@ func (a *LargeCom) Add(asn, value1, value2 uint32) {
 	a.Value2 = append(a.Value2, value2)
 }
 
-func (a *LargeCom) Marshal(dst []byte, cps caps.Caps, meta *meta.Meta) []byte {
+func (a *LargeCom) Marshal(dst []byte, cps caps.Caps, mt *meta.Meta) []byte {
 	tl := 12 * len(a.ASN)
 	dst = a.CodeFlags.MarshalLen(dst, tl)
 	for i := range a.ASN {

@@ -25,12 +25,13 @@ type Attr interface {
 	SetFlags(Flags)
 
 	// Unmarshal parses wire representation from src, given session capabilities
-	// in cps and message metadata in meta (may be nil)
-	Unmarshal(src []byte, cps caps.Caps, meta *meta.Meta) error
+	// in cps and message metadata in mt (may be nil)
+	Unmarshal(src []byte, cps caps.Caps, mt *meta.Meta) error
 
 	// Marshal appends wire representation to dst: type(16), length(8/16), and value,
-	// given session capabilities in cps and message metadata in meta (may be nil)
-	Marshal(dst []byte, cps caps.Caps, meta *meta.Meta) []byte
+	// given session capabilities in cps and message metadata in mt (may be nil);
+	// NB: the parser options in mt must not affect the encoding
+	Marshal(dst []byte, cps caps.Caps, mt *meta.Meta) []byte
 
 	// ToJSON appends JSON representation of the value to dst
 	ToJSON(dst []byte) []byte

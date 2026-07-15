@@ -38,7 +38,7 @@ func (a *MPPrefixes) Len() int {
 	}
 }
 
-func (a *MPPrefixes) Unmarshal(cps caps.Caps, meta *meta.Meta) error {
+func (a *MPPrefixes) Unmarshal(cps caps.Caps, mt *meta.Meta) error {
 	var (
 		isv6 = a.IsIPv6()
 		err  error
@@ -69,11 +69,11 @@ func (a *MPPrefixes) Unmarshal(cps caps.Caps, meta *meta.Meta) error {
 		}
 	}
 
-	a.Prefixes, err = nlri.Unmarshal(a.Prefixes, a.Data, a.AS, cps, meta)
+	a.Prefixes, err = nlri.Unmarshal(a.Prefixes, a.Data, a.AS, cps, mt)
 	return err
 }
 
-func (a *MPPrefixes) Marshal(cps caps.Caps, meta *meta.Meta) {
+func (a *MPPrefixes) Marshal(cps caps.Caps, mt *meta.Meta) {
 	// next-hop
 	nh := a.NH[:0]
 	if a.NextHop.IsValid() {
@@ -85,7 +85,7 @@ func (a *MPPrefixes) Marshal(cps caps.Caps, meta *meta.Meta) {
 	a.NH = nh
 
 	// prefixes
-	a.Data = nlri.Marshal(a.Data[:0], a.Prefixes, a.AS, cps, meta)
+	a.Data = nlri.Marshal(a.Data[:0], a.Prefixes, a.AS, cps, mt)
 }
 
 func (a *MPPrefixes) ToJSON(dst []byte) []byte {

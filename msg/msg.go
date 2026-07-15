@@ -27,9 +27,7 @@ type Msg struct {
 
 	// optional metadata
 
-	meta.Meta           // parsing context: Dir + per-message parse overrides
-	Seq       int64     // sequence number
-	Time      time.Time // message timestamp
+	meta.Meta // message metadata: Dir, Seq, Time + per-message parser options
 
 	// raw contents
 
@@ -108,8 +106,6 @@ func NewMsg() *Msg {
 // Reset clears the message. It does not reset the upper layer.
 func (msg *Msg) Reset() *Msg {
 	msg.Meta = meta.Meta{}
-	msg.Seq = 0
-	msg.Time = time.Time{}
 	msg.Type = INVALID
 	msg.Upper = INVALID
 	msg.Version = 0
@@ -466,12 +462,6 @@ func (msg *Msg) GetJSON() []byte {
 		dst = append(dst, json.Null...)
 	}
 
-	// [6] parsing metadata (optional)
-	if msg.Meta.Defined() {
-		dst = append(dst, ',')
-		dst = msg.Meta.ToJSON(dst)
-	}
-
 	// done!
 	msg.json = append(dst, "]\n"...)
 	msg.jupper = msg.json[up_from:up_till] // cache upper layer JSON for quick access
@@ -551,11 +541,6 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 				// no upper layer data, nothing to do
 			default:
 				return ErrValue
-			}
-
-		case 6: // parsing metadata
-			if typ == json.OBJECT {
-				err = msg.Meta.FromJSON(val)
 			}
 
 		case 5: // value

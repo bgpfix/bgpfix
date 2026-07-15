@@ -30,10 +30,10 @@ type MPValue interface {
 	Safi() afi.SAFI
 
 	// Unmarshal parses wire representation from the parent
-	Unmarshal(cps caps.Caps, meta *meta.Meta) error
+	Unmarshal(cps caps.Caps, mt *meta.Meta) error
 
 	// Marshal writes wire representation to the parent
-	Marshal(cps caps.Caps, meta *meta.Meta)
+	Marshal(cps caps.Caps, mt *meta.Meta)
 
 	// ToJSON appends *JSON keys* to dst (will be embedded in the parent object)
 	ToJSON(dst []byte) []byte
@@ -74,7 +74,7 @@ func NewMPValue(mp *MP) MPValue {
 	}
 }
 
-func (mp *MP) Unmarshal(buf []byte, cps caps.Caps, meta *meta.Meta) error {
+func (mp *MP) Unmarshal(buf []byte, cps caps.Caps, mt *meta.Meta) error {
 	// afi + safi
 	if len(buf) < 3 {
 		return ErrLength
@@ -104,15 +104,15 @@ func (mp *MP) Unmarshal(buf []byte, cps caps.Caps, meta *meta.Meta) error {
 	// parse the value?
 	mp.Value = NewMPValue(mp)
 	if mp.Value != nil {
-		return mp.Value.Unmarshal(cps, meta)
+		return mp.Value.Unmarshal(cps, mt)
 	}
 
 	return nil
 }
 
-func (mp *MP) Marshal(dst []byte, cps caps.Caps, meta *meta.Meta) []byte {
+func (mp *MP) Marshal(dst []byte, cps caps.Caps, mt *meta.Meta) []byte {
 	if mp.Value != nil {
-		mp.Value.Marshal(cps, meta)
+		mp.Value.Marshal(cps, mt)
 	}
 
 	tl := 2 + 1 + len(mp.Data) // afi + safi + nlri
