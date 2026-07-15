@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/afi"
+	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
 )
@@ -54,8 +55,9 @@ func (b4 *Bgp4) Reset() {
 }
 
 // FromMsg copies BGP message m into BGP4MP message b4.
-// m must already be marshaled.
-func (b4 *Bgp4) FromMsg(m *msg.Msg) error {
+// m must already be marshaled; cps must be the capabilities
+// that were used to marshal m.Data.
+func (b4 *Bgp4) FromMsg(m *msg.Msg, cps caps.Caps) error {
 	// m has Data?
 	if m.Data == nil {
 		return ErrNoData
@@ -76,16 +78,16 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg) error {
 	mrt.Upper = BGP4MP_ET
 	mrt.Data = nil
 
-	// select the subtype matching the parser options in message metadata,
-	// defaulting to AS4 without ADD-PATH
-	if m.ParseAS4 >= 0 {
-		if m.ParseAddPath > 0 {
+	// select the subtype matching how m.Data was marshaled, as told by cps
+	// NB: must not depend on the parser options in m.Meta
+	if cps.Has(caps.CAP_AS4) {
+		if cps.Has(caps.CAP_ADDPATH) {
 			mrt.Sub = BGP4_MESSAGE_AS4_ADDPATH
 		} else {
 			mrt.Sub = BGP4_MESSAGE_AS4
 		}
 	} else {
-		if m.ParseAddPath > 0 {
+		if cps.Has(caps.CAP_ADDPATH) {
 			mrt.Sub = BGP4_MESSAGE_ADDPATH
 		} else {
 			mrt.Sub = BGP4_MESSAGE
