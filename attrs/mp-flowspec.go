@@ -204,8 +204,11 @@ func (a *MPFlowspec) Unmarshal(cps caps.Caps, _ meta.Meta) error {
 }
 
 func (a *MPFlowspec) Marshal(cps caps.Caps, _ meta.Meta) {
+	// NB: build fresh slices - a.NH and a.Data may reference message buffers
+	// we don't own, so appending into their capacity could corrupt shared data
+
 	// best-effort
-	nh := a.NH[:0]
+	var nh []byte
 	if a.NextHop.IsValid() {
 		nh = append(nh, a.NextHop.AsSlice()...)
 		if a.LinkLocal.IsValid() {
@@ -216,7 +219,7 @@ func (a *MPFlowspec) Marshal(cps caps.Caps, _ meta.Meta) {
 
 	// write ar.Data using RFC8955/4
 	var buf []byte
-	data := a.Data[:0]
+	var data []byte
 	for _, fr := range a.Rules {
 		if len(fr) == 0 {
 			continue

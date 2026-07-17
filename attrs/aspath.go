@@ -324,7 +324,7 @@ func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, mt meta.Meta) error {
 		}
 
 		// read ASNs
-		todo := buf[2:]
+		todo := buf[2:tl]
 		seg.List = make([]uint32, 0, len(todo)/asnlen)
 		for len(todo) >= asnlen {
 			if asnlen == 4 {

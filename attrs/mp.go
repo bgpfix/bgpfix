@@ -59,8 +59,9 @@ func NewMP(at CodeFlags) Attr {
 
 func (mp *MP) Reset() {
 	mp.AS = 0
-	mp.NH = mp.NH[:0]
-	mp.Data = mp.Data[:0]
+	// NB: nil, not [:0] - NH and Data may reference message buffers we don't own
+	mp.NH = nil
+	mp.Data = nil
 	mp.Value = nil
 }
 

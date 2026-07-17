@@ -63,6 +63,26 @@ func TestAspath_Wire(t *testing.T) {
 	require.Equal(t, []byte{0x40, 0x02, 0x06, 0x02, 0x02, 0xFD, 0xE9, 0x00, 0x64}, buf)
 }
 
+// regression: the first segment must not consume the following segments' bytes
+func TestAspath_MultiSegment_Wire(t *testing.T) {
+	at := NewAttr(ATTR_ASPATH).(*Aspath)
+	var cps caps.Caps
+
+	raw := []byte{
+		0x02, 0x02, 0xFD, 0xE9, 0xFD, 0xEA, // seq: 65001 65002
+		0x01, 0x02, 0xFD, 0xEB, 0xFD, 0xEC, // set: 65003 65004
+	}
+	err := at.Unmarshal(raw, cps, meta.Meta{})
+	require.NoError(t, err)
+	require.Len(t, at.Segments, 2)
+	require.Equal(t, []uint32{65001, 65002}, at.Segments[0].List)
+	require.True(t, at.Segments[1].IsSet)
+	require.Equal(t, []uint32{65003, 65004}, at.Segments[1].List)
+
+	buf := at.Marshal(nil, cps, meta.Meta{})
+	require.Equal(t, append([]byte{0x40, 0x02, 0x0C}, raw...), buf)
+}
+
 func TestAspath_AS4_Wire(t *testing.T) {
 	at := NewAttr(ATTR_ASPATH).(*Aspath)
 	var cps caps.Caps
