@@ -18,6 +18,15 @@ import (
 // so that marshaled messages stay under the 4KiB BGP message limit
 const tablePendingMax = 3800
 
+// Limits on the aggregation state. Real dumps carry well under 100 peers;
+// these only bound memory for corrupt or hostile input, which (esp. in v1,
+// where each record names its own peer) could otherwise define peers without
+// end. NB: TABLE_DUMP2 peer indexes are uint16, hence the peer limit.
+const (
+	tablePeersMax    = 65536 // max peers tracked
+	tableInFlightMax = 1024  // max pending UPDATEs before a forced flush
+)
+
 // tablePending is an under-construction UPDATE aggregating
 // consecutive same-attribute prefixes for one peer
 type tablePending struct {
@@ -34,10 +43,12 @@ type v1peer struct {
 }
 
 // tableState is the mutable Reader state for table dump records
+// NB: peer indexes are int, not uint16: v1 peers are synthetic and must not
+// wrap onto each other, which would misattribute routes to the wrong peer
 type tableState struct {
-	peers   []PeerEntry              // owned copy of the last PEER_INDEX_TABLE
-	pending map[uint16]*tablePending // per-peer pending UPDATE
-	v1index map[v1peer]uint16        // v1 peer -> synthetic index into peers
+	peers   []PeerEntry           // owned copy of the last PEER_INDEX_TABLE
+	pending map[int]*tablePending // per-peer pending UPDATE
+	v1index map[v1peer]int        // v1 peer -> synthetic index into peers
 }
 
 // emitTable converts the just-parsed table dump record in br.mrt
@@ -51,7 +62,7 @@ func (br *Reader) emitTable(cb pipe.CallbackFunc) error {
 	)
 
 	if ts.pending == nil {
-		ts.pending = make(map[uint16]*tablePending)
+		ts.pending = make(map[int]*tablePending)
 	}
 
 	// a new peer index table starts a new RIB: flush and (re)load peers
@@ -64,16 +75,22 @@ func (br *Reader) emitTable(cb pipe.CallbackFunc) error {
 	}
 
 	// v1 records carry their peer inline: translate to a synthetic index
-	var v1fix uint16
+	var v1fix int
 	if mrt.Type == TABLE_DUMP {
 		if ts.v1index == nil {
-			ts.v1index = make(map[v1peer]uint16)
+			ts.v1index = make(map[v1peer]int)
 		}
 		pe := t.Peers[0]
 		key := v1peer{pe.IP, pe.AS}
 		idx, ok := ts.v1index[key]
 		if !ok {
-			idx = uint16(len(ts.peers))
+			// too many distinct peers? drop the record instead of
+			// re-using an index, which would misattribute its routes
+			if len(ts.peers) >= tablePeersMax {
+				br.Stats.Garbled++
+				return nil
+			}
+			idx = len(ts.peers)
 			ts.v1index[key] = idx
 			ts.peers = append(ts.peers, pe)
 		}
@@ -85,11 +102,11 @@ func (br *Reader) emitTable(cb pipe.CallbackFunc) error {
 		e := &t.Entries[i]
 
 		// resolve the peer
-		idx := e.PeerIndex
+		idx := int(e.PeerIndex)
 		if mrt.Type == TABLE_DUMP {
 			idx = v1fix
 		}
-		if int(idx) >= len(ts.peers) {
+		if idx >= len(ts.peers) {
 			br.Stats.Garbled++
 			continue // no peer index table?
 		}
@@ -132,6 +149,12 @@ func (br *Reader) emitTable(cb pipe.CallbackFunc) error {
 			continue
 		}
 		ts.pending[idx] = pend
+	}
+
+	// too many peers in flight? emit what we have
+	// NB: costs only aggregation, which is useless at this many peers anyway
+	if len(ts.pending) > tableInFlightMax {
+		return br.Flush(cb)
 	}
 
 	return nil

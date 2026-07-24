@@ -322,6 +322,54 @@ func TestTableReader_V2_IPv6Full(t *testing.T) {
 	require.Equal(t, pfx2, mpp.Prefixes[1].Prefix)
 }
 
+// makeV1 returns a legacy TABLE_DUMP record body for the given peer
+func makeV1(seq uint16, peer netip.Addr, peerAS uint16, ats []byte) []byte {
+	body := appendUint16(nil, 0)
+	body = appendUint16(body, seq)
+	body = append(body, 10, 0, 0, 0)
+	body = append(body, 8, 1)
+	body = appendUint32(body, 1600000000)
+	body = append(body, peer.AsSlice()...)
+	body = appendUint16(body, peerAS)
+	body = appendUint16(body, uint16(len(ats)))
+	return append(body, ats...)
+}
+
+// v1 dumps name their peer inline, so a hostile file can define peers without
+// end. Peers must never wrap onto each other (misattributing routes), and the
+// tracked state must stay bounded.
+func TestTableReader_V1_ManyPeers(t *testing.T) {
+	ats := attrWK(1, 0)
+	ats = append(ats, attrWK(2, 2, 1, 0xfd, 0xe8)...)
+	ats = append(ats, attrWK(3, 192, 0, 2, 1)...)
+
+	// more distinct peers than fit a uint16 index
+	const npeers = tablePeersMax + 1000
+	var raw []byte
+	for i := range npeers {
+		peer := netip.AddrFrom4([4]byte{10, byte(i >> 16), byte(i >> 8), byte(i)})
+		raw = append(raw, mrtRecord(TABLE_DUMP, TD_IPV4, makeV1(uint16(i), peer, 65001, ats))...)
+	}
+
+	msgs, br := tableReaderTest(t, raw)
+
+	// every emitted message must carry the peer it actually came from
+	seen := make(map[string]bool, len(msgs))
+	for _, m := range msgs {
+		ip := pipe.GetTags(m)["PEER_IP"]
+		require.False(t, seen[ip], "peer %s emitted twice: index wrapped", ip)
+		seen[ip] = true
+	}
+
+	// peers past the limit are dropped, not folded onto existing ones
+	require.Len(t, seen, tablePeersMax)
+	require.Equal(t, uint64(1000), br.Stats.Garbled)
+
+	// state stayed bounded
+	require.LessOrEqual(t, len(br.table.peers), tablePeersMax)
+	require.LessOrEqual(t, len(br.table.pending), tableInFlightMax+1)
+}
+
 func TestTableReader_V1(t *testing.T) {
 	ats := attrWK(1, 0)
 	ats = append(ats, attrWK(2, 2, 1, 0xfd, 0xe8)...) // 2-byte AS 65000
