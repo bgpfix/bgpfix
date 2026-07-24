@@ -204,11 +204,11 @@ func (a *MPFlowspec) Unmarshal(cps caps.Caps, _ meta.Meta) error {
 }
 
 func (a *MPFlowspec) Marshal(cps caps.Caps, _ meta.Meta) {
-	// NB: build fresh slices - a.NH and a.Data may reference message buffers
-	// we don't own, so appending into their capacity could corrupt shared data
+	// NB: write into nhbuf/databuf, not a.NH/a.Data directly - those may
+	// still reference a borrowed buffer from a prior Unmarshal
 
 	// best-effort
-	var nh []byte
+	nh := a.nhbuf[:0]
 	if a.NextHop.IsValid() {
 		nh = append(nh, a.NextHop.AsSlice()...)
 		if a.LinkLocal.IsValid() {
@@ -216,10 +216,11 @@ func (a *MPFlowspec) Marshal(cps caps.Caps, _ meta.Meta) {
 		}
 	}
 	a.NH = nh
+	a.nhbuf = nh
 
-	// write ar.Data using RFC8955/4
+	// write a.Data using RFC8955/4
 	var buf []byte
-	var data []byte
+	data := a.databuf[:0]
 	for _, fr := range a.Rules {
 		if len(fr) == 0 {
 			continue
@@ -237,6 +238,7 @@ func (a *MPFlowspec) Marshal(cps caps.Caps, _ meta.Meta) {
 		data = append(data, buf...)
 	}
 	a.Data = data
+	a.databuf = data
 }
 
 func (a *MPFlowspec) ToJSON(dst []byte) []byte {
