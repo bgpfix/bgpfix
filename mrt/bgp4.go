@@ -140,7 +140,7 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg, cps caps.Caps) error {
 }
 
 // ToMsg reads MRT-BGP4MP message b4 into BGP message m, referencing data.
-func (b4 *Bgp4) ToMsg(m *msg.Msg, no_tags bool) error {
+func (b4 *Bgp4) ToMsg(m *msg.Msg, notags bool) error {
 	// parse BGP header
 	off, err := m.FromBytes(b4.BgpData)
 	switch {
@@ -168,7 +168,7 @@ func (b4 *Bgp4) ToMsg(m *msg.Msg, no_tags bool) error {
 	}
 
 	// copy BGP4MP metadata?
-	if !no_tags {
+	if !notags {
 		tags := pipe.UseContext(m).UseTags()
 		if b4.PeerAS != 0 {
 			tags["PEER_AS"] = strconv.FormatUint(uint64(b4.PeerAS), 10)
