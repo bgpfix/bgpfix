@@ -1,3 +1,4 @@
+// Package filter implements a boolean expression filter over BGP messages.
 package filter
 
 import (
