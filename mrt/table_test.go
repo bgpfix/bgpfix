@@ -205,7 +205,7 @@ func tableReaderTest(t *testing.T, raw []byte) ([]*msg.Msg, *Reader) {
 
 	_, err := br.Write(raw)
 	require.NoError(t, err)
-	require.NoError(t, br.Flush())
+	require.NoError(t, br.Flush(nil))
 
 	p.Stop()
 	<-done

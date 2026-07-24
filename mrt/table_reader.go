@@ -56,7 +56,7 @@ func (br *Reader) emitTable(cb pipe.CallbackFunc) error {
 
 	// a new peer index table starts a new RIB: flush and (re)load peers
 	if mrt.Type == TABLE_DUMP2 && mrt.Sub == PEER_INDEX_TABLE {
-		if err := br.Flush(); err != nil {
+		if err := br.Flush(cb); err != nil {
 			return err
 		}
 		ts.peers = append(ts.peers[:0], t.Peers...)
@@ -216,7 +216,8 @@ func (br *Reader) flushPending(pend *tablePending, cb pipe.CallbackFunc) error {
 
 // Flush emits all pending aggregated UPDATEs (table dump reads).
 // Call when the input stream ends. Does nothing for BGP4MP streams.
-func (br *Reader) Flush() error {
+// cb may be nil, see WriteFunc.
+func (br *Reader) Flush(cb pipe.CallbackFunc) error {
 	ts := &br.table
 	if len(ts.pending) == 0 {
 		return nil
@@ -226,7 +227,7 @@ func (br *Reader) Flush() error {
 	for _, idx := range slices.Sorted(maps.Keys(ts.pending)) {
 		pend := ts.pending[idx]
 		delete(ts.pending, idx)
-		if err := br.flushPending(pend, nil); err != nil {
+		if err := br.flushPending(pend, cb); err != nil {
 			return err
 		}
 	}
