@@ -13,8 +13,9 @@ type Reader struct {
 	pipe *pipe.Pipe  // target pipe
 	in   *pipe.Input // target input
 
-	ibuf []byte // input buffer
-	mrt  *Mrt   // raw MRT message
+	ibuf  []byte     // input buffer
+	mrt   *Mrt       // raw MRT message
+	table tableState // table dump state
 
 	NoTags bool        // ignore message tags?
 	Stats  ReaderStats // our stats
@@ -22,11 +23,13 @@ type Reader struct {
 
 // BGP reader statistics
 type ReaderStats struct {
-	Parsed     uint64 // parsed messages (total)
-	ParsedBgp  uint64 // parsed BGP4MP messages
-	ParsedSkip uint64 // skipped non-BGP4MP messages
-	Short      uint64 // data in buffer too short, should retry
-	Garbled    uint64 // parse error
+	Parsed      uint64 // parsed messages (total)
+	ParsedBgp   uint64 // parsed BGP4MP messages
+	ParsedTable uint64 // parsed table dump messages
+	ParsedSkip  uint64 // skipped MRT messages
+	Bundled     uint64 // table dump prefixes bundled into pending UPDATEs
+	Short       uint64 // data in buffer too short, should retry
+	Garbled     uint64 // parse error
 }
 
 // NewReader returns a new Reader with given target Input.
@@ -92,17 +95,26 @@ func (br *Reader) WriteFunc(src []byte, cb pipe.CallbackFunc) (n int, err error)
 			return n, fmt.Errorf("MRT: %w", perr)
 		}
 
-		// parse as BGP4MP
+		// parse the upper layer
 		switch err := mrt.Parse(); err {
-		case nil:
-			stats.ParsedBgp++ // success
+		case nil: // success
 		case ErrType, ErrSub:
 			stats.ParsedSkip++
 			continue
 		default:
 			stats.Garbled++
-			return n, fmt.Errorf("BGP4MP: %w", err)
+			return n, fmt.Errorf("%s: %w", mrt.Type, err)
 		}
+
+		// table dump record? convert to synthetic UPDATEs
+		if mrt.Type.IsTable() {
+			stats.ParsedTable++
+			if err := br.emitTable(cb); err != nil {
+				return n, fmt.Errorf("%s: %w", mrt.Type, err)
+			}
+			continue
+		}
+		stats.ParsedBgp++
 
 		// write to BGP msg
 		m := p.GetMsg()
