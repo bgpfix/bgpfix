@@ -272,6 +272,16 @@ func (c *Client) dispatch(w io.Writer, h pduHeader, payload []byte, ver *byte) e
 	case PDUCacheResponse:
 		c.mu.Lock()
 		resync := c.resetPending
+		// NB: a session-ID change means the cache lost its state (RFC 8210 section
+		// 5.1), even if we did not ask for a reset; treat it as a full resync too
+		if c.hasSerial && h.Session != c.sessid {
+			c.Warn().
+				Uint16("old", c.sessid).
+				Uint16("new", h.Session).
+				Msg("RTR session ID changed in CacheResponse, forcing full resync")
+			resync = true
+			c.hasSerial = false
+		}
 		c.resetPending = false
 		c.version = h.Version
 		c.sessid = h.Session
@@ -460,12 +470,13 @@ func (c *Client) dispatchEndOfData(h pduHeader, payload []byte) error {
 	serial := msb.Uint32(payload[0:4])
 
 	c.mu.Lock()
-	// NB: check for session ID change (server restarted or config changed)
+	// NB: a session-ID change mid-stream means the staged data is inconsistent;
+	// error out to drop the connection, the reconnect does a clean full resync
 	if c.hasSerial && h.Session != c.sessid {
-		c.Warn().
-			Uint16("old", c.sessid).
-			Uint16("new", h.Session).
-			Msg("RTR session ID changed in EndOfData")
+		old := c.sessid
+		c.hasSerial = false
+		c.mu.Unlock()
+		return fmt.Errorf("rtr: session ID changed in EndOfData: %d -> %d", old, h.Session)
 	}
 	c.serial = serial
 	c.sessid = h.Session

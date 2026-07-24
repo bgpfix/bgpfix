@@ -20,7 +20,7 @@ type Reader struct {
 	obmp *OpenBmp // reusable OpenBMP parser (for wrapped format)
 
 	OpenBMP bool        // true if reading OpenBMP-wrapped format
-	NoTags  bool        // ignore message tags?
+	NoCtx   bool        // ignore message context?
 	Stats   ReaderStats // our stats
 }
 
@@ -212,7 +212,15 @@ func (br *Reader) FromBytes(buf []byte, bgp_msg *msg.Msg, bmp_msg *Bmp, obmp_msg
 func (br *Reader) setMeta(m *msg.Msg, bmp *Bmp, obmp *OpenBmp) {
 	m.Time = bmp.Peer.Time
 
-	if br.NoTags {
+	// the peer A flag determines the AS_PATH encoding (RFC 7854/4.2),
+	// possibly overriding session capabilities in parsers
+	if bmp.Peer.Is2ByteAS() {
+		m.ParseAS4 = -1
+	} else {
+		m.ParseAS4 = 1
+	}
+
+	if br.NoCtx {
 		return
 	}
 

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bgpfix/bgpfix/dir"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 )
 
@@ -154,7 +154,7 @@ func TestPipe_MessagePassthrough(t *testing.T) {
 	if got[0].Time.IsZero() {
 		t.Fatal("expected Time to be set")
 	}
-	if got[0].Dir != dir.DIR_L {
+	if got[0].Dir != meta.DIR_L {
 		t.Fatalf("expected DIR_L, got %v", got[0].Dir)
 	}
 }
@@ -166,7 +166,7 @@ func TestPipe_CallbackDrop(t *testing.T) {
 	p := newTestPipe(ctx)
 	p.Options.OnMsg(func(m *msg.Msg) bool {
 		return false // drop
-	}, dir.DIR_L)
+	}, meta.DIR_L)
 
 	if err := p.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -332,7 +332,7 @@ func TestPipe_MultipleInputs(t *testing.T) {
 	p := newTestPipe(ctx)
 
 	// add an extra input on the L line
-	extra := p.Options.AddInput(dir.DIR_L)
+	extra := p.Options.AddInput(meta.DIR_L)
 
 	if err := p.Start(); err != nil {
 		t.Fatalf("Start: %v", err)

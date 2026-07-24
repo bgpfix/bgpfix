@@ -6,14 +6,14 @@ import (
 	"time"
 
 	"github.com/bgpfix/bgpfix/caps"
-	"github.com/bgpfix/bgpfix/dir"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/nlri"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMsg_KEEPALIVE_JSON(t *testing.T) {
 	msg := NewMsg()
-	msg.Dir = dir.DIR_R
+	msg.Dir = meta.DIR_R
 	msg.Seq = 2
 	msg.Time = time.Date(2025, 7, 11, 8, 47, 22, 659000000, time.UTC)
 	msg.Type = KEEPALIVE

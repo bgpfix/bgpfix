@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/bgpfix/bgpfix/attrs"
-	"github.com/bgpfix/bgpfix/dir"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/nlri"
 	"github.com/stretchr/testify/assert"
@@ -870,7 +870,7 @@ func TestEvalTime(t *testing.T) {
 func TestEvalDir(t *testing.T) {
 	m := newUpdate()
 	addReach(m, "10.0.0.0/24")
-	m.Dir = dir.DIR_L
+	m.Dir = meta.DIR_L
 
 	// existence
 	assert.True(t, evalFilter(t, m, `dir`))
@@ -884,14 +884,14 @@ func TestEvalDir(t *testing.T) {
 	assert.False(t, evalFilter(t, m, `dir != L`))
 
 	// R direction
-	m.Dir = dir.DIR_R
+	m.Dir = meta.DIR_R
 	assert.True(t, evalFilter(t, m, `dir == R`))
 	assert.False(t, evalFilter(t, m, `dir == L`))
 
 	// works on non-UPDATE (Types=true)
 	ka := msg.NewMsg()
 	ka.Switch(msg.KEEPALIVE)
-	ka.Dir = dir.DIR_R
+	ka.Dir = meta.DIR_R
 	assert.True(t, evalFilter(t, ka, `dir == R`))
 
 	// zero dir

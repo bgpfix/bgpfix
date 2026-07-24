@@ -1,7 +1,4 @@
-// Package dir represents BGP message direction.
-//
-// Exported to a separate package in order to avoid dependency loops.
-package dir
+package meta
 
 // BGP message direction
 type Dir byte
@@ -47,6 +44,8 @@ func DirString(s string) (Dir, error) {
 		return DIR_R, nil
 	case "LR", "lr", "Lr", "lR", "RL", "rl", "Rl", "rL":
 		return DIR_LR, nil
+	case "", "?": // NB: matches String() output for unset Dir
+		return 0, nil
 	default:
 		return 0, ErrValue
 	}

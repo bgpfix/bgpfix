@@ -3,8 +3,8 @@ package attrs
 import (
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
-	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
+	"github.com/bgpfix/bgpfix/meta"
 )
 
 // MP represents ATTR_MP_REACH and ATTR_MP_UNREACH attributes
@@ -30,10 +30,10 @@ type MPValue interface {
 	Safi() afi.SAFI
 
 	// Unmarshal parses wire representation from the parent
-	Unmarshal(cps caps.Caps, dir dir.Dir) error
+	Unmarshal(cps caps.Caps, mt meta.Meta) error
 
 	// Marshal writes wire representation to the parent
-	Marshal(cps caps.Caps, dir dir.Dir)
+	Marshal(cps caps.Caps, mt meta.Meta)
 
 	// ToJSON appends *JSON keys* to dst (will be embedded in the parent object)
 	ToJSON(dst []byte) []byte
@@ -59,8 +59,9 @@ func NewMP(at CodeFlags) Attr {
 
 func (mp *MP) Reset() {
 	mp.AS = 0
-	mp.NH = mp.NH[:0]
-	mp.Data = mp.Data[:0]
+	// NB: nil, not [:0] - NH and Data may reference message buffers we don't own
+	mp.NH = nil
+	mp.Data = nil
 	mp.Value = nil
 }
 
@@ -74,7 +75,7 @@ func NewMPValue(mp *MP) MPValue {
 	}
 }
 
-func (mp *MP) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
+func (mp *MP) Unmarshal(buf []byte, cps caps.Caps, mt meta.Meta) error {
 	// afi + safi
 	if len(buf) < 3 {
 		return ErrLength
@@ -104,15 +105,15 @@ func (mp *MP) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	// parse the value?
 	mp.Value = NewMPValue(mp)
 	if mp.Value != nil {
-		return mp.Value.Unmarshal(cps, dir)
+		return mp.Value.Unmarshal(cps, mt)
 	}
 
 	return nil
 }
 
-func (mp *MP) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
+func (mp *MP) Marshal(dst []byte, cps caps.Caps, mt meta.Meta) []byte {
 	if mp.Value != nil {
-		mp.Value.Marshal(cps, dir)
+		mp.Value.Marshal(cps, mt)
 	}
 
 	tl := 2 + 1 + len(mp.Data) // afi + safi + nlri

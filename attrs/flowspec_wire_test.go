@@ -6,7 +6,7 @@ import (
 
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
-	"github.com/bgpfix/bgpfix/dir"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/nlri"
 	"github.com/stretchr/testify/require"
 )
@@ -184,7 +184,7 @@ func TestMPFlowspec_RuleLength(t *testing.T) {
 			fs.Rules = []FlowRule{rule}
 
 			// Marshal
-			fs.Marshal(cps, dir.DIR_L)
+			fs.Marshal(cps, meta.Meta{})
 
 			// Check the length header
 			require.True(t, len(mp.Data) >= len(tt.wantHead))
@@ -214,12 +214,12 @@ func TestFlowspec_EmptyRule(t *testing.T) {
 		{}, // empty - should be skipped
 	}
 
-	fs.Marshal(cps, dir.DIR_L)
+	fs.Marshal(cps, meta.Meta{})
 
 	// Parse back
 	fs2 := NewMPFlowspec(mp).(*MPFlowspec)
 	mp.Value = fs2
-	err := fs2.Unmarshal(cps, dir.DIR_L)
+	err := fs2.Unmarshal(cps, meta.Meta{})
 	require.NoError(t, err)
 	require.Len(t, fs2.Rules, 1) // only non-empty rule
 }
@@ -386,8 +386,8 @@ func TestMPFlowspec_JSON_Roundtrip(t *testing.T) {
 	require.Len(t, fs2.Rules, 1)
 
 	// Wire round-trip
-	fs.Marshal(cps, dir.DIR_L)
-	fs2.Marshal(cps, dir.DIR_L)
+	fs.Marshal(cps, meta.Meta{})
+	fs2.Marshal(cps, meta.Meta{})
 	require.True(t, bytes.Equal(mp.Data, mp2.Data))
 }
 

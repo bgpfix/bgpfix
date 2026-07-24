@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/bgpfix/bgpfix/afi"
-	"github.com/bgpfix/bgpfix/dir"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/puzpuzpuz/xsync/v4"
 )
@@ -14,8 +14,8 @@ import (
 // Line implements one direction of a Pipe: possibly several input processors
 // run messages through callbacks and write the results to a common output.
 type Line struct {
-	Pipe *Pipe   // parent pipe
-	Dir  dir.Dir // line direction
+	Pipe *Pipe    // parent pipe
+	Dir  meta.Dir // line direction
 
 	// the default Input, which processes messages through all callbacks.
 	Input

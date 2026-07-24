@@ -169,6 +169,8 @@ func (mx *Context) ToJSON(dst []byte) []byte {
 	for key, val := range mx.tags {
 		if key == "ACTION" {
 			continue
+		} else if val == "" {
+			continue // ignore empty values
 		}
 		if len(dst) == first {
 			dst = append(dst, `"`...)
@@ -190,6 +192,8 @@ func (mx *Context) FromJSON(src []byte) error {
 		// special case: message action
 		if key == "ACTION" {
 			return mx.Action.FromJSON(val)
+		} else if len(val) == 0 {
+			return nil // ignore empty values
 		} else {
 			mx.SetTag(key, string(val))
 			return nil

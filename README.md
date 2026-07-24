@@ -129,7 +129,6 @@ $ bgpipe --log disabled --stdout \
   "R",
   1,
   "2024-11-28T13:06:47.574",
-  -1,
   "OPEN",
   {
     "bgp": 4,
@@ -154,7 +153,6 @@ $ bgpipe --log disabled --stdout \
   "L",
   1,
   "2024-11-28T13:06:49.598",
-  56,
   "OPEN",
   {
     "bgp": 4,
@@ -181,7 +179,6 @@ $ bgpipe --log disabled --stdout \
   "L",
   2,
   "2024-11-28T13:06:49.598",
-  0,
   "KEEPALIVE",
   null,
   {}
@@ -190,7 +187,6 @@ $ bgpipe --log disabled --stdout \
   "R",
   2,
   "2024-11-28T13:06:49.598",
-  0,
   "KEEPALIVE",
   null,
   {}
@@ -199,7 +195,6 @@ $ bgpipe --log disabled --stdout \
   "L",
   3,
   "2024-11-28T13:06:54.622",
-  316,
   "UPDATE",
   {
     "attrs": {
@@ -297,7 +292,6 @@ $ bgpipe --log disabled --stdout \
   "L",
   9,
   "2024-11-28T13:06:54.708",
-  10,
   "UPDATE",
   {
     "attrs": {

@@ -94,7 +94,7 @@ func (u *Update) Parse(cps caps.Caps) error {
 	// announced routes
 	if len(buf) > 0 {
 		var err error
-		u.Reach, err = nlri.Unmarshal(u.Reach, buf, afi.AS_IPV4_UNICAST, cps, u.Msg.Dir)
+		u.Reach, err = nlri.Unmarshal(u.Reach, buf, afi.AS_IPV4_UNICAST, cps, u.Msg.Meta)
 		if err != nil {
 			return err
 		}
@@ -103,7 +103,7 @@ func (u *Update) Parse(cps caps.Caps) error {
 	// withdrawn routes
 	if len(withdrawn) > 0 {
 		var err error
-		u.Unreach, err = nlri.Unmarshal(u.Unreach, withdrawn, afi.AS_IPV4_UNICAST, cps, u.Msg.Dir)
+		u.Unreach, err = nlri.Unmarshal(u.Unreach, withdrawn, afi.AS_IPV4_UNICAST, cps, u.Msg.Meta)
 		if err != nil {
 			return err
 		}
@@ -157,7 +157,7 @@ func (u *Update) ParseAttrs(cps caps.Caps) error {
 		// create, overwrite flags, try parsing
 		attr := ats.Use(acode)
 		attr.SetFlags(atyp.Flags())
-		if err := attr.Unmarshal(buf, cps, u.Msg.Dir); err != nil {
+		if err := attr.Unmarshal(buf, cps, u.Msg.Meta); err != nil {
 			return fmt.Errorf("%s: %w", acode, err)
 		}
 	}
@@ -175,7 +175,7 @@ func (u *Update) MarshalAttrs(cps caps.Caps) error {
 	// marshal one-by-one
 	var raw []byte
 	u.Attrs.Each(func(i int, ac attrs.Code, at attrs.Attr) {
-		raw = at.Marshal(raw, cps, u.Msg.Dir)
+		raw = at.Marshal(raw, cps, u.Msg.Meta)
 	})
 	u.AttrsRaw = raw
 	return nil
@@ -188,7 +188,7 @@ func (u *Update) Marshal(cps caps.Caps) error {
 
 	// withdrawn routes
 	buf = append(buf, 0, 0) // length (tbd [1])
-	buf = nlri.Marshal(buf, u.Unreach, afi.AS_IPV4_UNICAST, cps, u.Msg.Dir)
+	buf = nlri.Marshal(buf, u.Unreach, afi.AS_IPV4_UNICAST, cps, u.Msg.Meta)
 	if l := len(buf) - 2; l > math.MaxUint16 {
 		return fmt.Errorf("Marshal: too long Withdrawn Routes: %w (%d)", ErrLength, l)
 	} else if l > 0 {
@@ -203,7 +203,7 @@ func (u *Update) Marshal(cps caps.Caps) error {
 	buf = append(buf, u.AttrsRaw...)
 
 	// announced routes
-	buf = nlri.Marshal(buf, u.Reach, afi.AS_IPV4_UNICAST, cps, msg.Dir)
+	buf = nlri.Marshal(buf, u.Reach, afi.AS_IPV4_UNICAST, cps, msg.Meta)
 
 	// done
 	msg.Type = UPDATE

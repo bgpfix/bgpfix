@@ -5,8 +5,8 @@ import (
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
-	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
+	"github.com/bgpfix/bgpfix/meta"
 )
 
 // Extcom represents ATTR_EXT_COMMUNITY
@@ -161,7 +161,7 @@ func (et *ExtcomType) FromJSON(src []byte) error {
 	return nil
 }
 
-func (a *Extcom) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
+func (a *Extcom) Unmarshal(buf []byte, cps caps.Caps, mt meta.Meta) error {
 	exp := len(buf) / 8
 	if len(a.Type) == 0 && cap(a.Type) < exp {
 		a.Type = make([]ExtcomType, 0, exp)
@@ -189,7 +189,7 @@ func (a *Extcom) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	return nil
 }
 
-func (a *Extcom) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
+func (a *Extcom) Marshal(dst []byte, cps caps.Caps, mt meta.Meta) []byte {
 	tl := 8 * len(a.Type)
 	dst = a.CodeFlags.MarshalLen(dst, tl)
 	for i := range a.Type {

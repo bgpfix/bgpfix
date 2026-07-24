@@ -29,8 +29,9 @@ func Hop(aspa ASPA, cas, pas uint32) int {
 // On ASPA_INVALID, failCAS and failPAS identify the hop where CAS has an ASPA
 // record that does not list PAS as a provider. Both are 0 for other results.
 //
-// downstream=true when received from a provider or RS (downstream direction).
-// downstream=false when received from a customer, peer, or RS-client (upstream).
+// downstream=true only when received from a provider (draft section 5.5).
+// downstream=false when received from a customer, peer, RS, or RS-client
+// (upstream, draft section 5.4 - both sides of an RS use the upstream procedure).
 //
 // NB: does not check path[0] == neighbor AS (draft section 5.4/5.5 step 2).
 // The caller must do that check, skipping it for RS peers (RFC 7947).

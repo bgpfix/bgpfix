@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/afi"
+	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
 )
@@ -54,8 +55,9 @@ func (b4 *Bgp4) Reset() {
 }
 
 // FromMsg copies BGP message m into BGP4MP message b4.
-// m must already be marshaled.
-func (b4 *Bgp4) FromMsg(m *msg.Msg) error {
+// m must already be marshaled; cps must be the capabilities
+// that were used to marshal m.Data.
+func (b4 *Bgp4) FromMsg(m *msg.Msg, cps caps.Caps) error {
 	// m has Data?
 	if m.Data == nil {
 		return ErrNoData
@@ -74,8 +76,31 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg) error {
 	mrt.Time = m.Time
 	mrt.Type = BGP4MP_ET
 	mrt.Upper = BGP4MP_ET
-	mrt.Sub = BGP4_MESSAGE_AS4
 	mrt.Data = nil
+
+	// select the subtype matching how m.Data was marshaled, as told by cps
+	// NB: must not depend on the parser options in m.Meta
+	// NB: ADD-PATH is negotiated per AFI/SAFI + direction, so use the message
+	// address family when known; otherwise assume the legacy IPv4 unicast NLRI
+	addpath := false
+	if m.Upper == msg.UPDATE {
+		addpath = cps.AddPathEnabled(m.Update.AfiSafi(), m.Dir)
+	} else if m.Type == msg.UPDATE {
+		addpath = cps.AddPathEnabled(afi.AS_IPV4_UNICAST, m.Dir)
+	}
+	if cps.Has(caps.CAP_AS4) {
+		if addpath {
+			mrt.Sub = BGP4_MESSAGE_AS4_ADDPATH
+		} else {
+			mrt.Sub = BGP4_MESSAGE_AS4
+		}
+	} else {
+		if addpath {
+			mrt.Sub = BGP4_MESSAGE_ADDPATH
+		} else {
+			mrt.Sub = BGP4_MESSAGE
+		}
+	}
 
 	// m has Context with tags?
 	if tags := pipe.GetTags(m); len(tags) > 0 {
@@ -115,7 +140,8 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg) error {
 }
 
 // ToMsg reads MRT-BGP4MP message b4 into BGP message m, referencing data.
-func (b4 *Bgp4) ToMsg(m *msg.Msg, set_tags bool) error {
+func (b4 *Bgp4) ToMsg(m *msg.Msg, no_context bool) error {
+	// parse BGP header
 	off, err := m.FromBytes(b4.BgpData)
 	switch {
 	case err != nil:
@@ -125,10 +151,24 @@ func (b4 *Bgp4) ToMsg(m *msg.Msg, set_tags bool) error {
 	}
 
 	// copy MRT time
-	m.Time = b4.Mrt.Time
+	mrt := b4.Mrt
+	m.Time = mrt.Time
+
+	// the BGP4MP subtype determines the encoding of the BGP message,
+	// possibly overriding session capabilities in parsers
+	if mrt.Sub.IsBgpAS4() {
+		m.ParseAS4 = 1
+	} else {
+		m.ParseAS4 = -1
+	}
+	if mrt.Sub.IsBgpAddPath() {
+		m.ParseAddPath = 1
+	} else {
+		m.ParseAddPath = -1
+	}
 
 	// copy BGP4MP metadata?
-	if set_tags {
+	if !no_context {
 		tags := pipe.UseContext(m).UseTags()
 		if b4.PeerAS != 0 {
 			tags["PEER_AS"] = strconv.FormatUint(uint64(b4.PeerAS), 10)
@@ -167,13 +207,13 @@ func (b4 *Bgp4) Parse() error {
 	// read depending on subtype
 	var af afi.AFI
 	switch mrt.Sub {
-	case BGP4_MESSAGE, BGP4_MESSAGE_LOCAL:
+	case BGP4_MESSAGE, BGP4_MESSAGE_LOCAL, BGP4_MESSAGE_ADDPATH, BGP4_MESSAGE_LOCAL_ADDPATH:
 		b4.PeerAS = uint32(msb.Uint16(buf[0:2]))
 		b4.LocalAS = uint32(msb.Uint16(buf[2:4]))
 		b4.Interface = msb.Uint16(buf[4:6])
 		af = afi.NewAFIBytes(buf[6:8])
 		buf = buf[8:]
-	case BGP4_MESSAGE_AS4, BGP4_MESSAGE_AS4_LOCAL:
+	case BGP4_MESSAGE_AS4, BGP4_MESSAGE_AS4_LOCAL, BGP4_MESSAGE_AS4_ADDPATH, BGP4_MESSAGE_AS4_LOCAL_ADDPATH:
 		b4.PeerAS = msb.Uint32(buf[0:4])
 		b4.LocalAS = msb.Uint32(buf[4:8])
 		b4.Interface = msb.Uint16(buf[8:10])
@@ -224,13 +264,14 @@ func (b4 *Bgp4) Marshal() error {
 	}
 
 	// write peer AS, local AS, interface
+	// NB: ADD-PATH subtypes share the header format (RFC 8050)
 	buf := mrt.buf[:0]
 	switch mrt.Sub {
-	case BGP4_MESSAGE, BGP4_MESSAGE_LOCAL:
+	case BGP4_MESSAGE, BGP4_MESSAGE_LOCAL, BGP4_MESSAGE_ADDPATH, BGP4_MESSAGE_LOCAL_ADDPATH:
 		buf = msb.AppendUint16(buf, uint16(b4.PeerAS))
 		buf = msb.AppendUint16(buf, uint16(b4.LocalAS))
 		buf = msb.AppendUint16(buf, b4.Interface)
-	case BGP4_MESSAGE_AS4, BGP4_MESSAGE_AS4_LOCAL:
+	case BGP4_MESSAGE_AS4, BGP4_MESSAGE_AS4_LOCAL, BGP4_MESSAGE_AS4_ADDPATH, BGP4_MESSAGE_AS4_LOCAL_ADDPATH:
 		buf = msb.AppendUint32(buf, b4.PeerAS)
 		buf = msb.AppendUint32(buf, b4.LocalAS)
 		buf = msb.AppendUint16(buf, b4.Interface)

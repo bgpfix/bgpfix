@@ -6,8 +6,8 @@ import (
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
-	"github.com/bgpfix/bgpfix/dir"
 	"github.com/bgpfix/bgpfix/json"
+	"github.com/bgpfix/bgpfix/meta"
 )
 
 // Raw represents generic raw attribute
@@ -24,14 +24,14 @@ func (a *Raw) Reset() {
 	a.Raw = a.Raw[:0]
 }
 
-func (a *Raw) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
+func (a *Raw) Unmarshal(buf []byte, cps caps.Caps, mt meta.Meta) error {
 	if len(buf) > 0 {
 		a.Raw = append(a.Raw, buf...) // copy
 	}
 	return nil
 }
 
-func (a *Raw) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
+func (a *Raw) Marshal(dst []byte, cps caps.Caps, mt meta.Meta) []byte {
 	dst = a.CodeFlags.MarshalLen(dst, len(a.Raw))
 	dst = append(dst, a.Raw...)
 	return dst
@@ -68,7 +68,7 @@ func (a *Origin) Reset() {
 	a.Origin = 0
 }
 
-func (a *Origin) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
+func (a *Origin) Unmarshal(buf []byte, cps caps.Caps, mt meta.Meta) error {
 	if len(buf) != 1 {
 		return ErrLength
 	}
@@ -77,7 +77,7 @@ func (a *Origin) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	return nil
 }
 
-func (a *Origin) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
+func (a *Origin) Marshal(dst []byte, cps caps.Caps, mt meta.Meta) []byte {
 	dst = a.CodeFlags.MarshalLen(dst, 1)
 	return append(dst, a.Origin)
 }
@@ -124,7 +124,7 @@ func (a *U32) Reset() {
 	a.Val = 0
 }
 
-func (a *U32) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
+func (a *U32) Unmarshal(buf []byte, cps caps.Caps, mt meta.Meta) error {
 	if len(buf) != 4 {
 		return ErrLength
 	}
@@ -133,7 +133,7 @@ func (a *U32) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	return nil
 }
 
-func (a *U32) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
+func (a *U32) Marshal(dst []byte, cps caps.Caps, mt meta.Meta) []byte {
 	dst = a.CodeFlags.MarshalLen(dst, 4)
 	return msb.AppendUint32(dst, a.Val)
 }
@@ -163,20 +163,34 @@ func (a *Aggregator) Reset() {
 	a.Addr = netip.Addr{}
 }
 
-func (a *Aggregator) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
+func (a *Aggregator) Unmarshal(buf []byte, cps caps.Caps, mt meta.Meta) error {
 	// asn length
-	asnlen := 2
-	if a.Code() == ATTR_AS4AGGREGATOR || cps.Has(caps.CAP_AS4) {
+	asnlen := 2 // default to 2-byte ASNs
+	switch {
+	case a.Code() == ATTR_AS4AGGREGATOR: // explicitly AS4 by attribute code
+		asnlen = 4
+	case mt.ParseAS4 == -1: // explicitly disabled by meta
+		asnlen = 2
+	case mt.ParseAS4 == 1: // explicit AS4 by meta
+		asnlen = 4
+	case cps.Has(caps.CAP_AS4): // enabled by session capabilities
 		asnlen = 4
 	}
 
 	for len(buf) != asnlen+4 {
-		// can retry with 2-byte ASNs?
-		if asnlen == 4 && a.Code() == ATTR_AGGREGATOR && cps.Has(caps.CAP_AS_GUESS) {
+		switch {
+		case asnlen != 4: // already using 2-byte ASNs, cannot retry
+			return ErrLength
+		case mt.ParseAS4 == 1: // explicit AS4 by meta, cannot retry
+			return ErrLength
+		case !cps.Has(caps.CAP_AS_GUESS): // session does not allow guessing, cannot retry
+			return ErrLength
+		case a.Code() != ATTR_AGGREGATOR: // only retry for AGGREGATOR, not AS4AGGREGATOR
+			return ErrLength
+		default: // retry with 2-byte ASNs
 			asnlen = 2
 			continue
 		}
-		return ErrLength
 	}
 
 	if asnlen == 4 {
@@ -191,8 +205,8 @@ func (a *Aggregator) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	return nil
 }
 
-func (a *Aggregator) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
-	// asn length
+func (a *Aggregator) Marshal(dst []byte, cps caps.Caps, mt meta.Meta) []byte {
+	// asn length, NB: not affected by meta - it pertains to parsing only
 	asnlen := 2
 	if a.Code() == ATTR_AS4AGGREGATOR || cps.Has(caps.CAP_AS4) {
 		asnlen = 4
@@ -248,7 +262,7 @@ func (a *IP) Reset() {
 	a.Addr = netip.Addr{}
 }
 
-func (a *IP) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
+func (a *IP) Unmarshal(buf []byte, cps caps.Caps, mt meta.Meta) error {
 	switch {
 	case !a.IPv6 && len(buf) == 4:
 		a.Addr = netip.AddrFrom4([4]byte(buf))
@@ -260,7 +274,7 @@ func (a *IP) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	return nil
 }
 
-func (a *IP) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
+func (a *IP) Marshal(dst []byte, cps caps.Caps, mt meta.Meta) []byte {
 	addr := a.Addr.AsSlice()
 	dst = a.CodeFlags.MarshalLen(dst, len(addr))
 	dst = append(dst, addr...)
@@ -303,7 +317,7 @@ func (a *IPList) Reset() {
 	a.Addr = a.Addr[:0]
 }
 
-func (a *IPList) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
+func (a *IPList) Unmarshal(buf []byte, cps caps.Caps, mt meta.Meta) error {
 	var addr netip.Addr
 	for len(buf) > 0 {
 		if a.IPv6 {
@@ -326,7 +340,7 @@ func (a *IPList) Unmarshal(buf []byte, cps caps.Caps, dir dir.Dir) error {
 	return nil
 }
 
-func (a *IPList) Marshal(dst []byte, cps caps.Caps, dir dir.Dir) []byte {
+func (a *IPList) Marshal(dst []byte, cps caps.Caps, mt meta.Meta) []byte {
 	tl := 0
 	for _, addr := range a.Addr {
 		if addr.Is6() {
