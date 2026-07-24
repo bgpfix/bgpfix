@@ -16,8 +16,8 @@ type Reader struct {
 	ibuf []byte // input buffer
 	mrt  *Mrt   // raw MRT message
 
-	NoCtx bool        // ignore message context?
-	Stats ReaderStats // our stats
+	NoTags bool        // ignore message tags?
+	Stats  ReaderStats // our stats
 }
 
 // BGP reader statistics
@@ -106,7 +106,7 @@ func (br *Reader) WriteFunc(src []byte, cb pipe.CallbackFunc) (n int, err error)
 
 		// write to BGP msg
 		m := p.GetMsg()
-		if err := mrt.Bgp4.ToMsg(m, br.NoCtx); err != nil {
+		if err := mrt.Bgp4.ToMsg(m, br.NoTags); err != nil {
 			p.PutMsg(m)
 			return n, err
 		}
@@ -157,7 +157,7 @@ func (br *Reader) FromBytes(buf []byte, bgp_msg *msg.Msg, mrt_msg *Mrt) (n int, 
 	}
 
 	// write to BGP msg
-	if err := bgp4.ToMsg(bgp_msg, br.NoCtx); err != nil {
+	if err := bgp4.ToMsg(bgp_msg, br.NoTags); err != nil {
 		return n, err
 	}
 
