@@ -20,3 +20,10 @@ type Meta struct {
 	ParseAS4     int8 // 4-byte ASN encoding (CAP_AS4)
 	ParseAddPath int8 // ADD-PATH encoding (CAP_ADDPATH)
 }
+
+// Reset resets the metadata to its zero value.
+func (mt *Meta) Reset() {
+	if mt != nil {
+		*mt = Meta{}
+	}
+}

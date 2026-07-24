@@ -20,7 +20,7 @@ type Reader struct {
 	obmp *OpenBmp // reusable OpenBMP parser (for wrapped format)
 
 	OpenBMP bool        // true if reading OpenBMP-wrapped format
-	NoCtx   bool        // ignore message context?
+	NoTags  bool        // ignore message tags?
 	Stats   ReaderStats // our stats
 }
 
@@ -220,7 +220,7 @@ func (br *Reader) setMeta(m *msg.Msg, bmp *Bmp, obmp *OpenBmp) {
 		m.ParseAS4 = 1
 	}
 
-	if br.NoCtx {
+	if br.NoTags {
 		return
 	}
 

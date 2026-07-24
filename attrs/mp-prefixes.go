@@ -74,11 +74,11 @@ func (a *MPPrefixes) Unmarshal(cps caps.Caps, mt meta.Meta) error {
 }
 
 func (a *MPPrefixes) Marshal(cps caps.Caps, mt meta.Meta) {
-	// NB: build fresh slices - a.NH and a.Data may reference message buffers
-	// we don't own, so appending into their capacity could corrupt shared data
+	// NB: write into nhbuf/databuf, not a.NH/a.Data directly - those may
+	// still reference a borrowed buffer from a prior Unmarshal
 
 	// next-hop
-	var nh []byte
+	nh := a.nhbuf[:0]
 	if a.NextHop.IsValid() {
 		nh = append(nh, a.NextHop.AsSlice()...)
 		if a.LinkLocal.IsValid() {
@@ -86,9 +86,11 @@ func (a *MPPrefixes) Marshal(cps caps.Caps, mt meta.Meta) {
 		}
 	}
 	a.NH = nh
+	a.nhbuf = nh
 
 	// prefixes
-	a.Data = nlri.Marshal(nil, a.Prefixes, a.AS, cps, mt)
+	a.Data = nlri.Marshal(a.databuf[:0], a.Prefixes, a.AS, cps, mt)
+	a.databuf = a.Data
 }
 
 func (a *MPPrefixes) ToJSON(dst []byte) []byte {

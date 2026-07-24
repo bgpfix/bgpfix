@@ -29,8 +29,7 @@ type Attr interface {
 	Unmarshal(src []byte, cps caps.Caps, mt meta.Meta) error
 
 	// Marshal appends wire representation to dst: type(16), length(8/16), and value,
-	// given session capabilities in cps and message metadata in mt;
-	// NB: the parser options in mt must not affect the encoding
+	// given session capabilities in cps and message metadata in mt
 	Marshal(dst []byte, cps caps.Caps, mt meta.Meta) []byte
 
 	// ToJSON appends JSON representation of the value to dst

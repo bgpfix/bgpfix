@@ -1,3 +1,4 @@
+// Package exa converts BGP routes to and from ExaBGP's text line format.
 package exa
 
 import (

@@ -1,3 +1,4 @@
+// Package util provides helpers for wiring a pipe.Pipe to external I/O.
 package util
 
 import (

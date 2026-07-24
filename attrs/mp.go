@@ -15,6 +15,9 @@ type MP struct {
 	NH    []byte  // only for ATTR_MP_REACH
 	Data  []byte  // NLRI or unreachable
 	Value MPValue // interpreted NH / Data (may be nil)
+
+	nhbuf   []byte // owned scratch buffer backing NH after Marshal
+	databuf []byte // owned scratch buffer backing Data after Marshal
 }
 
 // MP attribute Value
@@ -62,7 +65,17 @@ func (mp *MP) Reset() {
 	// NB: nil, not [:0] - NH and Data may reference message buffers we don't own
 	mp.NH = nil
 	mp.Data = nil
-	mp.Value = nil
+
+	// keep mp.Value for reuse in Unmarshal; its Reset() only clears value
+	// types (Prefixes/Rules/NextHop, ...), never borrowed buffers
+	if mp.Value != nil {
+		mp.Value.Reset()
+	}
+
+	// nhbuf/databuf are always ours (only Marshal writes them) - keep them
+	if cap(mp.databuf) > 1024*1024 {
+		mp.databuf = nil // NB: don't keep a huge buffer alive forever
+	}
 }
 
 // NewMPValue returns a new MPValue for parent mp,
@@ -72,6 +85,19 @@ func NewMPValue(mp *MP) MPValue {
 		return newfunc(mp)
 	} else {
 		return nil
+	}
+}
+
+// reusableMPValue reports whether mp.Value already has the concrete type
+// NewMPValue would build for mp.AS. Keep in sync with MPNewFuncs above.
+func reusableMPValue(mp *MP) bool {
+	switch mp.Value.(type) {
+	case *MPPrefixes:
+		return mp.AS == afi.AS_IPV4_UNICAST || mp.AS == afi.AS_IPV6_UNICAST
+	case *MPFlowspec:
+		return mp.AS == afi.AS_IPV4_FLOWSPEC || mp.AS == afi.AS_IPV6_FLOWSPEC
+	default:
+		return false
 	}
 }
 
@@ -102,8 +128,10 @@ func (mp *MP) Unmarshal(buf []byte, cps caps.Caps, mt meta.Meta) error {
 	// nlri
 	mp.Data = buf
 
-	// parse the value?
-	mp.Value = NewMPValue(mp)
+	// (re)create the value, iff needed
+	if !reusableMPValue(mp) {
+		mp.Value = NewMPValue(mp)
+	}
 	if mp.Value != nil {
 		return mp.Value.Unmarshal(cps, mt)
 	}

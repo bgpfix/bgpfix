@@ -1,3 +1,5 @@
+// Package nlri represents Network Layer Reachability Information (RFC4271),
+// extended to support ADD_PATH (RFC7911) and other address families.
 package nlri
 
 import (
@@ -266,8 +268,7 @@ func (p *Prefix) Marshal(dst []byte, addpath bool) []byte {
 
 // Marshal marshals prefixes in src to dst
 func Marshal(dst []byte, src []Prefix, as afi.AS, cps caps.Caps, mt meta.Meta) []byte {
-	// NB: the parser options in mt must not affect the encoding here,
-	// only the message direction is taken from it
+	// NB: only the message direction is taken from mt here
 	var (
 		ipv6    = as.IsIPv6()
 		addpath = cps.AddPathEnabled(as, mt.Dir)

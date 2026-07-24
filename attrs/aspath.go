@@ -349,7 +349,7 @@ func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, mt meta.Meta) error {
 	}
 }
 
-func (a *Aspath) Marshal(dst []byte, cps caps.Caps, mt meta.Meta) []byte {
+func (a *Aspath) Marshal(dst []byte, cps caps.Caps, _ meta.Meta) []byte {
 	// asn length, NB: not affected by meta - it pertains to parsing only
 	asnlen := 2
 	if a.Code() == ATTR_AS4PATH || cps.Has(caps.CAP_AS4) {

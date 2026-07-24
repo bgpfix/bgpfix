@@ -1,4 +1,4 @@
-// Package af implements AFI, SAFI, and combinations
+// Package afi implements AFI, SAFI, and combinations
 package afi
 
 import (

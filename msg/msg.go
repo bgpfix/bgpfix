@@ -105,10 +105,10 @@ func NewMsg() *Msg {
 
 // Reset clears the message. It does not reset the upper layer.
 func (msg *Msg) Reset() *Msg {
-	msg.Meta = meta.Meta{}
 	msg.Type = INVALID
 	msg.Upper = INVALID
 	msg.Version = 0
+	msg.Meta.Reset()
 
 	msg.Data = nil
 	msg.ref = false
@@ -492,7 +492,10 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 		}
 	}
 
-	msg.Edit() // will modify Upper
+	// minimum cleanup
+	msg.Meta.Reset()
+	msg.Edit()
+
 	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) (err error) {
 		switch key {
 		case 0: // dst

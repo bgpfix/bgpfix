@@ -20,8 +20,9 @@ type Mrt struct {
 	Sub  Sub       // message subtype
 	Data []byte    // message data (referenced or owned), can be nil
 
-	Upper Type // which of the upper layers is valid?
-	Bgp4  Bgp4 // BGP4MP or BGP4MP_ET
+	Upper Type  // which of the upper layers is valid?
+	Bgp4  Bgp4  // BGP4MP or BGP4MP_ET
+	Table Table // TABLE_DUMP or TABLE_DUMP2
 }
 
 // MRT message type, see https://www.iana.org/assignments/mrt/mrt.xhtml
@@ -59,6 +60,16 @@ func (t Type) IsET() bool {
 func (t Type) IsBGP4() bool {
 	switch t {
 	case BGP4MP, BGP4MP_ET:
+		return true
+	default:
+		return false
+	}
+}
+
+// IsTable returns true iff t is a table dump type
+func (t Type) IsTable() bool {
+	switch t {
+	case TABLE_DUMP, TABLE_DUMP2:
 		return true
 	default:
 		return false
@@ -110,6 +121,7 @@ var (
 func NewMrt() *Mrt {
 	mrt := new(Mrt)
 	mrt.Bgp4.Init(mrt)
+	mrt.Table.Init(mrt)
 	return mrt
 }
 
@@ -249,6 +261,8 @@ func (mrt *Mrt) Parse() error {
 		if err != nil {
 			break
 		}
+	case TABLE_DUMP, TABLE_DUMP2:
+		err = mrt.Table.Parse()
 	default:
 		err = ErrType
 	}
