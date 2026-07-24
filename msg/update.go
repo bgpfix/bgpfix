@@ -22,6 +22,9 @@ type Update struct {
 	AttrsRaw []byte      // raw attributes, referencing Msg.Data
 	Attrs    attrs.Attrs // parsed attributes
 
+	attrsNext attrs.Attrs // scratch set for ParseAttrs, swapped into Attrs on success
+	attrsBuf  []byte      // owned scratch buffer for MarshalAttrs, backs AttrsRaw after Marshal
+
 	cached int            // msg.Version for which the cache is valid
 	cache  map[string]any // cached message attributes
 }
@@ -121,8 +124,12 @@ func (u *Update) ParseAttrs(cps caps.Caps) error {
 		raw  = u.AttrsRaw    // all attributes
 		atyp attrs.CodeFlags // attribute type
 		alen uint16          // attribute length
-		ats  attrs.Attrs     // parsed attributes
 	)
+
+	// parse into the scratch set, reusing objects from 2 parses ago;
+	// committed to u.Attrs only on full success (see below)
+	ats := &u.attrsNext
+	ats.Reset()
 
 	for len(raw) > 0 {
 		if len(raw) < 3 {
@@ -162,21 +169,22 @@ func (u *Update) ParseAttrs(cps caps.Caps) error {
 		}
 	}
 
-	// store
-	u.Attrs = ats
+	// commit: swap in the new set, old one becomes scratch for next time
+	u.Attrs, u.attrsNext = u.attrsNext, u.Attrs
 	return nil
 }
 
 // MarshalAttrs marshals u.Attrs into u.AttrsRaw
 func (u *Update) MarshalAttrs(cps caps.Caps) error {
-	// NB: avoid u.AttrsRaw[:0] as it might be referencing another slice
+	// NB: avoid u.AttrsRaw[:0], it might reference a borrowed slice
 	u.AttrsRaw = nil
 
 	// marshal one-by-one
-	var raw []byte
+	raw := u.attrsBuf[:0]
 	u.Attrs.Each(func(i int, ac attrs.Code, at attrs.Attr) {
 		raw = at.Marshal(raw, cps, u.Msg.Meta)
 	})
+	u.attrsBuf = raw
 	u.AttrsRaw = raw
 	return nil
 }
