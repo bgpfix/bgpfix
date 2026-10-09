@@ -179,6 +179,9 @@ func (p *Prefix) Unmarshal(src []byte, ipv6, addpath bool) (n int, err error) {
 	}
 
 	// prefix length in bits
+	if len(src) < 1 {
+		return n, ErrLength
+	}
 	l := int(src[0])
 	src = src[1:]
 	n++

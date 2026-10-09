@@ -416,3 +416,13 @@ func TestFlowGeneric_FromJSONLen(t *testing.T) {
 	wire3 := fg3.Marshal(nil, cps)
 	require.Equal(t, []byte{0x91, 0x00, 0x50}, wire3) // last|len=2|==, val 80 in 2 bytes
 }
+
+// TestFlowspec_TruncatedPrefix checks that a rule ending right after
+// a prefix type byte returns an error instead of panicking
+func TestFlowspec_TruncatedPrefix(t *testing.T) {
+	for _, af := range []byte{1, 2} {
+		mp := NewMP(CodeFlags(ATTR_MP_REACH)).(*MP)
+		buf := []byte{0, af, 133, 0, 0, 1, 1} // nh len=0, reserved, rule len=1, type=DST_PREFIX
+		require.Error(t, mp.Unmarshal(buf, caps.Caps{}, meta.Meta{}))
+	}
+}
