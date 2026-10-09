@@ -374,10 +374,11 @@ func (a *Aspath) Marshal(dst []byte, cps caps.Caps, _ meta.Meta) []byte {
 		asnlen = 4
 	}
 
-	// total length
+	// total length, NB: segments longer than 255 ASNs (eg. from JSON) are split
 	l := 0
 	for _, seg := range a.Segments {
-		l += 1 + 1 + asnlen*len(seg.List)
+		n := len(seg.List)
+		l += 2*((n+254)/255) + asnlen*n
 	}
 
 	// attr flags, code, length
@@ -385,17 +386,22 @@ func (a *Aspath) Marshal(dst []byte, cps caps.Caps, _ meta.Meta) []byte {
 
 	// attr value
 	for _, seg := range a.Segments {
-		if seg.IsSet {
-			dst = append(dst, 1)
-		} else {
-			dst = append(dst, 2)
-		}
-		dst = append(dst, byte(len(seg.List)))
-		for _, hop := range seg.List {
-			if asnlen == 4 {
-				dst = msb.AppendUint32(dst, hop)
+		for list := seg.List; len(list) > 0; {
+			chunk := list[:min(len(list), 255)]
+			list = list[len(chunk):]
+
+			if seg.IsSet {
+				dst = append(dst, 1)
 			} else {
-				dst = msb.AppendUint16(dst, uint16(hop))
+				dst = append(dst, 2)
+			}
+			dst = append(dst, byte(len(chunk)))
+			for _, hop := range chunk {
+				if asnlen == 4 {
+					dst = msb.AppendUint32(dst, hop)
+				} else {
+					dst = msb.AppendUint16(dst, uint16(hop))
+				}
 			}
 		}
 	}
