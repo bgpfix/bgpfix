@@ -17,11 +17,26 @@ func (c *Cache) Parse(data []byte) error {
 	data = bytes.TrimSpace(data)
 	if len(data) == 0 {
 		return fmt.Errorf("empty RPKI data")
-	} else if data[0] == '{' {
-		return c.ParseJSON(data)
-	} else {
-		return c.ParseCSV(data)
 	}
+
+	var err error
+	if data[0] == '{' {
+		err = c.ParseJSON(data)
+	} else {
+		err = c.ParseCSV(data)
+	}
+	if err != nil {
+		return err
+	}
+
+	// NB: fail closed - never publish an empty set from eg. an error page or a wrong file
+	c.mu.Lock()
+	n := len(c.next4) + len(c.next6) + len(c.nextAspa)
+	c.mu.Unlock()
+	if n == 0 {
+		return fmt.Errorf("no valid VRP or ASPA records found")
+	}
+	return nil
 }
 
 // parseASN parses an ASN, accepting an optional "AS" prefix.

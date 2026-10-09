@@ -326,3 +326,13 @@ func TestParse_PrefixMasking(t *testing.T) {
 		t.Error("prefix not properly masked in JSON parse")
 	}
 }
+
+func TestParse_NoRecords(t *testing.T) {
+	for _, data := range []string{`{}`, `{"error":"x"}`, `{"roas":[]}`, "<html>\n<body>oops</body>\n</html>"} {
+		c := NewCache(nil)
+		c.Flush()
+		if err := c.Parse([]byte(data)); err == nil {
+			t.Errorf("%q: expected error on data without records", data)
+		}
+	}
+}
