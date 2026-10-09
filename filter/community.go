@@ -21,7 +21,7 @@ func (e *Expr) communityParse() error {
 	case OP_EQ:
 		// make e.Val a JSON array
 		val := fmt.Sprintf("%v", e.Val)
-		if val[0] != '[' {
+		if len(val) == 0 || val[0] != '[' {
 			val = fmt.Sprintf("[ %v ]", e.Val)
 		}
 
