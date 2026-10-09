@@ -15,7 +15,14 @@ import (
 type Aspath struct {
 	CodeFlags
 	Segments []AspathSegment
+
+	// As2 is true iff the path uses 2-byte ASNs (parsed as such from the wire,
+	// or contains AS_TRANS when read from JSON); only then AS4_PATH applies (RFC 6793)
+	As2 bool
 }
+
+// AS_TRANS is the 2-byte placeholder for 4-byte ASNs (RFC 6793)
+const AS_TRANS = 23456
 
 // AspathSegment represents an AS_PATH segment
 type AspathSegment struct {
@@ -32,6 +39,7 @@ func NewAspath(at CodeFlags) Attr {
 
 func (a *Aspath) Reset() {
 	a.Segments = a.Segments[:0]
+	a.As2 = false
 }
 
 // nextList returns an empty ASN list for the next segment, re-using the one left there by Reset
@@ -47,6 +55,7 @@ func (a *Aspath) Clone() *Aspath {
 	a2 := &Aspath{
 		CodeFlags: a.CodeFlags,
 		Segments:  slices.Clone(a.Segments),
+		As2:       a.As2,
 	}
 	for i := range a.Segments {
 		a2.Segments[i].List = slices.Clone(a.Segments[i].List)
@@ -351,6 +360,7 @@ func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, mt meta.Meta) error {
 	}
 
 	if len(buf) == 0 {
+		a.As2 = asnlen == 2
 		return nil
 	} else {
 		return ErrLength
@@ -463,6 +473,7 @@ func (a *Aspath) FromJSON(src []byte) error {
 		}
 	})
 	seg_push()
+	a.As2 = a.HasAsn(AS_TRANS, 0)
 	return err
 }
 

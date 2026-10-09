@@ -492,8 +492,10 @@ func (u *Update) AsPath() (aspath *attrs.Aspath) {
 	}
 	aspath = ap // AS_PATH looks good so far
 
-	// need to process the AS4_PATH	attribute?
-	if ap4, ok := u.Attrs.Get(attrs.ATTR_AS4PATH).(*attrs.Aspath); ok {
+	// need to process the AS4_PATH attribute?
+	// NB: only for 2-byte AS_PATH, otherwise AS4_PATH must be ignored (RFC 6793 4.1),
+	// or a peer could spoof the path seen by eg. ROV/ASPA vs. what the router uses
+	if ap4, ok := u.Attrs.Get(attrs.ATTR_AS4PATH).(*attrs.Aspath); ok && ap.As2 {
 		switch apl, ap4l := ap.Len(), ap4.Len(); {
 		case apl < ap4l: // AS4_PATH is invalid
 			aspath = ap
