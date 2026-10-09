@@ -939,7 +939,7 @@ func TestEvalSeq(t *testing.T) {
 }
 
 func TestFilter_Dangling(t *testing.T) {
-	for _, s := range []string{"update &&", "update ||", "!", "update && !", "!!", "(update) && ", `com == ""`} {
+	for _, s := range []string{"update &&", "update ||", "!", "update && !", "!!", "(update) && ", `com == ""`, "time > \"000000 \xb0,0000000000\""} {
 		_, err := NewFilter(s)
 		require.Error(t, err, s)
 	}

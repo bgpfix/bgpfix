@@ -24,7 +24,7 @@ func (e *Expr) timeParse() error {
 		}
 		e.Val = re
 	case OP_EQ, OP_LT, OP_LE, OP_GT, OP_GE:
-		t, err := dateparse.ParseAny(fmt.Sprintf("%v", e.Val))
+		t, err := parseAny(fmt.Sprintf("%v", e.Val))
 		if err != nil {
 			return err
 		}
@@ -35,6 +35,16 @@ func (e *Expr) timeParse() error {
 
 	e.Types = true
 	return nil
+}
+
+// parseAny wraps dateparse.ParseAny, which can panic on malformed input
+func parseAny(s string) (t time.Time, err error) {
+	defer func() {
+		if recover() != nil {
+			err = ErrValue
+		}
+	}()
+	return dateparse.ParseAny(s)
 }
 
 func (e *Expr) timeEval(ev *Eval) Res {
