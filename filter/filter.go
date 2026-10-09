@@ -170,6 +170,9 @@ func (f *Filter) parse(expstr string, lvl int) (parsed *Expr, left string, err e
 			}
 
 			str = strings.TrimSpace(str)
+			if len(str) == 0 {
+				return nil, str, ErrEmpty // dangling && or ||
+			}
 			exp.Next = &Expr{String: str}
 			exp = exp.Next
 		}
@@ -307,7 +310,9 @@ func (f *Filter) parse(expstr string, lvl int) (parsed *Expr, left string, err e
 		exp.Filter = f
 	}
 
-	if lvl > 0 {
+	if exp.Filter == nil {
+		return nil, "", ErrEmpty // dangling negation
+	} else if lvl > 0 {
 		return nil, "", ErrUnmatched // we were expecting a closing parenthesis
 	} else {
 		return parsed, "", nil
