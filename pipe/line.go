@@ -164,33 +164,3 @@ func (l *Line) Read(dst []byte) (int, error) {
 	n, _ := buf.Read(dst)
 	return n, err
 }
-
-// WriteTo implements io.WriterTo interface, writing raw BGP data to w
-func (l *Line) WriteTo(w io.Writer) (int64, error) {
-	var (
-		p    = l.Pipe
-		err  = io.EOF // default error
-		n, k int64
-	)
-
-	for m := range l.Out {
-		// marshal upper layer to m.Data if needed
-		err = m.Marshal(p.Caps)
-		if err != nil {
-			p.PutMsg(m)
-			break
-		}
-
-		// write m.Data to w
-		k, err = m.WriteTo(w)
-		p.PutMsg(m)
-		n += k
-
-		// continue?
-		if err != nil {
-			break
-		}
-	}
-
-	return n, err
-}
