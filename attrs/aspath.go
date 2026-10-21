@@ -34,6 +34,14 @@ func (a *Aspath) Reset() {
 	a.Segments = a.Segments[:0]
 }
 
+// nextList returns an empty ASN list for the next segment, re-using the one left there by Reset
+func (a *Aspath) nextList() []uint32 {
+	if l := len(a.Segments); l < cap(a.Segments) {
+		return a.Segments[:l+1][l].List[:0]
+	}
+	return nil
+}
+
 // Clone creates a deep copy of the Aspath object.
 func (a *Aspath) Clone() *Aspath {
 	a2 := &Aspath{
@@ -325,7 +333,7 @@ func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, mt meta.Meta) error {
 
 		// read ASNs
 		todo := buf[2:tl]
-		seg.List = make([]uint32, 0, len(todo)/asnlen)
+		seg.List = slices.Grow(a.nextList(), len(todo)/asnlen)
 		for len(todo) >= asnlen {
 			if asnlen == 4 {
 				seg.List = append(seg.List, msb.Uint32(todo))
@@ -421,7 +429,7 @@ func (a *Aspath) String() string {
 }
 
 func (a *Aspath) FromJSON(src []byte) error {
-	var seg AspathSegment
+	seg := AspathSegment{List: a.nextList()}
 
 	// seg_add adds asn to seg.List
 	seg_add := func(asn []byte) error {
@@ -437,7 +445,7 @@ func (a *Aspath) FromJSON(src []byte) error {
 		if len(seg.List) > 0 {
 			a.Segments = append(a.Segments, seg)
 		}
-		seg = AspathSegment{} // clear
+		seg = AspathSegment{List: a.nextList()} // clear
 	}
 
 	err := json.ArrayEach(src, func(_ int, val []byte, typ json.Type) error {

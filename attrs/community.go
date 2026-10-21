@@ -1,7 +1,6 @@
 package attrs
 
 import (
-	"bytes"
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/caps"
@@ -82,19 +81,18 @@ func (a *Community) ToJSON(dst []byte) []byte {
 }
 
 func (a *Community) FromJSON(src []byte) error {
-	sep := []byte(":")
 	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
-		d := bytes.Split(val, sep)
-		if len(d) != 2 {
+		d0, d1, ok := cut2(val)
+		if !ok {
 			return ErrValue
 		}
 
-		asn, err := strconv.ParseUint(json.S(d[0]), 0, 16)
+		asn, err := strconv.ParseUint(json.S(d0), 0, 16)
 		if err != nil {
 			return err
 		}
 
-		cval, err := strconv.ParseUint(json.S(d[1]), 0, 16)
+		cval, err := strconv.ParseUint(json.S(d1), 0, 16)
 		if err != nil {
 			return err
 		}

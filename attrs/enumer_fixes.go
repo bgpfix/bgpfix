@@ -5,6 +5,7 @@ package attrs
 
 var CodeValue = _CodeNameToValueMap
 var CodeName = map[Code]string{}
+var codeNames [256]string // NB: faster than CodeName in hot paths
 
 var ExtcomTypeValue = _ExtcomTypeNameToValueMap
 var ExtcomTypeName = map[ExtcomType]string{}
@@ -15,6 +16,7 @@ var FlowTypeName = map[FlowType]string{}
 func init() {
 	for _, v := range CodeValues() {
 		CodeName[v] = v.String()
+		codeNames[v] = v.String()
 	}
 
 	for _, v := range ExtcomTypeValues() {

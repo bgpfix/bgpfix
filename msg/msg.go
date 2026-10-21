@@ -353,50 +353,32 @@ func (msg *Msg) Marshal(cps caps.Caps) error {
 
 // WriteTo writes raw BGP msg.Data to w, implementing io.WriterTo.
 // Call msg.Marshal() first if needed.
-func (msg *Msg) WriteTo(w io.Writer) (n int64, err error) {
-	var m int
-
-	// has data?
+func (msg *Msg) WriteTo(w io.Writer) (int64, error) {
 	if msg.Data == nil {
 		return 0, ErrNoData
 	}
-
-	// data length ok?
 	l := msg.Len()
 	if l < HEADLEN || l > MAXLEN_EXT {
 		return 0, ErrLength
 	}
 
-	// write the marker
-	m, err = w.Write(BgpMarker)
-	if err != nil {
-		return
+	// write the header: marker, length, type
+	// NB: build it in w's spare buffer if possible (eg. *bytes.Buffer), avoiding an allocation
+	var hdr []byte
+	if ab, ok := w.(interface{ AvailableBuffer() []byte }); ok {
+		hdr = ab.AvailableBuffer()
 	}
-	n += int64(m)
-
-	// write length
-	m, err = msb.WriteUint16(w, uint16(l))
+	hdr = append(hdr, BgpMarker...)
+	hdr = msb.AppendUint16(hdr, uint16(l))
+	hdr = append(hdr, byte(msg.Type))
+	n, err := w.Write(hdr)
 	if err != nil {
-		return
+		return int64(n), err
 	}
-	n += int64(m)
 
-	// write type
-	m, err = msb.WriteUint8(w, uint8(msg.Type))
-	if err != nil {
-		return
-	}
-	n += int64(m)
-
-	// write data
-	m, err = w.Write(msg.Data)
-	if err != nil {
-		return
-	}
-	n += int64(m)
-
-	// done
-	return
+	// write the data
+	m, err := w.Write(msg.Data)
+	return int64(n + m), err
 }
 
 // String dumps msg to JSON string, without the trailing newline
@@ -425,7 +407,7 @@ func (msg *Msg) GetJSON() []byte {
 	dst = append(dst, `,"`...)
 
 	// [2] time
-	dst = msg.Time.AppendFormat(dst, JSON_TIME)
+	dst = appendTime(dst, msg.Time)
 
 	// [3] type
 	dst = append(dst, `","`...)
@@ -549,4 +531,31 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 		}
 		return err
 	})
+}
+
+// appendTime appends t to dst in JSON_TIME format, faster than t.AppendFormat
+func appendTime(dst []byte, t time.Time) []byte {
+	year, month, day := t.Date()
+	if year < 0 || year > 9999 {
+		return t.AppendFormat(dst, JSON_TIME) // NB: rare, let time handle it
+	}
+	hour, min, sec := t.Clock()
+	ms := t.Nanosecond() / 1e6
+
+	d2 := func(v int) { dst = append(dst, byte('0'+v/10), byte('0'+v%10)) }
+	d2(year / 100)
+	d2(year % 100)
+	dst = append(dst, '-')
+	d2(int(month))
+	dst = append(dst, '-')
+	d2(day)
+	dst = append(dst, 'T')
+	d2(hour)
+	dst = append(dst, ':')
+	d2(min)
+	dst = append(dst, ':')
+	d2(sec)
+	dst = append(dst, '.', byte('0'+ms/100))
+	d2(ms % 100)
+	return dst
 }
