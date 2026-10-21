@@ -292,6 +292,11 @@ input:
 				p.Event(EVENT_ALIVE, m.Dir, t)
 			}
 
+		case msg.NOTIFY:
+			if m.Parse(p.Caps) == nil {
+				p.Event(EVENT_NOTIFY, m.Dir, m)
+			}
+
 		case msg.UPDATE:
 			// new UNIX timestamp for UPDATE?
 			if t > last_update { // local check to reduce atomic ops

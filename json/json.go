@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/netip"
 	"strconv"
+	"unicode/utf8"
 	"unsafe"
 
 	jsp "github.com/buger/jsonparser"
@@ -143,6 +144,16 @@ func UnPrefix(src []byte) (netip.Prefix, error) {
 
 // Ascii appends ASCII characters from src to JSON string in dst
 func Ascii(dst, src []byte) []byte {
+	return appendEscaped(dst, src, false)
+}
+
+// Utf8 appends UTF-8 text from src to JSON string in dst, or falls back to Ascii if src is not valid UTF-8
+func Utf8(dst, src []byte) []byte {
+	return appendEscaped(dst, src, utf8.Valid(src))
+}
+
+// appendEscaped appends src to JSON string in dst, escaping bytes >= 0x80 unless utf is true
+func appendEscaped(dst, src []byte, utf bool) []byte {
 	for _, c := range src {
 		switch c {
 		case '"', '\\':
@@ -154,7 +165,7 @@ func Ascii(dst, src []byte) []byte {
 		case '\t':
 			dst = append(dst, '\\', 't')
 		default:
-			if c >= 0x20 && c <= 0x7e {
+			if (c >= 0x20 && c <= 0x7e) || (utf && c >= 0x80) {
 				dst = append(dst, c)
 			} else {
 				dst = append(dst, "\\u00"...)

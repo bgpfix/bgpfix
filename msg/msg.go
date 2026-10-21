@@ -442,13 +442,7 @@ func (msg *Msg) GetJSON() []byte {
 	case KEEPALIVE:
 		dst = append(dst, json.Null...)
 	case NOTIFY:
-		dst = append(dst, '"')
-		if len(msg.Data) >= 2 {
-			dst = json.Ascii(dst, msg.Data[2:])
-		} else {
-			dst = json.Ascii(dst, msg.Data)
-		}
-		dst = append(dst, '"')
+		dst = msg.notifyToJSON(dst)
 	default:
 		dst = json.Hex(dst, msg.Data)
 	}
@@ -537,6 +531,8 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 					err = msg.Open.FromJSON(val)
 				case UPDATE:
 					err = msg.Update.FromJSON(val)
+				case NOTIFY:
+					err = msg.notifyFromJSON(val)
 				default:
 					err = ErrTODO // TODO
 				}
