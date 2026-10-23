@@ -5,6 +5,7 @@ package msg
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"strconv"
 	"time"
@@ -263,14 +264,21 @@ func (msg *Msg) FromBytes(buf []byte) (off int, err error) {
 // Parse parses msg.Data into the upper layer iff needed.
 // Capabilities in caps can infuence the upper layer decoders.
 // Can reference data in msg.Data, so call CopyData() first if needed.
-func (msg *Msg) Parse(cps caps.Caps) error {
+func (msg *Msg) Parse(cps caps.Caps) (err error) {
 	if msg.Upper != INVALID {
 		return nil // assume already done
 	} else if msg.Data == nil {
 		return ErrNoData
 	}
 
-	var err error
+	// NB: input is untrusted, a parser bug must not crash the process
+	defer func() {
+		if r := recover(); r != nil {
+			msg.Upper = INVALID
+			err = fmt.Errorf("%w: panic: %v", ErrValue, r)
+		}
+	}()
+
 	switch msg.Type {
 	case OPEN:
 		o := &msg.Open
