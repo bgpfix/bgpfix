@@ -16,13 +16,10 @@ type Aspath struct {
 	CodeFlags
 	Segments []AspathSegment
 
-	// As2 is true iff the path uses 2-byte ASNs (parsed as such from the wire,
-	// or contains AS_TRANS when read from JSON); only then AS4_PATH applies (RFC 6793)
+	// As2 is true iff parsed from the wire with 2-byte ASNs: only then AS4_PATH
+	// applies (RFC 6793). NB: never set by FromJSON, as JSON lacks the ASN size.
 	As2 bool
 }
-
-// AS_TRANS is the 2-byte placeholder for 4-byte ASNs (RFC 6793)
-const AS_TRANS = 23456
 
 // AspathSegment represents an AS_PATH segment
 type AspathSegment struct {
@@ -374,7 +371,7 @@ func (a *Aspath) Marshal(dst []byte, cps caps.Caps, _ meta.Meta) []byte {
 		asnlen = 4
 	}
 
-	// total length, NB: segments longer than 255 ASNs (eg. from JSON) are split
+	// total length, NB: segments longer than 255 ASNs are split (FromJSON rejects such AS_SETs)
 	l := 0
 	for _, seg := range a.Segments {
 		n := len(seg.List)
@@ -472,6 +469,9 @@ func (a *Aspath) FromJSON(src []byte) error {
 				return seg_add(set_val)
 			})
 			seg.IsSet = true
+			if len(seg.List) > 255 {
+				set_err = ErrSegLen // NB: can't split a set, it would add hops
+			}
 			seg_push()
 			return set_err
 		default:
@@ -479,7 +479,6 @@ func (a *Aspath) FromJSON(src []byte) error {
 		}
 	})
 	seg_push()
-	a.As2 = a.HasAsn(AS_TRANS, 0)
 	return err
 }
 

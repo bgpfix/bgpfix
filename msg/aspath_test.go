@@ -44,3 +44,20 @@ func TestAsPath_AS4PathMergedOn2ByteSession(t *testing.T) {
 	require.NoError(t, m.Parse(caps.Caps{}))
 	require.Equal(t, "[65001,200000]", m.Update.AsPath().String())
 }
+
+// JSON must not re-enable AS4_PATH on a 4-byte session path that contains AS_TRANS
+func TestAsPath_AS4PathIgnoredAfterJSON(t *testing.T) {
+	m := NewMsg()
+	m.Type = UPDATE
+	m.Data = asPathUpdate(
+		[]byte{2, 3, 0, 0, 0xfd, 0xe9, 0, 0, 0x5b, 0xa0, 0, 0, 0x02, 0x9a}, // [65001 23456 666]
+		[]byte{2, 3, 0, 0, 0xfd, 0xe9, 0, 0, 0x5b, 0xa0, 0, 0, 0x34, 0x17}, // [65001 23456 13335]
+	)
+	var cps caps.Caps
+	cps.Use(caps.CAP_AS4)
+	require.NoError(t, m.Parse(cps))
+
+	m2 := NewMsg()
+	require.NoError(t, m2.FromJSON(m.GetJSON()))
+	require.Equal(t, uint32(666), m2.Update.AsPath().Origin())
+}
