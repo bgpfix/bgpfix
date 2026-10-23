@@ -110,7 +110,7 @@ func (c *ExtNH) FromJSON(src []byte) (err error) {
 	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
 		var asv afi.ASV
 		err := asv.FromJSON(val, func(s string) (uint32, error) {
-			afi2, err := afi.AFIString(s)
+			afi2, err := afi.ParseAFI(s)
 			return uint32(afi2), err
 		})
 		if err != nil {

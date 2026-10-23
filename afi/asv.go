@@ -60,12 +60,12 @@ func (afv *ASV) FromJSON(src []byte, vs func(string) (uint32, error)) error {
 		return json.ErrValue
 	}
 
-	afi, err := AFIString(d[0])
+	afi, err := ParseAFI(d[0])
 	if err != nil {
 		return err
 	}
 
-	safi, err := SAFIString(d[1])
+	safi, err := ParseSAFI(d[1])
 	if err != nil {
 		return err
 	}
