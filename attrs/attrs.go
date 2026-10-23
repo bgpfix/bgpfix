@@ -7,6 +7,7 @@ package attrs
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/bgpfix/bgpfix/binary"
 	"github.com/bgpfix/bgpfix/json"
@@ -14,63 +15,107 @@ import (
 
 var msb = binary.Msb
 
-// Attrs is an ordinary map that represents a set of BGP path attributes.
+// Attrs represents a set of BGP path attributes.
 // It should not contain nil values.
+//
+// The set is a short slice sorted by attribute code, as a typical UPDATE has
+// only a handful of attributes. Instances of reset attributes are kept for re-use.
 //
 // Attrs and its values are not thread-safe.
 type Attrs struct {
-	use  [256]bool // indicates whether attribute code is used
-	attr [256]Attr // map of attribute code to attribute value
-	len  int       // number of attributes used
+	used []entry // attributes in the set, sorted by code
+	free []entry // reset instances for re-use, disjoint by code from used
+}
+
+type entry struct {
+	code Code
+	attr Attr
+}
+
+// find returns the position of ac in es, or the position where it should be inserted
+func find(es []entry, ac Code) (int, bool) {
+	for i := range es {
+		if es[i].code >= ac {
+			return i, es[i].code == ac
+		}
+	}
+	return len(es), false
+}
+
+// dropFree removes ac from ats.free, returning its instance (or nil)
+func (ats *Attrs) dropFree(ac Code) Attr {
+	for i := range ats.free {
+		if ats.free[i].code == ac {
+			at := ats.free[i].attr
+			n := len(ats.free) - 1
+			ats.free[i] = ats.free[n]
+			ats.free[n] = entry{}
+			ats.free = ats.free[:n]
+			return at
+		}
+	}
+	return nil
+}
+
+// insert adds at as ac at position i in ats.used
+func (ats *Attrs) insert(i int, ac Code, at Attr) {
+	ats.used = append(ats.used, entry{})
+	copy(ats.used[i+1:], ats.used[i:])
+	ats.used[i] = entry{ac, at}
+}
+
+// remove resets ats.used[i] and moves it to ats.free
+func (ats *Attrs) remove(i int) {
+	e := ats.used[i]
+	e.attr.Reset()
+	ats.free = append(ats.free, e)
+	n := len(ats.used) - 1
+	copy(ats.used[i:], ats.used[i+1:])
+	ats.used[n] = entry{} // NB: drop the stale reference past len
+	ats.used = ats.used[:n]
 }
 
 // Reset resets Attrs back to initial state.
 func (ats *Attrs) Reset() {
-	for ac, use := range ats.use {
-		if use {
-			ats.attr[ac].Reset()
-		}
+	for _, e := range ats.used {
+		e.attr.Reset()
 	}
-	ats.use = [256]bool{}
-	ats.len = 0
+	ats.free = append(ats.free, ats.used...)
+	clear(ats.used)
+	ats.used = ats.used[:0]
 }
 
 // Len returns the number of attributes
 func (ats *Attrs) Len() int {
-	return ats.len
+	return len(ats.used)
 }
 
 // Get returns ats[ac] or nil if not possible.
 func (ats *Attrs) Get(ac Code) Attr {
-	if ats.use[ac] {
-		return ats.attr[ac]
-	} else {
-		return nil
+	if i, ok := find(ats.used, ac); ok {
+		return ats.used[i].attr
 	}
+	return nil
 }
 
 // Has returns true iff ats[ac] is set and non-nil
 func (ats *Attrs) Has(ac Code) bool {
-	return ats.use[ac]
+	_, ok := find(ats.used, ac)
+	return ok
 }
 
 // Set overwrites ats[ac] with value.
 func (ats *Attrs) Set(ac Code, value Attr) {
-	if !ats.use[ac] {
-		if value != nil {
-			ats.use[ac] = true
-			ats.len++
-			ats.attr[ac] = value
-		} // else: no-op
-	} else { // = already used
-		if value == nil {
-			ats.use[ac] = false
-			ats.len--
-			ats.attr[ac].Reset()
-		} else {
-			ats.attr[ac] = value
-		}
-	}
+	i, ok := find(ats.used, ac)
+	switch {
+	case ok && value == nil:
+		ats.remove(i)
+	case ok:
+		ats.used[i].attr = value
+	case value != nil:
+		ats.dropFree(ac)
+		ats.insert(i, ac, value)
+	} // else: no-op
 }
 
 // Drop drops ats[ac]
@@ -80,15 +125,9 @@ func (ats *Attrs) Drop(ac Code) {
 
 // Filter drops all attributes except those in ac
 func (ats *Attrs) Filter(ac ...Code) {
-	keep := make(map[int]bool, len(ac))
-	for _, c := range ac {
-		keep[int(c)] = true
-	}
-	for ac, use := range ats.use {
-		if use && !keep[ac] {
-			ats.use[ac] = false
-			ats.len--
-			ats.attr[ac].Reset()
+	for i := len(ats.used) - 1; i >= 0; i-- {
+		if !slices.Contains(ac, ats.used[i].code) {
+			ats.remove(i)
 		}
 	}
 }
@@ -96,33 +135,25 @@ func (ats *Attrs) Filter(ac ...Code) {
 // Use returns ats[ac] if its already set and non-nil.
 // Otherwise, it adds a new instance for ac with default flags.
 func (ats *Attrs) Use(ac Code) Attr {
-	if ats.use[ac] {
-		// already used
-		return ats.attr[ac]
-	} else if at := ats.attr[ac]; at != nil {
-		// re-use existing instance
-		ats.len++
-		ats.use[ac] = true
-		return at
-	} else { // = at == nil
-		// create new, store, and return
-		ats.len++
-		at = NewAttr(ac)
-		ats.attr[ac] = at
-		ats.use[ac] = true
-		return at
+	i, ok := find(ats.used, ac)
+	if ok {
+		return ats.used[i].attr // already used
 	}
+
+	// re-use existing instance, or create new
+	at := ats.dropFree(ac)
+	if at == nil {
+		at = NewAttr(ac)
+	}
+	ats.insert(i, ac, at)
+	return at
 }
 
 // Each executes cb for each attribute in ats,
 // in an ascending order of attribute codes.
 func (ats *Attrs) Each(cb func(i int, ac Code, at Attr)) {
-	i := 0
-	for ac, used := range ats.use {
-		if used {
-			cb(i, Code(ac), ats.attr[ac])
-			i++
-		}
+	for i, e := range ats.used {
+		cb(i, e.code, e.attr)
 	}
 }
 
@@ -131,7 +162,7 @@ func (ats *Attrs) MarshalJSON() ([]byte, error) {
 }
 
 func (ats *Attrs) ToJSON(dst []byte) []byte {
-	if ats.len == 0 {
+	if len(ats.used) == 0 {
 		return append(dst, "{}"...)
 	}
 
@@ -161,19 +192,27 @@ func (ats *Attrs) FromJSON(src []byte) error {
 		}
 		attr := ats.Use(acode)
 
-		// has flags?
-		v := json.Get(val, "flags")
-		if v != nil {
+		// {"flags": ..., "value": ...}, or just the value with default flags?
+		// NB: one pass over val; on error, fl stays nil and attr.FromJSON(val) reports it
+		var fl, v []byte
+		if typ == json.OBJECT {
+			json.ObjectEach(val, func(k string, kv []byte, _ json.Type) error {
+				switch k {
+				case "flags":
+					fl = kv
+				case "value":
+					v = kv
+				}
+				return nil
+			})
+		}
+		if fl != nil {
 			var af Flags
-			if err := af.FromJSON(v); err != nil {
+			if err := af.FromJSON(fl); err != nil {
 				return fmt.Errorf("%w: %w", ErrAttrFlags, err)
 			}
 			attr.SetFlags(af)
-
-			// fetch the value
-			v = json.Get(val, "value")
 		} else {
-			// no flags (use defults), try to use the whole val
 			v = val
 		}
 

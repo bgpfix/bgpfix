@@ -22,8 +22,7 @@ type Update struct {
 	AttrsRaw []byte      // raw attributes, referencing Msg.Data
 	Attrs    attrs.Attrs // parsed attributes
 
-	attrsNext attrs.Attrs // scratch set for ParseAttrs, swapped into Attrs on success
-	attrsBuf  []byte      // owned scratch buffer for MarshalAttrs, backs AttrsRaw after Marshal
+	attrsBuf []byte // owned scratch buffer for MarshalAttrs, backs AttrsRaw after Marshal
 
 	cached int            // msg.Version for which the cache is valid
 	cache  map[string]any // cached message attributes
@@ -119,16 +118,24 @@ func (u *Update) Parse(cps caps.Caps) error {
 }
 
 // ParseAttrs parses all attributes from AttrsRaw into Attrs.
+// On error, Attrs is left empty.
 func (u *Update) ParseAttrs(cps caps.Caps) error {
+	err := u.parseAttrs(cps)
+	if err != nil {
+		u.Attrs.Reset()
+	}
+	return err
+}
+
+func (u *Update) parseAttrs(cps caps.Caps) error {
 	var (
 		raw  = u.AttrsRaw    // all attributes
 		atyp attrs.CodeFlags // attribute type
 		alen uint16          // attribute length
 	)
 
-	// parse into the scratch set, reusing objects from 2 parses ago;
-	// committed to u.Attrs only on full success (see below)
-	ats := &u.attrsNext
+	// NB: Reset keeps Attr objects for re-use
+	ats := &u.Attrs
 	ats.Reset()
 
 	for len(raw) > 0 {
@@ -169,8 +176,6 @@ func (u *Update) ParseAttrs(cps caps.Caps) error {
 		}
 	}
 
-	// commit: swap in the new set, old one becomes scratch for next time
-	u.Attrs, u.attrsNext = u.attrsNext, u.Attrs
 	return nil
 }
 
@@ -487,8 +492,10 @@ func (u *Update) AsPath() (aspath *attrs.Aspath) {
 	}
 	aspath = ap // AS_PATH looks good so far
 
-	// need to process the AS4_PATH	attribute?
-	if ap4, ok := u.Attrs.Get(attrs.ATTR_AS4PATH).(*attrs.Aspath); ok {
+	// need to process the AS4_PATH attribute?
+	// NB: only for 2-byte AS_PATH, otherwise AS4_PATH must be ignored (RFC 6793 4.1),
+	// or a peer could spoof the path seen by eg. ROV/ASPA vs. what the router uses
+	if ap4, ok := u.Attrs.Get(attrs.ATTR_AS4PATH).(*attrs.Aspath); ok && ap.As2 {
 		switch apl, ap4l := ap.Len(), ap4.Len(); {
 		case apl < ap4l: // AS4_PATH is invalid
 			aspath = ap

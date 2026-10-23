@@ -31,13 +31,17 @@ func (e *ExtcomFlowRate) Marshal() uint64 {
 }
 
 func (e *ExtcomFlowRate) ToJSON(dst []byte) []byte {
-	if e.Id != 0 {
+	// NB: NaN and Inf are not valid JSON numbers, print them as strings
+	quote := e.Id != 0 || math.IsNaN(float64(e.Rate)) || math.IsInf(float64(e.Rate), 0)
+	if quote {
 		dst = append(dst, '"')
+	}
+	if e.Id != 0 {
 		dst = strconv.AppendUint(dst, uint64(e.Id), 10)
 		dst = append(dst, ':')
 	}
 	dst = strconv.AppendFloat(dst, float64(e.Rate), 'f', -1, 32)
-	if e.Id != 0 {
+	if quote {
 		dst = append(dst, '"')
 	}
 	return dst

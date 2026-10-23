@@ -90,12 +90,12 @@ func (af *AS) FromJSON(src []byte) error {
 		return json.ErrValue
 	}
 
-	afi, err := AFIString(s1)
+	afi, err := ParseAFI(s1)
 	if err != nil {
 		return err
 	}
 
-	safi, err := SAFIString(s2)
+	safi, err := ParseSAFI(s2)
 	if err != nil {
 		return err
 	}

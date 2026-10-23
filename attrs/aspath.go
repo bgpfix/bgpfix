@@ -15,6 +15,10 @@ import (
 type Aspath struct {
 	CodeFlags
 	Segments []AspathSegment
+
+	// As2 is true iff parsed from the wire with 2-byte ASNs: only then AS4_PATH
+	// applies (RFC 6793). NB: never set by FromJSON, as JSON lacks the ASN size.
+	As2 bool
 }
 
 // AspathSegment represents an AS_PATH segment
@@ -32,6 +36,15 @@ func NewAspath(at CodeFlags) Attr {
 
 func (a *Aspath) Reset() {
 	a.Segments = a.Segments[:0]
+	a.As2 = false
+}
+
+// nextList returns an empty ASN list for the next segment, re-using the one left there by Reset
+func (a *Aspath) nextList() []uint32 {
+	if l := len(a.Segments); l < cap(a.Segments) {
+		return a.Segments[:l+1][l].List[:0]
+	}
+	return nil
 }
 
 // Clone creates a deep copy of the Aspath object.
@@ -39,6 +52,7 @@ func (a *Aspath) Clone() *Aspath {
 	a2 := &Aspath{
 		CodeFlags: a.CodeFlags,
 		Segments:  slices.Clone(a.Segments),
+		As2:       a.As2,
 	}
 	for i := range a.Segments {
 		a2.Segments[i].List = slices.Clone(a.Segments[i].List)
@@ -325,7 +339,7 @@ func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, mt meta.Meta) error {
 
 		// read ASNs
 		todo := buf[2:tl]
-		seg.List = make([]uint32, 0, len(todo)/asnlen)
+		seg.List = slices.Grow(a.nextList(), len(todo)/asnlen)
 		for len(todo) >= asnlen {
 			if asnlen == 4 {
 				seg.List = append(seg.List, msb.Uint32(todo))
@@ -343,6 +357,7 @@ func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, mt meta.Meta) error {
 	}
 
 	if len(buf) == 0 {
+		a.As2 = asnlen == 2
 		return nil
 	} else {
 		return ErrLength
@@ -356,10 +371,11 @@ func (a *Aspath) Marshal(dst []byte, cps caps.Caps, _ meta.Meta) []byte {
 		asnlen = 4
 	}
 
-	// total length
+	// total length, NB: segments longer than 255 ASNs are split (FromJSON rejects such AS_SETs)
 	l := 0
 	for _, seg := range a.Segments {
-		l += 1 + 1 + asnlen*len(seg.List)
+		n := len(seg.List)
+		l += 2*((n+254)/255) + asnlen*n
 	}
 
 	// attr flags, code, length
@@ -367,17 +383,22 @@ func (a *Aspath) Marshal(dst []byte, cps caps.Caps, _ meta.Meta) []byte {
 
 	// attr value
 	for _, seg := range a.Segments {
-		if seg.IsSet {
-			dst = append(dst, 1)
-		} else {
-			dst = append(dst, 2)
-		}
-		dst = append(dst, byte(len(seg.List)))
-		for _, hop := range seg.List {
-			if asnlen == 4 {
-				dst = msb.AppendUint32(dst, hop)
+		for list := seg.List; len(list) > 0; {
+			chunk := list[:min(len(list), 255)]
+			list = list[len(chunk):]
+
+			if seg.IsSet {
+				dst = append(dst, 1)
 			} else {
-				dst = msb.AppendUint16(dst, uint16(hop))
+				dst = append(dst, 2)
+			}
+			dst = append(dst, byte(len(chunk)))
+			for _, hop := range chunk {
+				if asnlen == 4 {
+					dst = msb.AppendUint32(dst, hop)
+				} else {
+					dst = msb.AppendUint16(dst, uint16(hop))
+				}
 			}
 		}
 	}
@@ -421,7 +442,7 @@ func (a *Aspath) String() string {
 }
 
 func (a *Aspath) FromJSON(src []byte) error {
-	var seg AspathSegment
+	seg := AspathSegment{List: a.nextList()}
 
 	// seg_add adds asn to seg.List
 	seg_add := func(asn []byte) error {
@@ -437,7 +458,7 @@ func (a *Aspath) FromJSON(src []byte) error {
 		if len(seg.List) > 0 {
 			a.Segments = append(a.Segments, seg)
 		}
-		seg = AspathSegment{} // clear
+		seg = AspathSegment{List: a.nextList()} // clear
 	}
 
 	err := json.ArrayEach(src, func(_ int, val []byte, typ json.Type) error {
@@ -448,6 +469,9 @@ func (a *Aspath) FromJSON(src []byte) error {
 				return seg_add(set_val)
 			})
 			seg.IsSet = true
+			if len(seg.List) > 255 {
+				set_err = ErrSegLen // NB: can't split a set, it would add hops
+			}
 			seg_push()
 			return set_err
 		default:

@@ -132,7 +132,7 @@ func (o *OpenBmp) FromBytes(raw []byte) (int, error) {
 
 	// Validate total length (careful with overflow)
 	totalLen := int(o.HeaderLen) + int(o.DataLen)
-	if totalLen < int(o.HeaderLen) {
+	if totalLen < int(o.HeaderLen) || o.DataLen > MAXLEN {
 		return 0, ErrLength
 	}
 	if totalLen > len(raw) {

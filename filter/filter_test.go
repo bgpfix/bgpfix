@@ -937,3 +937,10 @@ func TestEvalSeq(t *testing.T) {
 	ka.Seq = 5
 	assert.True(t, evalFilter(t, ka, `seq == 5`))
 }
+
+func TestFilter_Dangling(t *testing.T) {
+	for _, s := range []string{"update &&", "update ||", "!", "update && !", "!!", "(update) && ", `com == ""`, "time > \"000000 \xb0,0000000000\""} {
+		_, err := NewFilter(s)
+		require.Error(t, err, s)
+	}
+}

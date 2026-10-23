@@ -187,7 +187,7 @@ func (cf CodeFlags) MarshalLen(dst []byte, length int) []byte {
 // ToJSON() appends ac name as a JSON string to dst
 func (ac Code) ToJSON(dst []byte) []byte {
 	dst = append(dst, '"')
-	if name, ok := CodeName[ac]; ok {
+	if name := codeNames[ac]; name != "" {
 		dst = append(dst, name...)
 	} else {
 		dst = append(dst, `ATTR_`...)

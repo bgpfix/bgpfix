@@ -29,6 +29,9 @@ var (
 	// KEEPALIVE with a bigger message timestamp (seconds) made it to output
 	EVENT_ALIVE = "bgpfix/pipe.ALIVE"
 
+	// NOTIFY made it to output; the event message is its JSON
+	EVENT_NOTIFY = "bgpfix/pipe.NOTIFY"
+
 	// UPDATE with a bigger message timestamp (seconds) made it to output
 	EVENT_UPDATE = "bgpfix/pipe.UPDATE"
 

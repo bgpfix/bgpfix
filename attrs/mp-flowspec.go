@@ -338,7 +338,12 @@ func (fr FlowRule) FromJSON(src []byte, afi afi.AFI) error {
 		// lookup flow type
 		ftype, ok := FlowTypeValue[key]
 		if !ok {
-			return ErrFlowType
+			// NB: unknown types are printed as "FlowType(n)" with raw hex value
+			var n uint8
+			if _, err := fmt.Sscanf(key, "FlowType(%d)", &n); err != nil {
+				return ErrFlowType
+			}
+			ftype = FlowType(n)
 		}
 
 		// create and read json
@@ -439,9 +444,9 @@ func (f *FlowPrefix6) Unmarshal(buf []byte, cps caps.Caps) (int, error) {
 	var tmp [16]byte
 	n += copy(tmp[o/8:], buf[:b]) // the rest of [16]tmp is zeroed
 
-	// offset%8 is 1-7? (NB: bound by b bytes copied, not n which includes the header)
+	// offset%8 is 1-7? (NB: the shift may carry into one more byte than the b copied)
 	if r := o % 8; r != 0 && b > 0 {
-		for i := (o / 8) + b - 1; i > o/8; i-- {
+		for i := (l - 1) / 8; i > o/8; i-- {
 			tmp[i] = tmp[i]>>r | tmp[i-1]<<(8-r)
 		}
 		tmp[o/8] >>= r
@@ -458,17 +463,10 @@ func (f *FlowPrefix6) Unmarshal(buf []byte, cps caps.Caps) (int, error) {
 }
 
 func (f *FlowPrefix6) Marshal(dst []byte, cps caps.Caps) []byte {
-	// cut beyond prefix bits
-	l := f.Prefix.Bits()
-	b := l / 8
-	if l%8 != 0 {
-		b++
-	}
-	addr := f.Prefix.Addr().AsSlice()[:b]
+	l, o := f.Prefix.Bits(), f.Offset
 
-	// cut before offset
-	o := f.Offset
-	addr = addr[o/8:]
+	// cut beyond prefix bits and before offset
+	addr := f.Prefix.Masked().Addr().AsSlice()[o/8 : (l+7)/8]
 
 	// offset%8 is 1-7?
 	if r := o % 8; r != 0 {
@@ -478,8 +476,9 @@ func (f *FlowPrefix6) Marshal(dst []byte, cps caps.Caps) []byte {
 		addr[len(addr)-1] <<= r
 	}
 
+	// NB: the wire has exactly (l-o) bits, which may be less than len(addr) after the shift
 	dst = append(dst, byte(l), byte(o))
-	return append(dst, addr...)
+	return append(dst, addr[:(l-o+7)/8]...)
 }
 
 // ToJSON encodes f as JSON.

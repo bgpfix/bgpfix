@@ -1851,3 +1851,9 @@ func TestOpenBmp_FromBmp_RouterName(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "router1.example.com", om2.RouterName)
 }
+
+func TestBmp_MaxLen(t *testing.T) {
+	var b Bmp
+	_, err := b.FromBytes([]byte{3, 0xff, 0xff, 0xff, 0xff, 0})
+	require.ErrorIs(t, err, ErrLength)
+}

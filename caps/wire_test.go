@@ -200,3 +200,38 @@ func TestRole_UnknownValue_Wire(t *testing.T) {
 	jsonBuf := c.ToJSON(nil)
 	require.Equal(t, `255`, string(jsonBuf))
 }
+
+func TestFQDN_NoDomainLen(t *testing.T) {
+	var cps Caps
+	for _, buf := range [][]byte{
+		{0x02, 'a', 'b'}, // hostname only, domain length missing
+		{0x00},           // too short
+		{0x01, 'a'},
+	} {
+		c := NewFqdn(CAP_FQDN).(*Fqdn)
+		require.ErrorIs(t, c.Unmarshal(buf, cps), ErrLength, "%x", buf)
+	}
+}
+
+func TestExtNH_MarshalChunks(t *testing.T) {
+	c := NewExtNH(CAP_EXTENDED_NEXTHOP).(*ExtNH)
+	const n = 100
+	for i := 0; i < n; i++ {
+		c.Add(afi.NewAS(afi.AFI_IPV4, afi.SAFI(i)), afi.AFI_IPV6)
+	}
+
+	// the TLVs must tile the output exactly, and carry all n tuples
+	var got ExtNH
+	got.Proto = make(map[afi.ASV]bool)
+	var cps Caps
+	buf := c.Marshal(nil)
+	for len(buf) > 0 {
+		require.GreaterOrEqual(t, len(buf), 2)
+		require.Equal(t, byte(CAP_EXTENDED_NEXTHOP), buf[0])
+		l := int(buf[1])
+		require.GreaterOrEqual(t, len(buf), 2+l)
+		require.NoError(t, got.Unmarshal(buf[2:2+l], cps))
+		buf = buf[2+l:]
+	}
+	require.Len(t, got.Proto, n)
+}

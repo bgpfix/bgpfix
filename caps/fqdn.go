@@ -27,6 +27,9 @@ func (c *Fqdn) Unmarshal(buf []byte, caps Caps) error {
 	c.Host, buf = buf[:l], buf[l:]
 
 	// domain name length (1) + domain (variable)
+	if len(buf) < 1 {
+		return ErrLength
+	}
 	l, buf = int(buf[0]), buf[1:]
 	if len(buf) < l {
 		return ErrLength

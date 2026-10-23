@@ -76,8 +76,8 @@ func (c *ExtNH) Marshal(dst []byte) []byte {
 	for len(todo) > 0 {
 		if len(todo) > 42 {
 			dst = append(dst, byte(CAP_EXTENDED_NEXTHOP), 6*42)
-			step = todo[:43] // the first 42 elements
-			todo = todo[43:]
+			step = todo[:42]
+			todo = todo[42:]
 		} else {
 			dst = append(dst, byte(CAP_EXTENDED_NEXTHOP), byte(6*len(todo)))
 			step = todo // all
@@ -110,7 +110,7 @@ func (c *ExtNH) FromJSON(src []byte) (err error) {
 	return json.ArrayEach(src, func(key int, val []byte, typ json.Type) error {
 		var asv afi.ASV
 		err := asv.FromJSON(val, func(s string) (uint32, error) {
-			afi2, err := afi.AFIString(s)
+			afi2, err := afi.ParseAFI(s)
 			return uint32(afi2), err
 		})
 		if err != nil {

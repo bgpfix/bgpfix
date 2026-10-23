@@ -2,6 +2,7 @@ package attrs
 
 import (
 	"bytes"
+	"net/netip"
 	"testing"
 
 	"github.com/bgpfix/bgpfix/afi"
@@ -415,4 +416,55 @@ func TestFlowGeneric_FromJSONLen(t *testing.T) {
 	require.NoError(t, fg3.FromJSON([]byte(`[{"op":"==","val":80,"len":2}]`)))
 	wire3 := fg3.Marshal(nil, cps)
 	require.Equal(t, []byte{0x91, 0x00, 0x50}, wire3) // last|len=2|==, val 80 in 2 bytes
+}
+
+// TestFlowspec_TruncatedPrefix checks that a rule ending right after
+// a prefix type byte returns an error instead of panicking
+func TestFlowspec_TruncatedPrefix(t *testing.T) {
+	for _, af := range []byte{1, 2} {
+		mp := NewMP(CodeFlags(ATTR_MP_REACH)).(*MP)
+		buf := []byte{0, af, 133, 0, 0, 1, 1} // nh len=0, reserved, rule len=1, type=DST_PREFIX
+		require.Error(t, mp.Unmarshal(buf, caps.Caps{}, meta.Meta{}))
+	}
+}
+
+// TestFlowRule_UnknownType checks that an unknown component type survives a JSON round trip.
+func TestFlowRule_UnknownType(t *testing.T) {
+	fr := FlowRule{FlowType(48): &FlowRaw{Raw: []byte{1, 2, 3}}}
+	js := fr.ToJSON(nil)
+	require.Contains(t, string(js), "FlowType(48)")
+
+	got := make(FlowRule)
+	require.NoError(t, got.FromJSON(js, afi.AFI_IPV4))
+	require.Equal(t, []byte{1, 2, 3}, got[FlowType(48)].(*FlowRaw).Raw)
+
+	require.ErrorIs(t, make(FlowRule).FromJSON([]byte(`{"FlowType(256)":""}`), afi.AFI_IPV4), ErrFlowType)
+	require.ErrorIs(t, make(FlowRule).FromJSON([]byte(`{"bogus":""}`), afi.AFI_IPV4), ErrFlowType)
+}
+
+// TestFlowPrefix6_OffsetRoundtrip checks Marshal against Unmarshal for all length/offset pairs.
+func TestFlowPrefix6_OffsetRoundtrip(t *testing.T) {
+	var cps caps.Caps
+	raw := [16]byte{0xc0, 0x0c, 0xff, 0x35, 0xa5, 0x5a, 0xff, 0x01, 0x80, 0x7f, 0xaa, 0x55, 0xff, 0xff, 0x13, 0xf1}
+	for l := 1; l <= 128; l++ {
+		for o := 0; o < l; o++ {
+			// the offset bits are not on the wire, so Unmarshal zeroes them
+			wb := raw
+			for i := 0; i < o; i++ {
+				wb[i/8] &^= 0x80 >> (i % 8)
+			}
+			want, _ := netip.AddrFrom16(wb).Prefix(l)
+
+			f := &FlowPrefix6{Prefix: netip.PrefixFrom(netip.AddrFrom16(raw), l), Offset: o}
+			wire := f.Marshal(nil, cps)
+			require.Len(t, wire, 2+(l-o+7)/8, "l=%d o=%d", l, o)
+
+			var g FlowPrefix6
+			n, err := g.Unmarshal(wire, cps)
+			require.NoError(t, err, "l=%d o=%d", l, o)
+			require.Equal(t, len(wire), n, "l=%d o=%d", l, o)
+			require.Equal(t, want, g.Prefix, "l=%d o=%d", l, o)
+			require.Equal(t, o, g.Offset)
+		}
+	}
 }

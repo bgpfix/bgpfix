@@ -8,6 +8,8 @@ import (
 	"net/netip"
 	"strconv"
 	"strings"
+
+	"github.com/rs/zerolog"
 )
 
 // Parse parses RPKI data in JSON or CSV format (auto-detected) into the
@@ -17,11 +19,26 @@ func (c *Cache) Parse(data []byte) error {
 	data = bytes.TrimSpace(data)
 	if len(data) == 0 {
 		return fmt.Errorf("empty RPKI data")
-	} else if data[0] == '{' {
-		return c.ParseJSON(data)
-	} else {
-		return c.ParseCSV(data)
 	}
+
+	var err error
+	if data[0] == '{' {
+		err = c.ParseJSON(data)
+	} else {
+		err = c.ParseCSV(data)
+	}
+	if err != nil {
+		return err
+	}
+
+	// NB: fail closed - never publish an empty set from eg. an error page or a wrong file
+	c.mu.Lock()
+	n := len(c.next4) + len(c.next6) + len(c.nextAspa)
+	c.mu.Unlock()
+	if n == 0 {
+		return fmt.Errorf("no valid VRP or ASPA records found")
+	}
+	return nil
 }
 
 // parseASN parses an ASN, accepting an optional "AS" prefix.
@@ -57,15 +74,19 @@ func (c *Cache) ParseJSON(data []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	// NB: log only the first skipped entry, then a summary
+	warn, done := c.skipWarn()
+	defer done()
+
 	for _, roa := range doc.ROAs {
 		prefix, err := netip.ParsePrefix(roa.Prefix)
 		if err != nil {
-			c.Warn().Str("prefix", roa.Prefix).Msg("invalid prefix, skipping")
+			warn().Str("prefix", roa.Prefix).Msg("invalid prefix, skipping")
 			continue
 		}
 
 		if roa.MaxLength < 0 || roa.MaxLength > 128 {
-			c.Warn().Str("prefix", roa.Prefix).Int("maxLength", roa.MaxLength).Msg("maxLength out of range, skipping")
+			warn().Str("prefix", roa.Prefix).Int("maxLength", roa.MaxLength).Msg("maxLength out of range, skipping")
 			continue
 		}
 
@@ -74,17 +95,17 @@ func (c *Cache) ParseJSON(data []byte) error {
 		case string:
 			asn, err = parseASN(v)
 			if err != nil {
-				c.Warn().Str("asn", v).Msg("invalid ASN, skipping")
+				warn().Str("asn", v).Msg("invalid ASN, skipping")
 				continue
 			}
 		case float64:
 			if v < 0 || v > math.MaxUint32 || v != math.Trunc(v) {
-				c.Warn().Float64("asn", v).Msg("ASN out of range, skipping")
+				warn().Float64("asn", v).Msg("ASN out of range, skipping")
 				continue
 			}
 			asn = uint32(v)
 		default:
-			c.Warn().Str("asn", fmt.Sprint(roa.ASN)).Msg("invalid ASN type, skipping")
+			warn().Str("asn", fmt.Sprint(roa.ASN)).Msg("invalid ASN type, skipping")
 			continue
 		}
 
@@ -114,6 +135,10 @@ func (c *Cache) ParseCSV(data []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	// NB: log only the first skipped entry, then a summary
+	warn, done := c.skipWarn()
+	defer done()
+
 	for i, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" || line[0] == '#' {
@@ -126,7 +151,7 @@ func (c *Cache) ParseCSV(data []byte) error {
 
 		parts := strings.Split(line, ",")
 		if len(parts) < 3 {
-			c.Warn().Int("line", i+1).Msg("invalid CSV line, skipping")
+			warn().Int("line", i+1).Msg("invalid CSV line, skipping")
 			continue
 		}
 
@@ -139,23 +164,23 @@ func (c *Cache) ParseCSV(data []byte) error {
 
 		prefix, err := netip.ParsePrefix(strings.TrimSpace(p0))
 		if err != nil {
-			c.Warn().Int("line", i+1).Err(err).Str("prefix", p0).Msg("invalid prefix, skipping")
+			warn().Int("line", i+1).Err(err).Str("prefix", p0).Msg("invalid prefix, skipping")
 			continue
 		}
 
 		maxLen, err := strconv.Atoi(strings.TrimSpace(p1))
 		if err != nil {
-			c.Warn().Int("line", i+1).Err(err).Msg("invalid maxLength, skipping")
+			warn().Int("line", i+1).Err(err).Msg("invalid maxLength, skipping")
 			continue
 		}
 		if maxLen < 0 || maxLen > 128 {
-			c.Warn().Int("line", i+1).Int("maxLength", maxLen).Msg("maxLength out of range, skipping")
+			warn().Int("line", i+1).Int("maxLength", maxLen).Msg("maxLength out of range, skipping")
 			continue
 		}
 
 		asn, err := parseASN(p2)
 		if err != nil {
-			c.Warn().Err(err).Int("line", i+1).Msg("invalid ASN, skipping")
+			warn().Err(err).Int("line", i+1).Msg("invalid ASN, skipping")
 			continue
 		}
 
@@ -163,4 +188,22 @@ func (c *Cache) ParseCSV(data []byte) error {
 	}
 
 	return nil
+}
+
+// skipWarn returns a warn func that logs only the first time it is called,
+// and a done func that logs the total, if more than one
+func (c *Cache) skipWarn() (warn func() *zerolog.Event, done func()) {
+	n := 0
+	warn = func() *zerolog.Event {
+		if n++; n > 1 {
+			return nil // NB: zerolog ignores nil events
+		}
+		return c.Warn()
+	}
+	done = func() {
+		if n > 1 {
+			c.Warn().Int("skipped", n).Msg("skipped invalid RPKI entries")
+		}
+	}
+	return
 }

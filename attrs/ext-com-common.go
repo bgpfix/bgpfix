@@ -1,7 +1,6 @@
 package attrs
 
 import (
-	"bytes"
 	"net/netip"
 	"strconv"
 
@@ -84,18 +83,18 @@ func (e *ExtcomASN) ToJSON(dst []byte) []byte {
 }
 
 func (e *ExtcomASN) FromJSON(src []byte) error {
-	d := bytes.Split(json.Q(src), []byte(":"))
-	if len(d) != 2 {
+	d0, d1, ok := cut2(json.Q(src))
+	if !ok {
 		return ErrValue
 	}
 
-	v, err := strconv.ParseUint(json.S(d[0]), 10, 32)
+	v, err := strconv.ParseUint(json.S(d0), 10, 32)
 	if err != nil {
 		return err
 	}
 	e.ASN = uint32(v)
 
-	v, err = strconv.ParseUint(json.S(d[1]), 10, 32)
+	v, err = strconv.ParseUint(json.S(d1), 10, 32)
 	if err != nil {
 		return err
 	}
@@ -143,18 +142,18 @@ func (e *ExtcomAddr) ToJSON(dst []byte) []byte {
 }
 
 func (e *ExtcomAddr) FromJSON(src []byte) error {
-	d := bytes.Split(json.Q(src), []byte(":"))
-	if len(d) != 2 {
+	d0, d1, ok := cut2(json.Q(src))
+	if !ok {
 		return ErrValue
 	}
 
-	a, err := netip.ParseAddr(json.S(d[0]))
+	a, err := netip.ParseAddr(json.S(d0))
 	if err != nil {
 		return err
 	}
 	e.Addr = a
 
-	v, err := strconv.ParseUint(json.S(d[1]), 10, 16)
+	v, err := strconv.ParseUint(json.S(d1), 10, 16)
 	if err != nil {
 		return err
 	}

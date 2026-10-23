@@ -125,3 +125,17 @@ func TestUpdate_Empty_JSON(t *testing.T) {
 	buf := msg.Update.ToJSON(nil)
 	require.Equal(t, "{}", string(buf))
 }
+
+func TestAppendTime(t *testing.T) {
+	for _, tm := range []time.Time{
+		{},
+		time.Date(2025, 7, 11, 8, 47, 22, 659000000, time.UTC),
+		time.Date(1999, 12, 31, 23, 59, 59, 999999999, time.UTC),
+		time.Date(2026, 1, 2, 3, 4, 5, 6000000, time.FixedZone("x", 3600)),
+		time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC),
+		time.Date(-1, 1, 1, 0, 0, 0, 0, time.UTC),
+		time.Unix(1700000000, 123456789),
+	} {
+		require.Equal(t, tm.Format(JSON_TIME), string(appendTime(nil, tm)), tm.String())
+	}
+}

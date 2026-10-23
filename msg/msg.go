@@ -5,6 +5,7 @@ package msg
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"strconv"
 	"time"
@@ -263,14 +264,21 @@ func (msg *Msg) FromBytes(buf []byte) (off int, err error) {
 // Parse parses msg.Data into the upper layer iff needed.
 // Capabilities in caps can infuence the upper layer decoders.
 // Can reference data in msg.Data, so call CopyData() first if needed.
-func (msg *Msg) Parse(cps caps.Caps) error {
+func (msg *Msg) Parse(cps caps.Caps) (err error) {
 	if msg.Upper != INVALID {
 		return nil // assume already done
 	} else if msg.Data == nil {
 		return ErrNoData
 	}
 
-	var err error
+	// NB: input is untrusted, a parser bug must not crash the process
+	defer func() {
+		if r := recover(); r != nil {
+			msg.Upper = INVALID
+			err = fmt.Errorf("%w: panic: %v", ErrValue, r)
+		}
+	}()
+
 	switch msg.Type {
 	case OPEN:
 		o := &msg.Open
@@ -353,50 +361,32 @@ func (msg *Msg) Marshal(cps caps.Caps) error {
 
 // WriteTo writes raw BGP msg.Data to w, implementing io.WriterTo.
 // Call msg.Marshal() first if needed.
-func (msg *Msg) WriteTo(w io.Writer) (n int64, err error) {
-	var m int
-
-	// has data?
+func (msg *Msg) WriteTo(w io.Writer) (int64, error) {
 	if msg.Data == nil {
 		return 0, ErrNoData
 	}
-
-	// data length ok?
 	l := msg.Len()
 	if l < HEADLEN || l > MAXLEN_EXT {
 		return 0, ErrLength
 	}
 
-	// write the marker
-	m, err = w.Write(BgpMarker)
-	if err != nil {
-		return
+	// write the header: marker, length, type
+	// NB: build it in w's spare buffer if possible (eg. *bytes.Buffer), avoiding an allocation
+	var hdr []byte
+	if ab, ok := w.(interface{ AvailableBuffer() []byte }); ok {
+		hdr = ab.AvailableBuffer()
 	}
-	n += int64(m)
-
-	// write length
-	m, err = msb.WriteUint16(w, uint16(l))
+	hdr = append(hdr, BgpMarker...)
+	hdr = msb.AppendUint16(hdr, uint16(l))
+	hdr = append(hdr, byte(msg.Type))
+	n, err := w.Write(hdr)
 	if err != nil {
-		return
+		return int64(n), err
 	}
-	n += int64(m)
 
-	// write type
-	m, err = msb.WriteUint8(w, uint8(msg.Type))
-	if err != nil {
-		return
-	}
-	n += int64(m)
-
-	// write data
-	m, err = w.Write(msg.Data)
-	if err != nil {
-		return
-	}
-	n += int64(m)
-
-	// done
-	return
+	// write the data
+	m, err := w.Write(msg.Data)
+	return int64(n + m), err
 }
 
 // String dumps msg to JSON string, without the trailing newline
@@ -425,7 +415,7 @@ func (msg *Msg) GetJSON() []byte {
 	dst = append(dst, `,"`...)
 
 	// [2] time
-	dst = msg.Time.AppendFormat(dst, JSON_TIME)
+	dst = appendTime(dst, msg.Time)
 
 	// [3] type
 	dst = append(dst, `","`...)
@@ -442,13 +432,7 @@ func (msg *Msg) GetJSON() []byte {
 	case KEEPALIVE:
 		dst = append(dst, json.Null...)
 	case NOTIFY:
-		dst = append(dst, '"')
-		if len(msg.Data) >= 2 {
-			dst = json.Ascii(dst, msg.Data[2:])
-		} else {
-			dst = json.Ascii(dst, msg.Data)
-		}
-		dst = append(dst, '"')
+		dst = msg.notifyToJSON(dst)
 	default:
 		dst = json.Hex(dst, msg.Data)
 	}
@@ -466,6 +450,13 @@ func (msg *Msg) GetJSON() []byte {
 	msg.json = append(dst, "]\n"...)
 	msg.jupper = msg.json[up_from:up_till] // cache upper layer JSON for quick access
 	return msg.json
+}
+
+// DropJSON drops the cached JSON and bumps msg.Version (eg. after changing
+// tags in msg.Value), without touching the wire representation (unlike Edit)
+func (msg *Msg) DropJSON() {
+	msg.json = msg.json[:0]
+	msg.Version++
 }
 
 // UpperJSON returns the upper layer as JSON (element [4] of the message JSON array).
@@ -537,6 +528,8 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 					err = msg.Open.FromJSON(val)
 				case UPDATE:
 					err = msg.Update.FromJSON(val)
+				case NOTIFY:
+					err = msg.notifyFromJSON(val)
 				default:
 					err = ErrTODO // TODO
 				}
@@ -553,4 +546,31 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 		}
 		return err
 	})
+}
+
+// appendTime appends t to dst in JSON_TIME format, faster than t.AppendFormat
+func appendTime(dst []byte, t time.Time) []byte {
+	year, month, day := t.Date()
+	if year < 0 || year > 9999 {
+		return t.AppendFormat(dst, JSON_TIME) // NB: rare, let time handle it
+	}
+	hour, min, sec := t.Clock()
+	ms := t.Nanosecond() / 1e6
+
+	d2 := func(v int) { dst = append(dst, byte('0'+v/10), byte('0'+v%10)) }
+	d2(year / 100)
+	d2(year % 100)
+	dst = append(dst, '-')
+	d2(int(month))
+	dst = append(dst, '-')
+	d2(day)
+	dst = append(dst, 'T')
+	d2(hour)
+	dst = append(dst, ':')
+	d2(min)
+	dst = append(dst, ':')
+	d2(sec)
+	dst = append(dst, '.', byte('0'+ms/100))
+	d2(ms % 100)
+	return dst
 }
