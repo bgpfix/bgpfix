@@ -2,6 +2,7 @@ package attrs
 
 import (
 	"bytes"
+	"net/netip"
 	"testing"
 
 	"github.com/bgpfix/bgpfix/afi"
@@ -439,4 +440,31 @@ func TestFlowRule_UnknownType(t *testing.T) {
 
 	require.ErrorIs(t, make(FlowRule).FromJSON([]byte(`{"FlowType(256)":""}`), afi.AFI_IPV4), ErrFlowType)
 	require.ErrorIs(t, make(FlowRule).FromJSON([]byte(`{"bogus":""}`), afi.AFI_IPV4), ErrFlowType)
+}
+
+// TestFlowPrefix6_OffsetRoundtrip checks Marshal against Unmarshal for all length/offset pairs.
+func TestFlowPrefix6_OffsetRoundtrip(t *testing.T) {
+	var cps caps.Caps
+	raw := [16]byte{0xc0, 0x0c, 0xff, 0x35, 0xa5, 0x5a, 0xff, 0x01, 0x80, 0x7f, 0xaa, 0x55, 0xff, 0xff, 0x13, 0xf1}
+	for l := 1; l <= 128; l++ {
+		for o := 0; o < l; o++ {
+			// the offset bits are not on the wire, so Unmarshal zeroes them
+			wb := raw
+			for i := 0; i < o; i++ {
+				wb[i/8] &^= 0x80 >> (i % 8)
+			}
+			want, _ := netip.AddrFrom16(wb).Prefix(l)
+
+			f := &FlowPrefix6{Prefix: netip.PrefixFrom(netip.AddrFrom16(raw), l), Offset: o}
+			wire := f.Marshal(nil, cps)
+			require.Len(t, wire, 2+(l-o+7)/8, "l=%d o=%d", l, o)
+
+			var g FlowPrefix6
+			n, err := g.Unmarshal(wire, cps)
+			require.NoError(t, err, "l=%d o=%d", l, o)
+			require.Equal(t, len(wire), n, "l=%d o=%d", l, o)
+			require.Equal(t, want, g.Prefix, "l=%d o=%d", l, o)
+			require.Equal(t, o, g.Offset)
+		}
+	}
 }
