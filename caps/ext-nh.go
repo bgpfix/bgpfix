@@ -76,8 +76,8 @@ func (c *ExtNH) Marshal(dst []byte) []byte {
 	for len(todo) > 0 {
 		if len(todo) > 42 {
 			dst = append(dst, byte(CAP_EXTENDED_NEXTHOP), 6*42)
-			step = todo[:43] // the first 42 elements
-			todo = todo[43:]
+			step = todo[:42]
+			todo = todo[42:]
 		} else {
 			dst = append(dst, byte(CAP_EXTENDED_NEXTHOP), byte(6*len(todo)))
 			step = todo // all
