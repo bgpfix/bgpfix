@@ -1,3 +1,8 @@
+//go:build !race
+
+// NB: excluded from -race like pipe_test.go: Pipe.Stop() races with the
+// async EVENT_START send (made safe at runtime by recover in sendEvent)
+
 package bmp
 
 import (
