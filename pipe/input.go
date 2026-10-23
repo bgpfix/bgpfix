@@ -289,7 +289,16 @@ input:
 		case msg.KEEPALIVE:
 			oldt := l.LastAlive.Load()
 			if t > oldt && l.LastAlive.CompareAndSwap(oldt, t) {
-				p.Event(EVENT_ALIVE, m.Dir, t)
+				ev := p.Event(EVENT_ALIVE, m.Dir, t)
+
+				// NB: session just got established? wait (up to 1s) for checkEstablished()
+				// to update p.Caps, so the UPDATEs that follow are parsed right (eg. ADD-PATH)
+				if oldt == 0 && p.R.LastAlive.Load() != 0 && p.L.LastAlive.Load() != 0 {
+					select {
+					case <-ev.done:
+					case <-time.After(time.Second):
+					}
+				}
 			}
 
 		case msg.NOTIFY:
