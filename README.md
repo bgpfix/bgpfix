@@ -20,13 +20,24 @@ BGPFix can "fix" or "extend" BGP sessions *in-flight*, possibly adding new featu
 
 # Idea
 
-The overall idea is presented below. You don't need to use the whole library, eg. you may stick to the basic [BGP message marshal / unmarshal procedures](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/msg).
+The overall idea is presented below. You don't need to use the whole library, eg. you may stick to the basic [BGP message marshal / unmarshal procedures](https://pkg.go.dev/github.com/bgpfix/bgpfix/msg).
 
 ![bgpfix idea](bgpfix.png)
 
-The above explains the concept of a [Pipe](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Pipe): it has two directions used to exchange BGP messages between 2 speakers on the left (L) and right (R) hand side of the picture.
+The above explains the concept of a [Pipe](https://pkg.go.dev/github.com/bgpfix/bgpfix/pipe#Pipe): it has two directions used to exchange BGP messages between 2 speakers on the left (L) and right (R) hand side of the picture.
 
-Each [Msg](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/msg#Msg) sent to the In channel of a particular direction will go through a set of *callbacks* (think "plugins") configured in the [pipe Options](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Options). Each callback can read, write, modify, synthesize, or drop messages before they reach the Out channel. In addition to BGP messages, callbacks may emit [Events](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Event) - such as [the standard events of the Pipe](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#pkg-variables) - which [event handlers may subscribe to](https://pkg.go.dev/github.com/bgpfix/bgpfix@master/pipe#Options.OnEvent) in the pipe Options.
+Each [Msg](https://pkg.go.dev/github.com/bgpfix/bgpfix/msg#Msg) sent to the In channel of a particular direction will go through a set of *callbacks* (think "plugins") configured in the [pipe Options](https://pkg.go.dev/github.com/bgpfix/bgpfix/pipe#Options). Each callback can read, write, modify, synthesize, or drop messages before they reach the Out channel. In addition to BGP messages, callbacks may emit [Events](https://pkg.go.dev/github.com/bgpfix/bgpfix/pipe#Event) - such as [the standard events of the Pipe](https://pkg.go.dev/github.com/bgpfix/bgpfix/pipe#pkg-variables) - which [event handlers may subscribe to](https://pkg.go.dev/github.com/bgpfix/bgpfix/pipe#Options.OnEvent) in the pipe Options.
+
+# Packages
+
+ * [msg](https://pkg.go.dev/github.com/bgpfix/bgpfix/msg), [attrs](https://pkg.go.dev/github.com/bgpfix/bgpfix/attrs), [caps](https://pkg.go.dev/github.com/bgpfix/bgpfix/caps), [nlri](https://pkg.go.dev/github.com/bgpfix/bgpfix/nlri): BGP messages, path attributes, capabilities, and prefixes - wire and JSON
+ * [pipe](https://pkg.go.dev/github.com/bgpfix/bgpfix/pipe): the bidirectional message pipeline, with callbacks and events
+ * [speaker](https://pkg.go.dev/github.com/bgpfix/bgpfix/speaker): a basic BGP speaker (OPEN, KEEPALIVE, hold timers)
+ * [filter](https://pkg.go.dev/github.com/bgpfix/bgpfix/filter): a filter language for BGP messages, eg. `prefix ~ 8.0.0.0/8 && aspath_len > 5`
+ * [mrt](https://pkg.go.dev/github.com/bgpfix/bgpfix/mrt), [bmp](https://pkg.go.dev/github.com/bgpfix/bgpfix/bmp), [exa](https://pkg.go.dev/github.com/bgpfix/bgpfix/exa): MRT (incl. RIB dumps), BMP / OpenBMP, and ExaBGP formats
+ * [rpki](https://pkg.go.dev/github.com/bgpfix/bgpfix/rpki), [rtr](https://pkg.go.dev/github.com/bgpfix/bgpfix/rtr): RPKI cache with ROV and ASPA validation, fed by an RTR v0/v1/v2 client or JSON/CSV files
+
+All parsers handle untrusted input: they are fuzzed (`go test ./msg -run XXX -fuzz FuzzMsgWire`), and a parser panic becomes an error instead of a crash.
 
 # Example
 
@@ -44,7 +55,7 @@ import (
 	"net/netip"
 	"os"
 
-	"github.com/bgpfix/bgpfix/dir"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
 	"github.com/bgpfix/bgpfix/speaker"
@@ -67,8 +78,8 @@ func main() {
 
 	// create a Pipe, add callback and event handlers
 	p := pipe.NewPipe(context.Background())
-	p.OnMsg(print, dir.DIR_LR) // call print() on every message in any direction
-	p.OnEvent(event)           // call event() on any pipe event
+	p.OnMsg(print, meta.DIR_LR) // call print() on every message in any direction
+	p.OnEvent(event)            // call event() on any pipe event
 
 	// L side: a TCP target, sending to R
 	conn, err := net.Dial("tcp", flag.Arg(0)) // assumes a ":179" suffix
@@ -82,7 +93,7 @@ func main() {
 	spk.Options.LocalASN = *opt_asn
 	spk.Options.LocalHoldTime = *opt_hold
 	spk.Options.LocalId = netip.MustParseAddr(*opt_id)
-	spk.Attach(p, dir.DIR_L)
+	spk.Attach(p, meta.DIR_L)
 
 	// copy from conn -> R
 	go func() {
@@ -321,10 +332,12 @@ RFCs:
  * [RFC5492 Capabilities Advertisement with BGP-4](https://datatracker.ietf.org/doc/html/rfc5492)
  * [RFC5668 4-Octet AS Specific BGP Extended Community](https://datatracker.ietf.org/doc/html/rfc5668)
  * [RFC6793 BGP Support for Four-Octet Autonomous System (AS) Number Space](https://datatracker.ietf.org/doc/html/rfc6793)
+ * [RFC6811 BGP Prefix Origin Validation](https://datatracker.ietf.org/doc/html/rfc6811)
  * [RFC6396 Multi-Threaded Routing Toolkit (MRT) Routing Information Export Format](https://datatracker.ietf.org/doc/html/rfc6396)
  * [RFC7854 BGP Monitoring Protocol (BMP)](https://datatracker.ietf.org/doc/html/rfc7854)
  * [RFC7911 Advertisement of Multiple Paths in BGP](https://datatracker.ietf.org/doc/html/rfc7911)
  * [RFC8092 BGP Large Communities Attribute](https://datatracker.ietf.org/doc/html/rfc8092)
+ * [RFC8210 The Resource Public Key Infrastructure (RPKI) to Router Protocol, Version 1](https://datatracker.ietf.org/doc/html/rfc8210)
  * [RFC8654 Extended Message Support for BGP](https://datatracker.ietf.org/doc/html/rfc8654)
  * [RFC8950 Advertising IPv4 Network Layer Reachability Information (NLRI) with an IPv6 Next Hop](https://datatracker.ietf.org/doc/html/rfc8950)
  * [RFC8955 Dissemination of Flow Specification Rules](https://datatracker.ietf.org/doc/html/rfc8955)
@@ -333,6 +346,8 @@ RFCs:
  * [RFC9234 Route Leak Prevention and Detection Using Roles in UPDATE and OPEN Messages](https://datatracker.ietf.org/doc/html/rfc9234)
 
 Drafts:
+ * [draft-ietf-sidrops-aspa-verification-29: BGP AS_PATH Verification Based on ASPA Objects](https://datatracker.ietf.org/doc/draft-ietf-sidrops-aspa-verification/) - tested against the draft's published examples
+ * [draft-ietf-sidrops-8210bis-27: The RPKI to Router Protocol, Version 2 (ASPA PDUs)](https://datatracker.ietf.org/doc/draft-ietf-sidrops-8210bis/)
  * [draft-simpson-idr-flowspec-redirect: BGP Flow-Spec Extended Community for Traffic Redirect to IP Next Hop](https://datatracker.ietf.org/doc/html/draft-simpson-idr-flowspec-redirect-02)
  * [draft-walton-bgp-hostname-capability-02: Hostname Capability for BGP](https://datatracker.ietf.org/doc/html/draft-walton-bgp-hostname-capability-02)
 
