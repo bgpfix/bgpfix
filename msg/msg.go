@@ -452,6 +452,12 @@ func (msg *Msg) GetJSON() []byte {
 	return msg.json
 }
 
+// DropJSON drops the cached JSON, eg. after changing tags in msg.Value,
+// without touching the wire representation (unlike Edit)
+func (msg *Msg) DropJSON() {
+	msg.json = msg.json[:0]
+}
+
 // UpperJSON returns the upper layer as JSON (element [4] of the message JSON array).
 func (msg *Msg) UpperJSON() []byte {
 	if len(msg.json) == 0 {
