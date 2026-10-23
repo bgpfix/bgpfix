@@ -218,8 +218,11 @@ func (p *Pipe) Stop() {
 	// make sure Start() has finished
 	p.wgstart.Wait()
 
-	// publish the event (ignore the global context)
-	go p.sendEvent(&Event{Type: EVENT_STOP}, nil, false)
+	// publish the event (ignore the global context); NB: try sync first,
+	// as the async send may lose the race with close(p.evch) below
+	if ev := (&Event{Type: EVENT_STOP}); !p.sendEvent(ev, nil, true) {
+		go p.sendEvent(ev, nil, false)
+	}
 
 	// close all inputs (if not done already)
 	p.L.Close()
