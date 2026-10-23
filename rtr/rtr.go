@@ -445,6 +445,13 @@ func (c *Client) dispatchASPA(h pduHeader, payload []byte) error {
 	add := flags&FlagAnnounce != 0
 	cas := msb.Uint32(payload[0:4])
 
+	// NB: an announcement must list providers (8210bis-27 5.12); an empty list
+	// would act as an AS0 ASPA and invalidate all paths via cas
+	if add && len(payload) == 4 {
+		c.Warn().Uint32("cas", cas).Msg("RTR ASPA announcement without providers, ignoring")
+		return nil
+	}
+
 	var providers []uint32
 	if add {
 		// provider ASNs follow the customer ASN, 4 bytes each
