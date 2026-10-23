@@ -241,3 +241,9 @@ func TestBGP4_AddPath(t *testing.T) {
 	require.Equal(t, int8(0), m2.ParseAS4)
 	require.Equal(t, int8(0), m2.ParseAddPath)
 }
+
+func TestMrt_MaxLen(t *testing.T) {
+	var m Mrt
+	_, err := m.FromBytes([]byte{0, 0, 0, 0, 0, 16, 0, 4, 0xff, 0xff, 0xff, 0xff})
+	require.ErrorIs(t, err, ErrLength)
+}

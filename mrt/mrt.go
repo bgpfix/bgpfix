@@ -3,7 +3,6 @@ package mrt
 
 import (
 	"io"
-	"math"
 	"time"
 
 	"github.com/bgpfix/bgpfix/binary"
@@ -109,8 +108,8 @@ const (
 	// MRT header length
 	HEADLEN = 12 // = timestamp(4) + type(2) + subtype (2) + length (4)
 
-	// MRT maximum data length
-	MAXLEN = math.MaxUint32
+	// MRT maximum data length; NB: bounds the reader buffer for untrusted input
+	MAXLEN = 16 << 20
 )
 
 var (
@@ -211,7 +210,9 @@ func (mrt *Mrt) FromBytes(raw []byte) (off int, err error) {
 	data = raw[off:]
 
 	// enough bytes for data?
-	if l < 0 || len(data) < l {
+	if l < 0 || l > MAXLEN {
+		return off, ErrLength
+	} else if len(data) < l {
 		return off, io.ErrUnexpectedEOF
 	}
 

@@ -17,6 +17,10 @@ var msb = binary.Msb
 // BMP common header length (RFC 7854 section 4.1)
 const HEADLEN = 6 // version(1) + length(4) + type(1)
 
+// MAXLEN bounds the BMP message length, so readers never buffer more
+// (real messages are < 200KiB: Peer Up carries 2 OPENs)
+const MAXLEN = 1 << 20
+
 // BMP protocol version
 const VERSION = 3
 
@@ -109,7 +113,7 @@ func (b *Bmp) FromBytes(raw []byte) (int, error) {
 	// Validate length
 	off := HEADLEN
 	ml := int(b.Length)
-	if ml < off {
+	if ml < off || ml > MAXLEN {
 		return 0, ErrLength
 	} else if len(raw) < ml {
 		return 0, ErrShort
