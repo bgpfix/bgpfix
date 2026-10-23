@@ -426,3 +426,17 @@ func TestFlowspec_TruncatedPrefix(t *testing.T) {
 		require.Error(t, mp.Unmarshal(buf, caps.Caps{}, meta.Meta{}))
 	}
 }
+
+// TestFlowRule_UnknownType checks that an unknown component type survives a JSON round trip.
+func TestFlowRule_UnknownType(t *testing.T) {
+	fr := FlowRule{FlowType(48): &FlowRaw{Raw: []byte{1, 2, 3}}}
+	js := fr.ToJSON(nil)
+	require.Contains(t, string(js), "FlowType(48)")
+
+	got := make(FlowRule)
+	require.NoError(t, got.FromJSON(js, afi.AFI_IPV4))
+	require.Equal(t, []byte{1, 2, 3}, got[FlowType(48)].(*FlowRaw).Raw)
+
+	require.ErrorIs(t, make(FlowRule).FromJSON([]byte(`{"FlowType(256)":""}`), afi.AFI_IPV4), ErrFlowType)
+	require.ErrorIs(t, make(FlowRule).FromJSON([]byte(`{"bogus":""}`), afi.AFI_IPV4), ErrFlowType)
+}

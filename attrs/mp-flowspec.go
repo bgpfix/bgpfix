@@ -338,7 +338,12 @@ func (fr FlowRule) FromJSON(src []byte, afi afi.AFI) error {
 		// lookup flow type
 		ftype, ok := FlowTypeValue[key]
 		if !ok {
-			return ErrFlowType
+			// NB: unknown types are printed as "FlowType(n)" with raw hex value
+			var n uint8
+			if _, err := fmt.Sscanf(key, "FlowType(%d)", &n); err != nil {
+				return ErrFlowType
+			}
+			ftype = FlowType(n)
 		}
 
 		// create and read json
