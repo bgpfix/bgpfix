@@ -1,6 +1,8 @@
 package pipe
 
 import (
+	"strings"
+
 	"github.com/bgpfix/bgpfix/json"
 	"github.com/bgpfix/bgpfix/msg"
 )
@@ -195,7 +197,8 @@ func (mx *Context) FromJSON(src []byte) error {
 		} else if len(val) == 0 {
 			return nil // ignore empty values
 		} else {
-			mx.SetTag(key, string(val))
+			// NB: key aliases src (see json.ObjectEach), which the reader re-uses: copy it
+			mx.SetTag(strings.Clone(key), string(val))
 			return nil
 		}
 	})
