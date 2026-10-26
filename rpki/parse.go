@@ -2,8 +2,10 @@ package rpki
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/netip"
 	"strconv"
@@ -12,20 +14,37 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// Parse parses RPKI data in JSON or CSV format (auto-detected) into the
-// pending set. Call Flush first to start from scratch, and Apply after
-// to publish the result.
+// maxUnzipped bounds the size of gzipped RPKI data after decompression
+const maxUnzipped = 1 << 30
+
+// Parse parses RPKI data in JSON, CSV or CCR format (auto-detected, gzip
+// is transparently undone) into the pending set. Call Flush first to start
+// from scratch, and Apply after to publish the result.
 func (c *Cache) Parse(data []byte) error {
-	data = bytes.TrimSpace(data)
-	if len(data) == 0 {
-		return fmt.Errorf("empty RPKI data")
+	// NB: look at the raw bytes first, CCR is binary and TrimSpace would damage it
+	if len(data) > 2 && data[0] == 0x1f && data[1] == 0x8b {
+		zr, err := gzip.NewReader(bytes.NewReader(data))
+		if err != nil {
+			return fmt.Errorf("gzip: %w", err)
+		}
+		if data, err = io.ReadAll(io.LimitReader(zr, maxUnzipped)); err != nil {
+			return fmt.Errorf("gzip: %w", err)
+		}
 	}
 
 	var err error
-	if data[0] == '{' {
-		err = c.ParseJSON(data)
+	if isCCR(data) {
+		_, err = c.ParseCCR(data)
 	} else {
-		err = c.ParseCSV(data)
+		data = bytes.TrimSpace(data)
+		if len(data) == 0 {
+			return fmt.Errorf("empty RPKI data")
+		}
+		if data[0] == '{' {
+			err = c.ParseJSON(data)
+		} else {
+			err = c.ParseCSV(data)
+		}
 	}
 	if err != nil {
 		return err
