@@ -215,12 +215,18 @@ func ReadCCR(data []byte, onVRP func(p netip.Prefix, maxLen uint8, asn uint32), 
 		}
 		switch tag {
 		case ccrTagVRPs:
+			if info.HasVRPs {
+				return info, errors.New("duplicate aspect")
+			}
 			info.HasVRPs = true
 			info.VRPs, err = readCCRVRPs(val, onVRP)
 			if err != nil {
 				return info, fmt.Errorf("vrps: %w", err)
 			}
 		case ccrTagVAPs:
+			if info.HasVAPs {
+				return info, errors.New("duplicate aspect")
+			}
 			info.HasVAPs = true
 			info.VAPs, err = readCCRVAPs(val, onASPA)
 			if err != nil {
