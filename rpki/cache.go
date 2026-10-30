@@ -27,6 +27,9 @@ type Cache struct {
 	vrp6 atomic.Pointer[VRPs] // current IPv6 VRP snapshot
 	aspa atomic.Pointer[ASPA] // current ASPA snapshot
 
+	gen     atomic.Uint64                             // snapshot generation, bumped by Apply after publishing
+	rovMemo [1 << rovMemoBits]atomic.Pointer[rovMemo] // ROV verdicts, see ValidateOrigin
+
 	ready chan struct{} // closed on first Apply
 	once  sync.Once
 }
@@ -173,6 +176,7 @@ func (c *Cache) Apply() {
 		c.vrp4.Store(&v4)
 		c.vrp6.Store(&v6)
 		c.aspa.Store(&aspa)
+		c.gen.Add(1) // NB: after the stores above, see ValidateOrigin
 
 		// NB: published maps are immutable; cloned back in ensureNext
 		c.next4, c.next6, c.nextAspa = nil, nil, nil

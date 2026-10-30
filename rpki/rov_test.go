@@ -2,6 +2,7 @@ package rpki
 
 import (
 	"net/netip"
+	"sync"
 	"testing"
 )
 
@@ -244,5 +245,70 @@ func TestCacheValidateOrigin(t *testing.T) {
 	}
 	if got := c.ValidateOrigin(p, 65002); got != ROV_INVALID {
 		t.Errorf("wrong origin: got %d, want ROV_INVALID", got)
+	}
+}
+
+// Cache.ValidateOrigin memoizes verdicts: a new snapshot must never be answered from the old one
+func TestCacheValidateOriginMemo(t *testing.T) {
+	c := NewCache(nil)
+	p := netip.MustParsePrefix("192.0.2.0/24")
+	c.AddVRP(true, p, 24, 65001)
+	c.Apply()
+
+	for range 2 { // the second answer comes from the memo
+		if got := c.ValidateOrigin(p, 65001); got != ROV_VALID {
+			t.Fatalf("got %d, want VALID", got)
+		}
+	}
+
+	c.AddVRP(false, p, 24, 65001)
+	c.Apply()
+	if got := c.ValidateOrigin(p, 65001); got != ROV_NOT_FOUND {
+		t.Fatalf("after removing the VRP: got %d, want NOT_FOUND", got)
+	}
+
+	c.AddVRP(true, p, 24, 65002)
+	c.Apply()
+	if got := c.ValidateOrigin(p, 65001); got != ROV_INVALID {
+		t.Fatalf("after adding a VRP for another AS: got %d, want INVALID", got)
+	}
+}
+
+// readers hammer the memo while snapshots change (run with -race)
+func TestCacheValidateOriginConcurrent(t *testing.T) {
+	c := NewCache(nil)
+	p := netip.MustParsePrefix("192.0.2.0/24")
+	c.AddVRP(true, p, 24, 65001)
+	c.Apply()
+
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					if got := c.ValidateOrigin(p, 65001); got != ROV_VALID && got != ROV_NOT_FOUND {
+						t.Errorf("got %d", got)
+						return
+					}
+				}
+			}
+		}()
+	}
+	for i := range 200 { // the VRP appears and disappears
+		c.AddVRP(i%2 == 1, p, 24, 65001)
+		c.Apply()
+	}
+	close(stop)
+	wg.Wait()
+
+	// 200 edits end with the VRP added: the memo must agree
+	if got := c.ValidateOrigin(p, 65001); got != ROV_VALID {
+		t.Fatalf("final: got %d, want VALID", got)
 	}
 }
