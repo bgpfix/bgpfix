@@ -71,7 +71,9 @@ func rovSlot(p netip.Prefix, origin uint32) uint64 {
 // an entry went stale.
 func (c *Cache) ValidateOrigin(p netip.Prefix, origin uint32) int {
 	// NB: load gen before the snapshots. Apply publishes them first and bumps gen after,
-	// so a memo labeled with gen is from that snapshot or a newer one; a stale label only costs a miss
+	// so a memo labeled with gen is from that snapshot or a newer one; a stale label only costs a miss.
+	// A call racing with Apply may still get the old verdict (like it may get the old snapshot),
+	// but one that starts after Apply returned never does
 	gen := c.gen.Load()
 	slot := &c.rovMemo[rovSlot(p, origin)]
 	if m := slot.Load(); m != nil && m.gen == gen && m.origin == origin && m.p == p {
