@@ -56,22 +56,24 @@ func derRead(b []byte) (tag byte, val, rest []byte, err error) {
 		return 0, nil, nil, fmt.Errorf("%w: multi-byte tag", errDER)
 	}
 
-	n, off := int(b[1]), 2
+	n, off := uint64(b[1]), 2
 	if n >= 0x80 {
-		k := n & 0x7f
+		k := int(n & 0x7f)
 		if k == 0 || k > 4 || len(b) < 2+k {
 			return 0, nil, nil, fmt.Errorf("%w: bad length", errDER)
 		}
 		n = 0
 		for _, x := range b[2 : 2+k] {
-			n = n<<8 | int(x)
+			n = n<<8 | uint64(x)
 		}
 		off += k
 	}
-	if n > len(b)-off {
+	// NB: uint64, so that a 4-byte length cannot wrap negative on 32-bit
+	if n > uint64(len(b)-off) {
 		return 0, nil, nil, fmt.Errorf("%w: length %d exceeds data", errDER, n)
 	}
-	return tag, b[off : off+n], b[off+n:], nil
+	end := off + int(n)
+	return tag, b[off:end], b[end:], nil
 }
 
 // derExpect reads one TLV that must have the given tag.
@@ -84,6 +86,15 @@ func derExpect(b []byte, want byte) (val, rest []byte, err error) {
 		return nil, nil, fmt.Errorf("%w: tag 0x%02x, want 0x%02x", errDER, tag, want)
 	}
 	return val, rest, nil
+}
+
+// derOnly is like derExpect, but the TLV must span all of b.
+func derOnly(b []byte, want byte) ([]byte, error) {
+	val, rest, err := derExpect(b, want)
+	if err == nil && len(rest) != 0 {
+		err = fmt.Errorf("%w: %d trailing bytes", errDER, len(rest))
+	}
+	return val, err
 }
 
 // derUint32 parses a non-negative INTEGER value that fits in 32 bits.
@@ -133,7 +144,7 @@ func isCCR(data []byte) bool {
 // already been called for the preceding records, discard such partial state).
 func ReadCCR(data []byte, onVRP func(p netip.Prefix, maxLen uint8, asn uint32), onASPA func(cas uint32, providers []uint32)) (info CCRInfo, err error) {
 	// ContentInfo ::= SEQUENCE { contentType OID, content [0] EXPLICIT ... }
-	ci, _, err := derExpect(data, derSequence)
+	ci, err := derOnly(data, derSequence)
 	if err != nil {
 		return info, fmt.Errorf("ContentInfo: %w", err)
 	}
@@ -144,11 +155,11 @@ func ReadCCR(data []byte, onVRP func(p netip.Prefix, maxLen uint8, asn uint32), 
 	if !bytes.Equal(oid, oidCCR) {
 		return info, errors.New("not a CCR: unexpected contentType")
 	}
-	ci, _, err = derExpect(ci, 0xa0)
+	ci, err = derOnly(ci, 0xa0)
 	if err != nil {
 		return info, fmt.Errorf("content: %w", err)
 	}
-	body, _, err := derExpect(ci, derSequence)
+	body, err := derOnly(ci, derSequence)
 	if err != nil {
 		return info, fmt.Errorf("RpkiCanonicalCacheRepresentation: %w", err)
 	}
@@ -159,7 +170,7 @@ func ReadCCR(data []byte, onVRP func(p netip.Prefix, maxLen uint8, asn uint32), 
 		if err != nil {
 			return info, fmt.Errorf("version: %w", err)
 		}
-		iv, _, err := derExpect(v, derInteger)
+		iv, err := derOnly(v, derInteger)
 		if err != nil {
 			return info, fmt.Errorf("version: %w", err)
 		}
@@ -220,7 +231,7 @@ func ReadCCR(data []byte, onVRP func(p netip.Prefix, maxLen uint8, asn uint32), 
 // readCCRState splits an aspect into its payload sequence (the DER whose hash is
 // stored in the aspect) and verifies the hash. Returns the sequence content.
 func readCCRState(val []byte) ([]byte, error) {
-	st, _, err := derExpect(val, derSequence)
+	st, err := derOnly(val, derSequence)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +239,7 @@ func readCCRState(val []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	hash, _, err := derExpect(st, derOctetString)
+	hash, err := derOnly(st, derOctetString)
 	if err != nil {
 		return nil, err
 	}
@@ -259,12 +270,19 @@ func readCCRVRPs(val []byte, onVRP func(netip.Prefix, uint8, uint32)) (n int, er
 		if err != nil {
 			return n, err
 		}
-		blocks, _, err := derExpect(set, derSequence)
+		blocks, err := derOnly(set, derSequence)
 		if err != nil {
 			return n, err
 		}
 
-		for len(blocks) > 0 {
+		// ipAddrBlocks ::= SEQUENCE (SIZE(1..2)) OF ROAIPAddressFamily
+		if len(blocks) == 0 {
+			return n, fmt.Errorf("%w: empty ipAddrBlocks", errDER)
+		}
+		for nfam := 0; len(blocks) > 0; nfam++ {
+			if nfam == 2 {
+				return n, fmt.Errorf("%w: too many ipAddrBlocks", errDER)
+			}
 			// ROAIPAddressFamily ::= SEQUENCE { addressFamily OCTET STRING (SIZE(2)), addresses SEQUENCE OF ROAIPAddress }
 			var fam []byte
 			fam, blocks, err = derExpect(blocks, derSequence)
@@ -284,7 +302,7 @@ func readCCRVRPs(val []byte, onVRP func(netip.Prefix, uint8, uint32)) (n int, er
 			default:
 				return n, fmt.Errorf("unsupported addressFamily %x", afi)
 			}
-			addrs, _, err := derExpect(fam, derSequence)
+			addrs, err := derOnly(fam, derSequence)
 			if err != nil {
 				return n, err
 			}
@@ -358,7 +376,7 @@ func readCCRVAPs(val []byte, onASPA func(uint32, []uint32)) (n int, err error) {
 		if err != nil {
 			return n, err
 		}
-		list, _, err := derExpect(set, derSequence)
+		list, err := derOnly(set, derSequence)
 		if err != nil {
 			return n, err
 		}

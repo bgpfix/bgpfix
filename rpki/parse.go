@@ -27,8 +27,12 @@ func (c *Cache) Parse(data []byte) error {
 		if err != nil {
 			return fmt.Errorf("gzip: %w", err)
 		}
-		if data, err = io.ReadAll(io.LimitReader(zr, maxUnzipped)); err != nil {
+		data, err = io.ReadAll(io.LimitReader(zr, maxUnzipped+1))
+		if err != nil {
 			return fmt.Errorf("gzip: %w", err)
+		}
+		if len(data) > maxUnzipped {
+			return fmt.Errorf("gzip: more than %d bytes uncompressed", maxUnzipped)
 		}
 	}
 

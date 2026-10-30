@@ -186,6 +186,8 @@ func TestReadCCRRejects(t *testing.T) {
 		}
 	}
 
+	fam := tlv(derSequence, tlv(derOctetString, []byte{0, 1}), tlv(derSequence))
+	rawVRPs := func(sets []byte) []byte { return testState(ccrTagVRPs, tlv(derSequence, sets)) }
 	roa := func(r ...testROA) []byte { return testCCR(testVRPs(r)) }
 	tests := map[string][]byte{
 		"maxLength below prefix length": roa(testROA{"192.0.2.0/24", 23, 64496}),
@@ -194,12 +196,22 @@ func TestReadCCRRejects(t *testing.T) {
 		"hashAlg not SHA-256":           bytes.Replace(good, oidSHA256, append(slices.Clone(oidSHA256[:8]), 0x02), 1),
 		"ASPA without providers":        testCCR(testVAPs(map[uint32][]uint32{64496: {}})),
 		"version 1":                     tlv(derSequence, tlv(derOID, oidCCR), tlv(0xa0, tlv(derSequence, tlv(ccrTagVersion, derInt(1)), testAlg, testTS, testVAPs(map[uint32][]uint32{64496: {1}})))),
+		"trailing bytes":                append(slices.Clone(good), 0),
+		"no ipAddrBlocks":               testCCR(rawVRPs(tlv(derSequence, derInt(64496), tlv(derSequence)))),
+		"three ipAddrBlocks":            testCCR(rawVRPs(tlv(derSequence, derInt(64496), tlv(derSequence, fam, fam, fam)))),
 		"unsupported address family":    bytes.Replace(roa(testROA{"192.0.2.0/24", 24, 64496}), []byte{0x04, 0x02, 0x00, 0x01}, []byte{0x04, 0x02, 0x00, 0x03}, 1),
 	}
 	for name, data := range tests {
 		if _, err := ReadCCR(data, nil, nil); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+}
+
+func TestDERLengthOverflow(t *testing.T) {
+	// NB: 4-byte length that would wrap negative as a 32-bit int
+	if _, _, _, err := derRead([]byte{0x30, 0x84, 0xff, 0xff, 0xff, 0xff, 0x00}); err == nil {
+		t.Error("accepted")
 	}
 }
 
