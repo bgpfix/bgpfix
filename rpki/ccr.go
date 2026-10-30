@@ -203,6 +203,9 @@ func ReadCCR(data []byte, onVRP func(p netip.Prefix, maxLen uint8, asn uint32), 
 	}
 
 	// state aspects, each wrapped in an EXPLICIT context tag; skip the others
+	if len(body) == 0 {
+		return info, errors.New("no state aspects")
+	}
 	for len(body) > 0 {
 		var tag byte
 		var val []byte
@@ -320,6 +323,9 @@ func readCCRVRPs(val []byte, onVRP func(netip.Prefix, uint8, uint32)) (n int, er
 				}
 				if len(bs) == 0 || bs[0] > 7 || len(bs)-1 > size || (len(bs) == 1 && bs[0] != 0) {
 					return n, fmt.Errorf("%w: bad address BIT STRING", errDER)
+				}
+				if len(bs) > 1 && bs[len(bs)-1]&(1<<bs[0]-1) != 0 {
+					return n, fmt.Errorf("%w: nonzero BIT STRING padding", errDER)
 				}
 				bits := (len(bs)-1)*8 - int(bs[0])
 

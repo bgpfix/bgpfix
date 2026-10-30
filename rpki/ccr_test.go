@@ -196,6 +196,8 @@ func TestReadCCRRejects(t *testing.T) {
 		"hashAlg not SHA-256":           bytes.Replace(good, oidSHA256, append(slices.Clone(oidSHA256[:8]), 0x02), 1),
 		"ASPA without providers":        testCCR(testVAPs(map[uint32][]uint32{64496: {}})),
 		"version 1":                     tlv(derSequence, tlv(derOID, oidCCR), tlv(0xa0, tlv(derSequence, tlv(ccrTagVersion, derInt(1)), testAlg, testTS, testVAPs(map[uint32][]uint32{64496: {1}})))),
+		"no aspects":                    testCCR(),
+		"nonzero BIT STRING padding":    testCCR(rawVRPs(tlv(derSequence, derInt(64496), tlv(derSequence, tlv(derSequence, tlv(derOctetString, []byte{0, 1}), tlv(derSequence, tlv(derSequence, tlv(derBitString, []byte{7, 0x01})))))))),
 		"trailing bytes":                append(slices.Clone(good), 0),
 		"no ipAddrBlocks":               testCCR(rawVRPs(tlv(derSequence, derInt(64496), tlv(derSequence)))),
 		"three ipAddrBlocks":            testCCR(rawVRPs(tlv(derSequence, derInt(64496), tlv(derSequence, fam, fam, fam)))),
