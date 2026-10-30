@@ -373,6 +373,7 @@ func readCCRVAPs(val []byte, onASPA func(uint32, []uint32)) (n int, err error) {
 	}
 
 	var provs []uint32
+	var prev uint32
 	for len(items) > 0 {
 		// ASPAPayloadSet ::= SEQUENCE { customerASID CAS, providers SEQUENCE OF PAS }
 		var set []byte
@@ -388,6 +389,11 @@ func readCCRVAPs(val []byte, onASPA func(uint32, []uint32)) (n int, err error) {
 		if err != nil {
 			return n, err
 		}
+		// NB: sorted and unique, or a duplicate would silently replace the earlier providers
+		if n > 0 && cas <= prev {
+			return n, fmt.Errorf("%w: customerASID AS%d out of order", errDER, cas)
+		}
+		prev = cas
 		list, err := derOnly(set, derSequence)
 		if err != nil {
 			return n, err
