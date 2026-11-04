@@ -236,6 +236,9 @@ func (o *Open) MarshalCaps() error {
 	// marshal one-by-one
 	var raw []byte
 	o.Caps.Each(func(i int, cc caps.Code, c caps.Cap) {
+		if cc > 0xff {
+			return // NB: pseudo-capability (eg. CAP_AS_GUESS), never on the wire
+		}
 		if res := c.Marshal(raw); res != nil {
 			raw = res
 		}

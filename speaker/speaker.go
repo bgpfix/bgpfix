@@ -150,6 +150,7 @@ func (s *Speaker) sendOpen(ro *msg.Open) {
 	opts := &s.Options
 	o.Caps.SetFrom(s.pipe.Caps)
 	o.Caps.SetFrom(opts.LocalCaps)
+	o.Caps.Drop(caps.CAP_AS_GUESS) // pseudo-capability, not for the peer
 
 	o.Identifier = opts.LocalId
 	if !o.Identifier.IsValid() && ro != nil {
