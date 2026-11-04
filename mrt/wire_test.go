@@ -247,3 +247,29 @@ func TestMrt_MaxLen(t *testing.T) {
 	_, err := m.FromBytes([]byte{0, 0, 0, 0, 0, 16, 0, 4, 0xff, 0xff, 0xff, 0xff})
 	require.ErrorIs(t, err, ErrLength)
 }
+
+func TestBGP4_FromMsgAS2(t *testing.T) {
+	// an UPDATE with 2-byte ASNs: AS_PATH 65001
+	raw := []byte{
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0x00, 0x2c, 0x02, 0x00, 0x00, 0x00, 0x12, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02, 0x04, 0x02, 0x01,
+		0xfd, 0xe9, 0x40, 0x03, 0x04, 0xc0, 0x00, 0x02, 0x01, 0x10, 0x0a, 0x04,
+	}
+	m := msg.NewMsg()
+	_, err := m.FromBytes(raw)
+	require.NoError(t, err)
+
+	var cps caps.Caps
+	cps.Use(caps.CAP_AS4)
+
+	// NB: the subtype must follow the data, not the session caps
+	mr := NewMrt().Switch(BGP4MP_ET)
+	m.ParseAS4 = -1
+	require.NoError(t, mr.Bgp4.FromMsg(m, cps))
+	require.Equal(t, BGP4_MESSAGE, mr.Sub)
+
+	mr = NewMrt().Switch(BGP4MP_ET)
+	m.ParseAS4 = 0
+	require.NoError(t, mr.Bgp4.FromMsg(m, cps))
+	require.Equal(t, BGP4_MESSAGE_AS4, mr.Sub)
+}

@@ -249,6 +249,11 @@ func (b *Bmp) FromMsg(m *msg.Msg) error {
 	// Set peer time from message
 	b.Peer.Time = m.Time
 
+	// legacy 2-byte AS_PATH encoding?
+	if m.ParseAS4 == -1 {
+		b.Peer.Flags |= PEER_FLAG_A
+	}
+
 	// Extract peer info from message tags
 	if tags := pipe.GetTags(m); len(tags) > 0 {
 		if s := tags["PEER_IP"]; len(s) > 0 {

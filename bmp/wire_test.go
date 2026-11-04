@@ -1857,3 +1857,18 @@ func TestBmp_MaxLen(t *testing.T) {
 	_, err := b.FromBytes([]byte{3, 0xff, 0xff, 0xff, 0xff, 0})
 	require.ErrorIs(t, err, ErrLength)
 }
+
+func TestBmp_FromMsgAS2(t *testing.T) {
+	m := msg.NewMsg()
+	m.Switch(msg.KEEPALIVE)
+	require.NoError(t, m.Marshal(caps.Caps{}))
+
+	b := NewBmp()
+	require.NoError(t, b.FromMsg(m))
+	require.False(t, b.Peer.Is2ByteAS())
+
+	m.ParseAS4 = -1
+	b = NewBmp()
+	require.NoError(t, b.FromMsg(m))
+	require.True(t, b.Peer.Is2ByteAS())
+}
