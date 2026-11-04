@@ -107,8 +107,8 @@ func (s *Speaker) onOpen(m *msg.Msg) bool {
 	}
 
 	// validate remote ASN
-	if opts.RemoteASN >= 0 && o.GetASN() != opts.RemoteASN {
-		s.Warn().Int("expected", opts.RemoteASN).Int("got", o.GetASN()).Msg("remote ASN mismatch, dropping OPEN")
+	if opts.RemoteASN >= 0 && int64(o.GetASN()) != opts.RemoteASN {
+		s.Warn().Int64("expected", opts.RemoteASN).Uint32("got", o.GetASN()).Msg("remote ASN mismatch, dropping OPEN")
 		s.stop(ErrRemoteASN)
 		return false
 	}
@@ -158,7 +158,7 @@ func (s *Speaker) sendOpen(ro *msg.Open) {
 	}
 
 	if opts.LocalASN >= 0 {
-		o.SetASN(opts.LocalASN) // will add AS4
+		o.SetASN(uint32(opts.LocalASN)) // will add AS4
 	} else if opts.LocalASN < 0 && ro != nil {
 		o.SetASN(ro.GetASN())
 	} else {

@@ -167,12 +167,7 @@ func (o *Open) ParseCaps() error {
 }
 
 // SetASN sets local ASN number in o and its AS4
-func (o *Open) SetASN(asn int) {
-	// o'rlly?
-	if asn < 0 || int64(asn) > math.MaxUint32 {
-		asn = 0
-	}
-
+func (o *Open) SetASN(asn uint32) {
 	if asn <= math.MaxUint16 {
 		o.ASN = uint16(asn)
 	} else {
@@ -180,16 +175,16 @@ func (o *Open) SetASN(asn int) {
 	}
 
 	if c, ok := o.Caps.Use(caps.CAP_AS4).(*caps.AS4); ok {
-		c.ASN = uint32(asn)
+		c.ASN = asn
 	}
 }
 
 // GetASN returns the local ASN, preferably from AS4
-func (o *Open) GetASN() int {
+func (o *Open) GetASN() uint32 {
 	if c, ok := o.Caps.Get(caps.CAP_AS4).(*caps.AS4); ok {
-		return int(c.ASN)
+		return c.ASN
 	} else {
-		return int(o.ASN)
+		return uint32(o.ASN)
 	}
 }
 
@@ -316,7 +311,7 @@ func (o *Open) FromJSON(src []byte) error {
 			if err != nil {
 				return err
 			}
-			o.SetASN(int(asn))
+			o.SetASN(asn)
 
 		case "id":
 			o.Identifier, err = json.UnAddr(val)
