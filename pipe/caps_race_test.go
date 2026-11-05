@@ -15,7 +15,7 @@ import (
 	"github.com/bgpfix/bgpfix/msg"
 )
 
-func openAddPath(t *testing.T, asn int) []byte {
+func openAddPath(t *testing.T, asn uint32) []byte {
 	m := msg.NewMsg().Switch(msg.OPEN)
 	m.Open.Caps.Init()
 	m.Open.SetASN(asn)

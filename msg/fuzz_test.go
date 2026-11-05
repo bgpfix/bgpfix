@@ -25,6 +25,9 @@ func fuzzCaps(flags byte) caps.Caps {
 	if flags&8 != 0 {
 		cps.Use(caps.CAP_MP)
 	}
+	if flags&16 != 0 {
+		cps.Use(caps.CAP_AS_GUESS)
+	}
 	return cps
 }
 

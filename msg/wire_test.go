@@ -262,7 +262,7 @@ func TestOpen_WithAS4Capability(t *testing.T) {
 
 	err = msg.Open.ParseCaps()
 	require.NoError(t, err)
-	require.Equal(t, 4200000001, msg.Open.GetASN()) // Should return AS4 value
+	require.Equal(t, uint32(4200000001), msg.Open.GetASN()) // Should return AS4 value
 }
 
 func TestOpen_WithMultipleCaps(t *testing.T) {
@@ -494,4 +494,15 @@ func TestRefresh_Minimal(t *testing.T) {
 	require.Equal(t, len(raw), off)
 	require.Equal(t, REFRESH, msg.Type)
 	require.Equal(t, data, msg.Data)
+}
+
+func TestOpen_PseudoCapsNotMarshaled(t *testing.T) {
+	// pseudo-capabilities (code > 0xff) must never reach the wire
+	o := &NewMsg().Switch(OPEN).Open
+	o.SetASN(65001)
+	o.Caps.Use(caps.CAP_AS_GUESS)
+	require.NoError(t, o.MarshalCaps())
+
+	want := makeParam(makeCapability(65, []byte{0x00, 0x00, 0xFD, 0xE9}))
+	require.Equal(t, want, o.ParamsRaw)
 }

@@ -343,6 +343,13 @@ func (msg *Msg) Marshal(cps caps.Caps) error {
 			break
 		}
 		err = u.Marshal(cps)
+
+		// NB: ParseAS4 must describe msg.Data, which now follows cps
+		if cps.Has(caps.CAP_AS4) {
+			msg.ParseAS4 = 1
+		} else {
+			msg.ParseAS4 = -1
+		}
 	case KEEPALIVE:
 		if msg.buf == nil {
 			msg.buf = make([]byte, 0)

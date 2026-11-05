@@ -3,6 +3,7 @@ package speaker
 
 import (
 	"context"
+	"math"
 	"sync/atomic"
 	"time"
 
@@ -107,8 +108,8 @@ func (s *Speaker) onOpen(m *msg.Msg) bool {
 	}
 
 	// validate remote ASN
-	if opts.RemoteASN >= 0 && o.GetASN() != opts.RemoteASN {
-		s.Warn().Int("expected", opts.RemoteASN).Int("got", o.GetASN()).Msg("remote ASN mismatch, dropping OPEN")
+	if opts.RemoteASN >= 0 && int64(o.GetASN()) != opts.RemoteASN {
+		s.Warn().Int64("expected", opts.RemoteASN).Uint32("got", o.GetASN()).Msg("remote ASN mismatch, dropping OPEN")
 		s.stop(ErrRemoteASN)
 		return false
 	}
@@ -150,14 +151,15 @@ func (s *Speaker) sendOpen(ro *msg.Open) {
 	opts := &s.Options
 	o.Caps.SetFrom(s.pipe.Caps)
 	o.Caps.SetFrom(opts.LocalCaps)
+	o.Caps.Drop(caps.CAP_AS_GUESS) // pseudo-capability, not for the peer
 
 	o.Identifier = opts.LocalId
 	if !o.Identifier.IsValid() && ro != nil {
 		o.Identifier = ro.Identifier.Prev()
 	}
 
-	if opts.LocalASN >= 0 {
-		o.SetASN(opts.LocalASN) // will add AS4
+	if opts.LocalASN >= 0 && opts.LocalASN <= math.MaxUint32 {
+		o.SetASN(uint32(opts.LocalASN)) // will add AS4
 	} else if opts.LocalASN < 0 && ro != nil {
 		o.SetASN(ro.GetASN())
 	} else {
