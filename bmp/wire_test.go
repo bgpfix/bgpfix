@@ -1658,7 +1658,7 @@ func TestBmp_FromMsg_RoundTrip(t *testing.T) {
 
 	// Convert to BMP
 	bm := NewBmp()
-	require.NoError(t, bm.FromMsg(m))
+	require.NoError(t, bm.FromMsg(m, cps4))
 	require.NoError(t, bm.Marshal())
 
 	// Verify BgpData includes the full BGP message (header + payload)
@@ -1689,7 +1689,7 @@ func TestBmp_FromMsg_WithTags(t *testing.T) {
 
 	// Convert to BMP
 	bm := NewBmp()
-	require.NoError(t, bm.FromMsg(m))
+	require.NoError(t, bm.FromMsg(m, cps4))
 
 	// Verify peer info was extracted
 	require.Equal(t, netip.MustParseAddr("192.0.2.1"), bm.Peer.Address)
@@ -1719,7 +1719,7 @@ func TestBmp_FromMsg_IPv6Peer(t *testing.T) {
 
 	// Convert to BMP
 	bm := NewBmp()
-	require.NoError(t, bm.FromMsg(m))
+	require.NoError(t, bm.FromMsg(m, cps4))
 
 	// Verify peer info was extracted with V6 flag
 	require.Equal(t, netip.MustParseAddr("2001:db8::1"), bm.Peer.Address)
@@ -1742,7 +1742,7 @@ func TestBmp_FromMsg_NoData(t *testing.T) {
 	// Don't marshal - Data is nil
 
 	bm := NewBmp()
-	err := bm.FromMsg(m)
+	err := bm.FromMsg(m, cps4)
 	require.ErrorIs(t, err, ErrNoData)
 }
 
@@ -1755,7 +1755,7 @@ func TestOpenBmp_FromBmp_RoundTrip(t *testing.T) {
 
 	// Convert to BMP
 	bm := NewBmp()
-	require.NoError(t, bm.FromMsg(m))
+	require.NoError(t, bm.FromMsg(m, cps4))
 	require.NoError(t, bm.Marshal())
 
 	// Wrap in OpenBMP
@@ -1799,7 +1799,7 @@ func TestOpenBmp_FromBmp_WithTags(t *testing.T) {
 
 	// Convert to BMP
 	bm := NewBmp()
-	require.NoError(t, bm.FromMsg(m))
+	require.NoError(t, bm.FromMsg(m, cps4))
 	require.NoError(t, bm.Marshal())
 
 	// Wrap in OpenBMP
@@ -1832,7 +1832,7 @@ func TestOpenBmp_FromBmp_RouterName(t *testing.T) {
 
 	// Convert to BMP
 	bm := NewBmp()
-	require.NoError(t, bm.FromMsg(m))
+	require.NoError(t, bm.FromMsg(m, cps4))
 	require.NoError(t, bm.Marshal())
 
 	// Wrap in OpenBMP
@@ -1858,22 +1858,32 @@ func TestBmp_MaxLen(t *testing.T) {
 	require.ErrorIs(t, err, ErrLength)
 }
 
+// cps4 are session caps with 4-byte ASNs
+var cps4 = func() (c caps.Caps) { c.Use(caps.CAP_AS4); return }()
+
 func TestBmp_FromMsgAS2(t *testing.T) {
 	m := msg.NewMsg()
 	m.Switch(msg.KEEPALIVE)
 	require.NoError(t, m.Marshal(caps.Caps{}))
 
+	// 4-byte session, no per-message metadata
 	b := NewBmp()
-	require.NoError(t, b.FromMsg(m))
+	require.NoError(t, b.FromMsg(m, cps4))
 	require.False(t, b.Peer.Is2ByteAS())
 
+	// 2-byte session (eg. parsed with empty caps)
+	b = NewBmp()
+	require.NoError(t, b.FromMsg(m, caps.Caps{}))
+	require.True(t, b.Peer.Is2ByteAS())
+
+	// per-message metadata overrides the session
 	m.ParseAS4 = -1
 	b = NewBmp()
-	require.NoError(t, b.FromMsg(m))
+	require.NoError(t, b.FromMsg(m, cps4))
 	require.True(t, b.Peer.Is2ByteAS())
 
 	// reused: must not keep a stale A flag
 	m.ParseAS4 = 1
-	require.NoError(t, b.FromMsg(m))
+	require.NoError(t, b.FromMsg(m, caps.Caps{}))
 	require.False(t, b.Peer.Is2ByteAS())
 }

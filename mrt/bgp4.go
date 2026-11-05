@@ -3,6 +3,7 @@ package mrt
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"net/netip"
 	"strconv"
 
@@ -268,8 +269,8 @@ func (b4 *Bgp4) Marshal() error {
 	buf := mrt.buf[:0]
 	switch mrt.Sub {
 	case BGP4_MESSAGE, BGP4_MESSAGE_LOCAL, BGP4_MESSAGE_ADDPATH, BGP4_MESSAGE_LOCAL_ADDPATH:
-		buf = msb.AppendUint16(buf, uint16(b4.PeerAS))
-		buf = msb.AppendUint16(buf, uint16(b4.LocalAS))
+		buf = msb.AppendUint16(buf, as2(b4.PeerAS))
+		buf = msb.AppendUint16(buf, as2(b4.LocalAS))
 		buf = msb.AppendUint16(buf, b4.Interface)
 	case BGP4_MESSAGE_AS4, BGP4_MESSAGE_AS4_LOCAL, BGP4_MESSAGE_AS4_ADDPATH, BGP4_MESSAGE_AS4_LOCAL_ADDPATH:
 		buf = msb.AppendUint32(buf, b4.PeerAS)
@@ -314,4 +315,12 @@ func (b4 *Bgp4) Marshal() error {
 	mrt.Data = buf
 	mrt.ref = false
 	return nil
+}
+
+// as2 returns asn as a 2-byte ASN, or AS_TRANS if it does not fit (RFC 6793)
+func as2(asn uint32) uint16 {
+	if asn > math.MaxUint16 {
+		return msg.AS_TRANS
+	}
+	return uint16(asn)
 }

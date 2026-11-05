@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/bgpfix/bgpfix/binary"
+	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
 )
@@ -231,7 +232,7 @@ func (b *Bmp) Bytes() []byte {
 
 // FromMsg populates BMP ROUTE_MONITORING from BGP message m.
 // m must already be marshaled. Extracts peer info from message tags.
-func (b *Bmp) FromMsg(m *msg.Msg) error {
+func (b *Bmp) FromMsg(m *msg.Msg, cps caps.Caps) error {
 	if m.Data == nil {
 		return ErrNoData
 	}
@@ -249,8 +250,8 @@ func (b *Bmp) FromMsg(m *msg.Msg) error {
 	// Set peer time from message
 	b.Peer.Time = m.Time
 
-	// legacy 2-byte AS_PATH encoding?
-	if m.ParseAS4 == -1 {
+	// legacy 2-byte AS_PATH encoding? (NB: m.ParseAS4 overrides cps, as in mrt)
+	if m.ParseAS4 == -1 || (m.ParseAS4 == 0 && !cps.Has(caps.CAP_AS4)) {
 		b.Peer.Flags |= PEER_FLAG_A
 	} else {
 		b.Peer.Flags &^= PEER_FLAG_A

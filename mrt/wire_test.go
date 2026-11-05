@@ -1,6 +1,7 @@
 package mrt
 
 import (
+	"bytes"
 	"io"
 	"net/netip"
 	"testing"
@@ -272,4 +273,21 @@ func TestBGP4_FromMsgAS2(t *testing.T) {
 	m.ParseAS4 = 0
 	require.NoError(t, mr.Bgp4.FromMsg(m, cps))
 	require.Equal(t, BGP4_MESSAGE_AS4, mr.Sub)
+
+	// 4-byte header ASNs in a 2-byte subtype become AS_TRANS, not truncated
+	mr = NewMrt().Switch(BGP4MP_ET)
+	m.ParseAS4 = -1
+	require.NoError(t, mr.Bgp4.FromMsg(m, cps))
+	mr.Bgp4.PeerAS, mr.Bgp4.LocalAS = 4200000001, 65000
+	require.NoError(t, mr.Marshal())
+	var buf bytes.Buffer
+	_, err = mr.WriteTo(&buf)
+	require.NoError(t, err)
+	mr2 := NewMrt()
+	_, err = mr2.FromBytes(buf.Bytes())
+	require.NoError(t, err)
+	require.NoError(t, mr2.Parse())
+	require.Equal(t, BGP4_MESSAGE, mr2.Sub)
+	require.Equal(t, uint32(msg.AS_TRANS), mr2.Bgp4.PeerAS)
+	require.Equal(t, uint32(65000), mr2.Bgp4.LocalAS)
 }
