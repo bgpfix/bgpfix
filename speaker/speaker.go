@@ -3,6 +3,7 @@ package speaker
 
 import (
 	"context"
+	"math"
 	"sync/atomic"
 	"time"
 
@@ -157,7 +158,7 @@ func (s *Speaker) sendOpen(ro *msg.Open) {
 		o.Identifier = ro.Identifier.Prev()
 	}
 
-	if opts.LocalASN >= 0 {
+	if opts.LocalASN >= 0 && opts.LocalASN <= math.MaxUint32 {
 		o.SetASN(uint32(opts.LocalASN)) // will add AS4
 	} else if opts.LocalASN < 0 && ro != nil {
 		o.SetASN(ro.GetASN())

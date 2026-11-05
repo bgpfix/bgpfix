@@ -252,6 +252,8 @@ func (b *Bmp) FromMsg(m *msg.Msg) error {
 	// legacy 2-byte AS_PATH encoding?
 	if m.ParseAS4 == -1 {
 		b.Peer.Flags |= PEER_FLAG_A
+	} else {
+		b.Peer.Flags &^= PEER_FLAG_A
 	}
 
 	// Extract peer info from message tags

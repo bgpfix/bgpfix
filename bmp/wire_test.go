@@ -1871,4 +1871,9 @@ func TestBmp_FromMsgAS2(t *testing.T) {
 	b = NewBmp()
 	require.NoError(t, b.FromMsg(m))
 	require.True(t, b.Peer.Is2ByteAS())
+
+	// reused: must not keep a stale A flag
+	m.ParseAS4 = 1
+	require.NoError(t, b.FromMsg(m))
+	require.False(t, b.Peer.Is2ByteAS())
 }
