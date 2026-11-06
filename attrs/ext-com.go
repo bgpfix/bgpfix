@@ -279,11 +279,15 @@ func (a *Extcom) Add(et ExtcomType, val ExtcomValue) {
 
 // Drop drops extended community type et
 func (a *Extcom) Drop(et ExtcomType) {
+	n := 0
 	for i, et2 := range a.Type {
-		if et2 == et {
-			a.Value[i] = nil
+		if et2 != et {
+			a.Type[n], a.Value[n] = et2, a.Value[i]
+			n++
 		}
 	}
+	clear(a.Value[n:]) // drop references
+	a.Type, a.Value = a.Type[:n], a.Value[:n]
 }
 
 // Find returns index of community type et, or -1

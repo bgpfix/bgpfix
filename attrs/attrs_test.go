@@ -3,6 +3,8 @@ package attrs
 import (
 	"testing"
 
+	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/stretchr/testify/require"
 )
 
@@ -61,4 +63,18 @@ func TestAttrs_UseRecycledDefaultFlags(t *testing.T) {
 	ats.Reset() // moves MED to the free list
 
 	require.Equal(t, NewAttr(ATTR_MED).Flags(), ats.Use(ATTR_MED).Flags())
+}
+
+func TestExtcom_DropMarshal(t *testing.T) {
+	var ec Extcom
+	ec.Add(EXTCOM_AS2_TARGET, &ExtcomASN{ExtcomType: EXTCOM_AS2_TARGET, ASN: 1, Value: 2})
+	ec.Add(EXTCOM_AS2_ORIGIN, &ExtcomASN{ExtcomType: EXTCOM_AS2_ORIGIN, ASN: 3, Value: 4})
+	ec.Add(EXTCOM_AS2_TARGET, &ExtcomASN{ExtcomType: EXTCOM_AS2_TARGET, ASN: 5, Value: 6})
+	ec.Drop(EXTCOM_AS2_TARGET)
+	require.Equal(t, 1, ec.Len())
+
+	// attribute header + exactly one 8-byte value
+	out := ec.Marshal(nil, caps.Caps{}, meta.Meta{})
+	require.Len(t, out, 3+8)
+	require.EqualValues(t, 8, out[2])
 }
