@@ -245,6 +245,9 @@ func (o *OpenBmp) Marshal() error {
 
 	// calculate header length (minimal: 14 + timestamps + hashes + names)
 	headerLen := 14 + 8 + 16 + 2 + len(o.CollectorName) + 16 + 16 + 2 + len(o.RouterName) + 4
+	if headerLen > 0xffff {
+		return ErrLength // HeaderLen and the name lengths are 16-bit on the wire
+	}
 
 	// allocate buffer
 	total := headerLen + len(o.Data)
