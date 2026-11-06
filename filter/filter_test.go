@@ -944,3 +944,15 @@ func TestFilter_Dangling(t *testing.T) {
 		require.Error(t, err, s)
 	}
 }
+
+func TestEvalGroupNonUpdate(t *testing.T) {
+	ka := msg.NewMsg()
+	ka.Switch(msg.KEEPALIVE)
+	assert.True(t, evalFilter(t, ka, `keepalive`))
+	assert.True(t, evalFilter(t, ka, `(keepalive)`))
+	assert.True(t, evalFilter(t, ka, `(open || keepalive)`))
+	assert.True(t, evalFilter(t, ka, `!(update)`))
+	assert.True(t, evalFilter(t, ka, `!(update && prefix ~ 10.0.0.0/8)`))
+	assert.False(t, evalFilter(t, ka, `(update)`))
+	assert.False(t, evalFilter(t, ka, `(prefix ~ 10.0.0.0/8)`))
+}
