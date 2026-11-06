@@ -38,13 +38,16 @@ const (
 // Init initializes o to use parent m
 func (o *Open) Init(m *Msg) {
 	o.Msg = m
-	o.Identifier = netip.IPv4Unspecified()
-	o.Version = OPEN_VERSION
+	o.Reset()
 	// NB: no o.Caps.Init()
 }
 
 // Reset prepares o for re-use
 func (o *Open) Reset() {
+	o.Version = OPEN_VERSION
+	o.ASN = 0
+	o.HoldTime = 0
+	o.Identifier = netip.IPv4Unspecified()
 	o.ParamsRaw = nil
 	o.ParamsExt = false
 	o.Caps.Reset()
@@ -59,8 +62,7 @@ func (o *Open) Parse() error {
 		return ErrShort
 	}
 
-	o.Version = buf[0]
-	if o.Version != OPEN_VERSION {
+	if buf[0] != OPEN_VERSION {
 		return ErrVersion
 	}
 	o.ASN = msb.Uint16(buf[1:3])
@@ -190,8 +192,10 @@ func (o *Open) GetASN() uint32 {
 
 // Marshal marshals o to o.Msg.Data.
 func (o *Open) Marshal() error {
-	// check params length
+	// check identifier and params length
 	switch plen := len(o.ParamsRaw); {
+	case !o.Identifier.Is4():
+		return fmt.Errorf("Marshal: BGP Identifier must be IPv4: %w (%s)", ErrValue, o.Identifier)
 	case plen > math.MaxUint16:
 		return fmt.Errorf("Marshal: Params too long: %w (%d)", ErrLength, plen)
 	case plen > math.MaxUint8 && !o.ParamsExt:
