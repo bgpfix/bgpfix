@@ -956,3 +956,13 @@ func TestEvalGroupNonUpdate(t *testing.T) {
 	assert.False(t, evalFilter(t, ka, `(update)`))
 	assert.False(t, evalFilter(t, ka, `(prefix ~ 10.0.0.0/8)`))
 }
+
+func TestEvalGroupNonUpdateConsistent(t *testing.T) {
+	ka := msg.NewMsg()
+	ka.Switch(msg.KEEPALIVE)
+
+	// a group without terms for non-UPDATE behaves like its terms do
+	for _, f := range []string{`aspath ~ 1`, `!aspath ~ 1`, `(aspath ~ 1)`, `!(aspath ~ 1)`} {
+		assert.False(t, evalFilter(t, ka, f), f)
+	}
+}
