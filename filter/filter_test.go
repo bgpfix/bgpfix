@@ -944,3 +944,25 @@ func TestFilter_Dangling(t *testing.T) {
 		require.Error(t, err, s)
 	}
 }
+
+func TestEvalGroupNonUpdate(t *testing.T) {
+	ka := msg.NewMsg()
+	ka.Switch(msg.KEEPALIVE)
+	assert.True(t, evalFilter(t, ka, `keepalive`))
+	assert.True(t, evalFilter(t, ka, `(keepalive)`))
+	assert.True(t, evalFilter(t, ka, `(open || keepalive)`))
+	assert.True(t, evalFilter(t, ka, `!(update)`))
+	assert.True(t, evalFilter(t, ka, `!(update && prefix ~ 10.0.0.0/8)`))
+	assert.False(t, evalFilter(t, ka, `(update)`))
+	assert.False(t, evalFilter(t, ka, `(prefix ~ 10.0.0.0/8)`))
+}
+
+func TestEvalGroupNonUpdateConsistent(t *testing.T) {
+	ka := msg.NewMsg()
+	ka.Switch(msg.KEEPALIVE)
+
+	// a group without terms for non-UPDATE behaves like its terms do
+	for _, f := range []string{`aspath ~ 1`, `!aspath ~ 1`, `(aspath ~ 1)`, `!(aspath ~ 1)`} {
+		assert.False(t, evalFilter(t, ka, f), f)
+	}
+}

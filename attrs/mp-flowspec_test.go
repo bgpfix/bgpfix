@@ -44,3 +44,14 @@ func TestFlowPrefix6(t *testing.T) {
 		})
 	}
 }
+
+func TestFlowPrefixFromJSONFamily(t *testing.T) {
+	for _, s := range []string{`"1.2.3.4/8-100"`, `"1.2.3.0/24"`} {
+		if err := NewFlowPrefix6(FLOW_DST).(*FlowPrefix6).FromJSON([]byte(s)); err == nil {
+			t.Errorf("FlowPrefix6 accepted IPv4 %s", s)
+		}
+	}
+	if err := NewFlowPrefix4(FLOW_DST).(*FlowPrefix4).FromJSON([]byte(`"2001:db8::/32"`)); err == nil {
+		t.Errorf("FlowPrefix4 accepted IPv6")
+	}
+}

@@ -204,9 +204,13 @@ func (a *Aggregator) Marshal(dst []byte, cps caps.Caps, _ meta.Meta) []byte {
 	if asnlen == 4 {
 		dst = msb.AppendUint32(dst, a.ASN)
 	} else {
-		dst = msb.AppendUint16(dst, uint16(a.ASN))
+		dst = msb.AppendUint16(dst, as2(a.ASN))
 	}
-	dst = append(dst, a.Addr.AsSlice()...)
+	var addr [4]byte
+	if a.Addr.Is4() {
+		addr = a.Addr.As4()
+	}
+	dst = append(dst, addr[:]...)
 
 	return dst
 }
@@ -226,6 +230,9 @@ func (a *Aggregator) FromJSON(src []byte) error {
 			a.ASN, err = json.UnUint32(val)
 		case "addr":
 			a.Addr, err = netip.ParseAddr(json.S(val))
+			if err == nil && !a.Addr.Is4() {
+				err = ErrValue
+			}
 		}
 		return
 	})

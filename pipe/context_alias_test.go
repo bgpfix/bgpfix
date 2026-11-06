@@ -30,3 +30,14 @@ func TestContextFromJSONNoAlias(t *testing.T) {
 		}
 	}
 }
+
+// a feed must not choose how its messages are processed
+func TestContextFromJSONIgnoresAction(t *testing.T) {
+	mx := new(Context)
+	if err := mx.FromJSON([]byte(`{"ACTION":"DROP","A":"1"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if mx.Action != 0 || len(mx.GetTags()) != 1 || mx.GetTag("A") != "1" {
+		t.Errorf("action=%v tags=%v", mx.Action, mx.GetTags())
+	}
+}

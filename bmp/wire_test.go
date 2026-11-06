@@ -311,7 +311,7 @@ func TestBmp_FromBytes_TruncatedPeerHeader(t *testing.T) {
 
 	b := NewBmp()
 	_, err := b.FromBytes(raw)
-	require.ErrorIs(t, err, ErrShort)
+	require.ErrorIs(t, err, ErrLength) // complete frame, so not ErrShort
 }
 
 func TestBmp_FromBytes_ExtraBytes(t *testing.T) {
@@ -1886,4 +1886,14 @@ func TestBmp_FromMsgAS2(t *testing.T) {
 	m.ParseAS4 = 1
 	require.NoError(t, b.FromMsg(m, caps.Caps{}))
 	require.False(t, b.Peer.Is2ByteAS())
+}
+
+func TestOpenBmp_MarshalLongName(t *testing.T) {
+	o := NewOpenBmp()
+	o.Data = []byte{3, 0, 0, 0, 6, byte(MSG_INITIATION)}
+	o.CollectorName = string(make([]byte, 70000))
+	require.ErrorIs(t, o.Marshal(), ErrLength)
+
+	o.CollectorName = "ok"
+	require.NoError(t, o.Marshal())
 }

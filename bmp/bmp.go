@@ -124,7 +124,7 @@ func (b *Bmp) FromBytes(raw []byte) (int, error) {
 	switch b.Type {
 	case MSG_ROUTE_MONITORING, MSG_STATISTICS_REPORT, MSG_PEER_DOWN, MSG_PEER_UP, MSG_ROUTE_MIRRORING:
 		if ml-off < PEER_HEADLEN {
-			return off, ErrShort
+			return ml, ErrLength // NB: the frame is complete, so skip it instead of waiting for more
 		}
 		n, err := b.Peer.FromBytes(raw[off:])
 		if err != nil {

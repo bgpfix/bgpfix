@@ -279,6 +279,7 @@ input:
 				break // not valid
 			}
 
+			t = clampNow(t)
 			oldt := l.LastOpen.Load()
 			if t > oldt && l.LastOpen.CompareAndSwap(oldt, t) {
 				mx.Action.Add(ACTION_BORROW)
@@ -287,6 +288,7 @@ input:
 			}
 
 		case msg.KEEPALIVE:
+			t = clampNow(t)
 			oldt := l.LastAlive.Load()
 			if t > oldt && l.LastAlive.CompareAndSwap(oldt, t) {
 				ev := p.Event(EVENT_ALIVE, m.Dir, t)
@@ -309,6 +311,7 @@ input:
 		case msg.UPDATE:
 			// new UNIX timestamp for UPDATE?
 			if t > last_update { // local check to reduce atomic ops
+				t = clampNow(t)
 				last_update = t
 				oldt := l.LastUpdate.Load()
 				if t > oldt && l.LastUpdate.CompareAndSwap(oldt, t) {
@@ -480,4 +483,10 @@ func (in *Input) WriteMsg(m *msg.Msg) (write_error error) {
 	}()
 	in.In <- m
 	return nil
+}
+
+// clampNow returns t, or the current UNIX time if t is in the future.
+// NB: a far-future timestamp (eg. from a JSON feed) would pin the Line.Last* times
+func clampNow(t int64) int64 {
+	return min(t, time.Now().Unix())
 }

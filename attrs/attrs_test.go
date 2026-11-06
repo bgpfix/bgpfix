@@ -3,6 +3,8 @@ package attrs
 import (
 	"testing"
 
+	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/stretchr/testify/require"
 )
 
@@ -53,4 +55,44 @@ func TestAttrs_Set(t *testing.T) {
 		require.False(t, seen[e.code], "duplicate free %s", e.code)
 		seen[e.code] = true
 	}
+}
+
+func TestAttrs_UseRecycledDefaultFlags(t *testing.T) {
+	var ats Attrs
+	ats.Use(ATTR_MED).SetFlags(ATTR_TRANSITIVE | ATTR_PARTIAL)
+	ats.Reset() // moves MED to the free list
+
+	require.Equal(t, NewAttr(ATTR_MED).Flags(), ats.Use(ATTR_MED).Flags())
+}
+
+func TestExtcom_DropMarshal(t *testing.T) {
+	var ec Extcom
+	ec.Add(EXTCOM_AS2_TARGET, &ExtcomASN{ExtcomType: EXTCOM_AS2_TARGET, ASN: 1, Value: 2})
+	ec.Add(EXTCOM_AS2_ORIGIN, &ExtcomASN{ExtcomType: EXTCOM_AS2_ORIGIN, ASN: 3, Value: 4})
+	ec.Add(EXTCOM_AS2_TARGET, &ExtcomASN{ExtcomType: EXTCOM_AS2_TARGET, ASN: 5, Value: 6})
+	ec.Drop(EXTCOM_AS2_TARGET)
+	require.Equal(t, 1, ec.Len())
+
+	// attribute header + exactly one 8-byte value
+	out := ec.Marshal(nil, caps.Caps{}, meta.Meta{})
+	require.Len(t, out, 3+8)
+	require.EqualValues(t, 8, out[2])
+}
+
+func TestAttrs_JSONRangeAndFamily(t *testing.T) {
+	// AGGREGATOR addr must be IPv4
+	var ag Aggregator
+	require.Error(t, ag.FromJSON([]byte(`{"asn":1,"addr":"2001:db8::1"}`)))
+	require.NoError(t, ag.FromJSON([]byte(`{"asn":1,"addr":"10.0.0.1"}`)))
+
+	// extended community values must fit the wire fields
+	require.Error(t, NewExtcomASN(EXTCOM_AS2_TARGET).FromJSON([]byte(`"4200000000:5"`)))
+	require.NoError(t, NewExtcomASN(EXTCOM_AS2_TARGET).FromJSON([]byte(`"65000:4200000000"`)))
+	require.Error(t, NewExtcomASN(EXTCOM_AS4_TARGET).FromJSON([]byte(`"4200000000:65536"`)))
+	require.NoError(t, NewExtcomASN(EXTCOM_AS4_TARGET).FromJSON([]byte(`"4200000000:5"`)))
+
+	// 2-byte ASN fields get AS_TRANS, not a truncated ASN
+	ag.ASN = 4200000000
+	out := ag.Marshal(nil, caps.Caps{}, meta.Meta{})
+	require.Equal(t, []byte{0x5b, 0xa0}, out[3:5])
 }
