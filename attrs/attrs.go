@@ -144,6 +144,8 @@ func (ats *Attrs) Use(ac Code) Attr {
 	at := ats.dropFree(ac)
 	if at == nil {
 		at = NewAttr(ac)
+	} else {
+		at.SetFlags(defaultFlags(ac)) // NB: the recycled instance keeps flags from its previous use
 	}
 	ats.insert(i, ac, at)
 	return at

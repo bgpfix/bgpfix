@@ -54,3 +54,11 @@ func TestAttrs_Set(t *testing.T) {
 		seen[e.code] = true
 	}
 }
+
+func TestAttrs_UseRecycledDefaultFlags(t *testing.T) {
+	var ats Attrs
+	ats.Use(ATTR_MED).SetFlags(ATTR_TRANSITIVE | ATTR_PARTIAL)
+	ats.Reset() // moves MED to the free list
+
+	require.Equal(t, NewAttr(ATTR_MED).Flags(), ats.Use(ATTR_MED).Flags())
+}
