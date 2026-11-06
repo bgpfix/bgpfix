@@ -10,3 +10,9 @@ func TestUtf8(t *testing.T) {
 	require.Equal(t, `za\u00c5`, string(Utf8(nil, []byte("za\xc5"))))                    // invalid UTF-8: like Ascii
 	require.Equal(t, "za\u017c\\\"\\u0001", string(Utf8(nil, []byte("za\u017c\"\x01")))) // valid: kept
 }
+
+func TestSQEmptyQuoted(t *testing.T) {
+	if s := SQ([]byte(`""`)); s != "" {
+		t.Errorf("got %q", s)
+	}
+}

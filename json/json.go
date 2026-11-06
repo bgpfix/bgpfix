@@ -206,7 +206,7 @@ func SQ(buf []byte) string {
 	} else if l >= 2 && buf[0] == '"' && buf[l-1] == '"' {
 		buf = buf[1 : l-1]
 	}
-	return unsafe.String(&buf[0], len(buf))
+	return unsafe.String(unsafe.SliceData(buf), len(buf)) // NB: buf may be empty after unquoting
 }
 
 // ArrayEach calls cb for each *non-nil* value in the src array.
