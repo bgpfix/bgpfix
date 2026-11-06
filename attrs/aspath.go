@@ -27,6 +27,17 @@ type AspathSegment struct {
 	List  []uint32 // list of AS numbers
 }
 
+// AS_TRANS is the 2-byte placeholder for ASNs that do not fit 16 bits (RFC 6793)
+const AS_TRANS = 23456
+
+// as2 returns asn as a 2-byte ASN, or AS_TRANS if it does not fit
+func as2(asn uint32) uint16 {
+	if asn > 0xffff {
+		return AS_TRANS
+	}
+	return uint16(asn)
+}
+
 func NewAspath(at CodeFlags) Attr {
 	return &Aspath{
 		CodeFlags: at,
@@ -365,7 +376,7 @@ func (a *Aspath) Marshal(dst []byte, cps caps.Caps, _ meta.Meta) []byte {
 				if asnlen == 4 {
 					dst = msb.AppendUint32(dst, hop)
 				} else {
-					dst = msb.AppendUint16(dst, uint16(hop))
+					dst = msb.AppendUint16(dst, as2(hop))
 				}
 			}
 		}

@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/netip"
 
+	"github.com/bgpfix/bgpfix/attrs"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
 )
@@ -32,7 +33,7 @@ const (
 	PARAM_CAPS   = 2
 	PARAM_EXTLEN = 255
 
-	AS_TRANS = 23456
+	AS_TRANS = attrs.AS_TRANS
 )
 
 // Init initializes o to use parent m
