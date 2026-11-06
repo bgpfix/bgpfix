@@ -126,7 +126,9 @@ func (o *OpenBmp) FromBytes(raw []byte) (int, error) {
 	o.ObjType = raw[13]
 
 	// Validate header length
-	if len(raw) < int(o.HeaderLen) {
+	if o.HeaderLen < OPENBMP_HEADLEN {
+		return 0, ErrLength
+	} else if len(raw) < int(o.HeaderLen) {
 		return 0, ErrShort
 	}
 

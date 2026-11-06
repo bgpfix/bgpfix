@@ -311,7 +311,7 @@ func TestBmp_FromBytes_TruncatedPeerHeader(t *testing.T) {
 
 	b := NewBmp()
 	_, err := b.FromBytes(raw)
-	require.ErrorIs(t, err, ErrShort)
+	require.ErrorIs(t, err, ErrLength) // complete frame, so not ErrShort
 }
 
 func TestBmp_FromBytes_ExtraBytes(t *testing.T) {
