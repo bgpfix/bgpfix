@@ -267,7 +267,6 @@ func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, mt meta.Meta) error {
 		return nil
 	}
 	buf := raw
-	sgl := len(a.Segments)
 
 	// asn length
 	asnlen := 2 // default to 2-byte ASNs
@@ -282,35 +281,12 @@ func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, mt meta.Meta) error {
 		asnlen = 4
 	}
 
-	// can retry with 2-byte ASNs?
-	retry2 := func() bool {
-		switch {
-		case asnlen != 4: // already using 2-byte ASNs, cannot retry
-			return false
-		case mt.ParseAS4 == 1: // explicit AS4 by meta, cannot retry
-			return false
-		case !cps.Has(caps.CAP_AS_GUESS): // session does not allow guessing, cannot retry
-			return false
-		case a.Code() != ATTR_ASPATH: // only retry for AS_PATH, not AS4_PATH
-			return false
-		default: // retry with 2-byte ASNs
-			asnlen = 2
-			buf = raw
-			a.Segments = a.Segments[:sgl]
-			return true
-		}
-	}
-
 	for len(buf) > 0 {
 		var seg AspathSegment
 
 		// makes sense?
 		if len(buf) < 2 || buf[1] == 0 {
-			if retry2() {
-				continue
-			} else {
-				return ErrLength
-			}
+			return ErrLength
 		}
 
 		// type: is AS_SET?
@@ -320,21 +296,13 @@ func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, mt meta.Meta) error {
 		case 2:
 			seg.IsSet = false // is AS_SEQUENCE
 		default:
-			if retry2() {
-				continue
-			} else {
-				return fmt.Errorf("%w: %d", ErrSegType, buf[0])
-			}
+			return fmt.Errorf("%w: %d", ErrSegType, buf[0])
 		}
 
 		// hops: total length makes sense?
 		tl := 2 + asnlen*int(buf[1])
 		if len(buf) < tl {
-			if retry2() {
-				continue
-			} else {
-				return fmt.Errorf("%w: %d < 2+%d*%d", ErrSegLen, len(buf), asnlen, buf[1])
-			}
+			return fmt.Errorf("%w: %d < 2+%d*%d", ErrSegLen, len(buf), asnlen, buf[1])
 		}
 
 		// read ASNs

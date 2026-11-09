@@ -177,20 +177,8 @@ func (a *Aggregator) Unmarshal(buf []byte, cps caps.Caps, mt meta.Meta) error {
 		asnlen = 4
 	}
 
-	for len(buf) != asnlen+4 {
-		switch {
-		case asnlen != 4: // already using 2-byte ASNs, cannot retry
-			return ErrLength
-		case mt.ParseAS4 == 1: // explicit AS4 by meta, cannot retry
-			return ErrLength
-		case !cps.Has(caps.CAP_AS_GUESS): // session does not allow guessing, cannot retry
-			return ErrLength
-		case a.Code() != ATTR_AGGREGATOR: // only retry for AGGREGATOR, not AS4AGGREGATOR
-			return ErrLength
-		default: // retry with 2-byte ASNs
-			asnlen = 2
-			continue
-		}
+	if len(buf) != asnlen+4 {
+		return ErrLength
 	}
 
 	if asnlen == 4 {

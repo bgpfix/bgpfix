@@ -3,6 +3,7 @@ package mrt
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"net/netip"
 	"strconv"
 
@@ -79,7 +80,7 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg, cps caps.Caps) error {
 	mrt.Data = nil
 
 	// select the subtype matching how m.Data was marshaled, as told by cps
-	// NB: must not depend on the parser options in m.Meta
+	// NB: m.ParseAS4 overrides cps, eg. for unmodified 2-byte input
 	// NB: ADD-PATH is negotiated per AFI/SAFI + direction, so use the message
 	// address family when known; otherwise assume the legacy IPv4 unicast NLRI
 	addpath := false
@@ -88,7 +89,7 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg, cps caps.Caps) error {
 	} else if m.Type == msg.UPDATE {
 		addpath = cps.AddPathEnabled(afi.AS_IPV4_UNICAST, m.Dir)
 	}
-	if cps.Has(caps.CAP_AS4) {
+	if m.ParseAS4 == 1 || (m.ParseAS4 == 0 && cps.Has(caps.CAP_AS4)) {
 		if addpath {
 			mrt.Sub = BGP4_MESSAGE_AS4_ADDPATH
 		} else {
@@ -268,8 +269,8 @@ func (b4 *Bgp4) Marshal() error {
 	buf := mrt.buf[:0]
 	switch mrt.Sub {
 	case BGP4_MESSAGE, BGP4_MESSAGE_LOCAL, BGP4_MESSAGE_ADDPATH, BGP4_MESSAGE_LOCAL_ADDPATH:
-		buf = msb.AppendUint16(buf, uint16(b4.PeerAS))
-		buf = msb.AppendUint16(buf, uint16(b4.LocalAS))
+		buf = msb.AppendUint16(buf, as2(b4.PeerAS))
+		buf = msb.AppendUint16(buf, as2(b4.LocalAS))
 		buf = msb.AppendUint16(buf, b4.Interface)
 	case BGP4_MESSAGE_AS4, BGP4_MESSAGE_AS4_LOCAL, BGP4_MESSAGE_AS4_ADDPATH, BGP4_MESSAGE_AS4_LOCAL_ADDPATH:
 		buf = msb.AppendUint32(buf, b4.PeerAS)
@@ -314,4 +315,12 @@ func (b4 *Bgp4) Marshal() error {
 	mrt.Data = buf
 	mrt.ref = false
 	return nil
+}
+
+// as2 returns asn as a 2-byte ASN, or AS_TRANS if it does not fit (RFC 6793)
+func as2(asn uint32) uint16 {
+	if asn > math.MaxUint16 {
+		return msg.AS_TRANS
+	}
+	return uint16(asn)
 }

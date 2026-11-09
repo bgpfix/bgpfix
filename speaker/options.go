@@ -24,12 +24,12 @@ type Options struct {
 
 	Passive bool // if true, expect the peer to go first with OPEN
 
-	LocalASN      int        // local ASN; -1 means use remote (if Passive)
+	LocalASN      int64      // local ASN; -1 means use remote (if Passive)
 	LocalHoldTime int        // local hold time (s); -1 means use a default
 	LocalId       netip.Addr // local identifier; unspecified means use remote-1 (if Passive)
 	LocalCaps     caps.Caps  // additional local capabilities; set to nil to block a capability
 
-	RemoteASN      int        // expected remote ASN; -1 means accept any
+	RemoteASN      int64      // expected remote ASN; -1 means accept any
 	RemoteHoldTime int        // minimum remote hold time (s); <= 0 means any
 	RemoteId       netip.Addr // expected remote identifier; unspecified means any
 	RemoteCaps     caps.Caps  // minimum remote capabilities; set to nil to block a capability

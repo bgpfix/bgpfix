@@ -1,6 +1,7 @@
 package mrt
 
 import (
+	"bytes"
 	"io"
 	"net/netip"
 	"testing"
@@ -246,4 +247,47 @@ func TestMrt_MaxLen(t *testing.T) {
 	var m Mrt
 	_, err := m.FromBytes([]byte{0, 0, 0, 0, 0, 16, 0, 4, 0xff, 0xff, 0xff, 0xff})
 	require.ErrorIs(t, err, ErrLength)
+}
+
+func TestBGP4_FromMsgAS2(t *testing.T) {
+	// an UPDATE with 2-byte ASNs: AS_PATH 65001
+	raw := []byte{
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0x00, 0x2c, 0x02, 0x00, 0x00, 0x00, 0x12, 0x40, 0x01, 0x01, 0x00, 0x40, 0x02, 0x04, 0x02, 0x01,
+		0xfd, 0xe9, 0x40, 0x03, 0x04, 0xc0, 0x00, 0x02, 0x01, 0x10, 0x0a, 0x04,
+	}
+	m := msg.NewMsg()
+	_, err := m.FromBytes(raw)
+	require.NoError(t, err)
+
+	var cps caps.Caps
+	cps.Use(caps.CAP_AS4)
+
+	// NB: the subtype must follow the data, not the session caps
+	mr := NewMrt().Switch(BGP4MP_ET)
+	m.ParseAS4 = -1
+	require.NoError(t, mr.Bgp4.FromMsg(m, cps))
+	require.Equal(t, BGP4_MESSAGE, mr.Sub)
+
+	mr = NewMrt().Switch(BGP4MP_ET)
+	m.ParseAS4 = 0
+	require.NoError(t, mr.Bgp4.FromMsg(m, cps))
+	require.Equal(t, BGP4_MESSAGE_AS4, mr.Sub)
+
+	// 4-byte header ASNs in a 2-byte subtype become AS_TRANS, not truncated
+	mr = NewMrt().Switch(BGP4MP_ET)
+	m.ParseAS4 = -1
+	require.NoError(t, mr.Bgp4.FromMsg(m, cps))
+	mr.Bgp4.PeerAS, mr.Bgp4.LocalAS = 4200000001, 65000
+	require.NoError(t, mr.Marshal())
+	var buf bytes.Buffer
+	_, err = mr.WriteTo(&buf)
+	require.NoError(t, err)
+	mr2 := NewMrt()
+	_, err = mr2.FromBytes(buf.Bytes())
+	require.NoError(t, err)
+	require.NoError(t, mr2.Parse())
+	require.Equal(t, BGP4_MESSAGE, mr2.Sub)
+	require.Equal(t, uint32(msg.AS_TRANS), mr2.Bgp4.PeerAS)
+	require.Equal(t, uint32(65000), mr2.Bgp4.LocalAS)
 }

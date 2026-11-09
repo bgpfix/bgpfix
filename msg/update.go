@@ -121,6 +121,17 @@ func (u *Update) Parse(cps caps.Caps) error {
 // On error, Attrs is left empty.
 func (u *Update) ParseAttrs(cps caps.Caps) error {
 	err := u.parseAttrs(cps)
+
+	// failed with 4-byte ASNs from session caps, but allowed to guess?
+	// NB: record the guess in ParseAS4, so that writers know the real encoding
+	if err != nil && u.Msg.ParseAS4 == 0 && cps.Has(caps.CAP_AS4) && cps.Has(caps.CAP_AS_GUESS) {
+		u.Msg.ParseAS4 = -1
+		if u.parseAttrs(cps) == nil {
+			return nil
+		}
+		u.Msg.ParseAS4 = 0
+	}
+
 	if err != nil {
 		u.Attrs.Reset()
 	}

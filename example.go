@@ -19,7 +19,7 @@ import (
 
 var (
 	opt_active = flag.Bool("active", false, "send OPEN first")
-	opt_asn    = flag.Int("asn", 65055, "local ASN number")
+	opt_asn    = flag.Int64("asn", 65055, "local ASN number")
 	opt_hold   = flag.Int("hold", 60, "local hold timer")
 	opt_id     = flag.String("id", "1.1.1.1", "local Id (must be IPv4 address)")
 )
