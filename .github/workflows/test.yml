@@ -34,7 +34,7 @@ jobs:
       - name: Test
         run: go test -count=1 ./...
 
-      # NB: some tests are excluded by !race (known Stop/START event race)
+      # NB: pipe/stress_test.go is excluded by !race (Stop closes inputs under writers)
       - name: Test (race detector)
         run: go test -race -count=1 ./...
 

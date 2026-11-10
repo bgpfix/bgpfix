@@ -205,8 +205,6 @@ func (p *Pipe) Event(et string, args ...any) *Event {
 
 // sendEvent sends ev with given ctx; if noblock is true, it never blocks on full channel
 func (p *Pipe) sendEvent(ev *Event, ctx context.Context, noblock bool) (sent bool) {
-	defer func() { recover() }() // in case of closed p.events
-
 	ev.Pipe = p
 	ev.Time = time.Now().UTC()
 	ev.Seq = p.evseq.Add(1)
@@ -229,6 +227,8 @@ func (p *Pipe) sendEvent(ev *Event, ctx context.Context, noblock bool) (sent boo
 		select {
 		case <-ctxchan:
 			return false
+		case <-p.evstop:
+			return false // nobody is going to read it
 		case p.evch <- ev:
 			return true
 		}
@@ -242,7 +242,19 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 		defer wg.Done()
 	}
 
-	for ev := range p.evch {
+	for {
+		// NB: p.evch is never closed, as that would race with senders
+		var ev *Event
+		select {
+		case ev = <-p.evch:
+		case <-p.evstop:
+			select {
+			case ev = <-p.evch: // handle what is already there
+			default:
+				return
+			}
+		}
+
 		// prepare the handlers
 		hs := p.events[ev.Type]
 		if len(hs) == 0 {
