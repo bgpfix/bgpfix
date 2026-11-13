@@ -2,7 +2,6 @@
 package bmp
 
 import (
-	"bytes"
 	"io"
 	"net/netip"
 	"strconv"
@@ -64,6 +63,7 @@ func (t MsgType) String() string {
 type Bmp struct {
 	ref bool   // true iff Data is a reference to borrowed memory
 	buf []byte // internal buffer
+	bgp []byte // internal buffer for BgpData (FromMsg)
 
 	Version uint8   // BMP version (should be 3)
 	Length  uint32  // Total message length
@@ -94,6 +94,11 @@ func (b *Bmp) Reset() *Bmp {
 	b.Peer.Reset()
 	b.BgpData = nil
 	b.Data = nil
+	if cap(b.bgp) < 64*1024 {
+		b.bgp = b.bgp[:0]
+	} else {
+		b.bgp = nil
+	}
 
 	return b
 }
@@ -246,12 +251,16 @@ func (b *Bmp) FromMsg(m *msg.Msg, cps caps.Caps) error {
 	// Set message type
 	b.Type = MSG_ROUTE_MONITORING
 
-	// Write complete BGP message (header + data) to BgpData
-	var bb bytes.Buffer
-	if _, err := m.WriteTo(&bb); err != nil {
-		return err
+	// write the complete BGP message (header + data) to BgpData
+	l := m.Len()
+	if l > msg.MAXLEN_EXT {
+		return ErrLength
 	}
-	b.BgpData = bb.Bytes()
+	bgp := append(b.bgp[:0], msg.BgpMarker...)
+	bgp = msb.AppendUint16(bgp, uint16(l))
+	bgp = append(bgp, byte(m.Type))
+	b.bgp = append(bgp, m.Data...)
+	b.BgpData = b.bgp
 
 	// Set peer time from message
 	b.Peer.Time = m.Time

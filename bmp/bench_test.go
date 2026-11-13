@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/mrt"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
@@ -76,5 +77,29 @@ func BenchmarkReader(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+// BenchmarkFromMsg measures the BMP export path: BGP message to Route Monitoring
+func BenchmarkFromMsg(b *testing.B) {
+	rms := loadRM(b)
+	var ms []*msg.Msg
+	for _, rm := range rms[:1000] {
+		bm, m := NewBmp(), msg.NewMsg()
+		bm.FromBytes(rm)
+		m.FromBytes(bm.BgpData)
+		m.CopyData()
+		pipe.UseTags(m)["PEER_IP"] = bm.Peer.Address.String()
+		ms = append(ms, m)
+	}
+	var cps caps.Caps
+	cps.Use(caps.CAP_AS4)
+	bm := NewBmp()
+	b.ReportAllocs()
+	for i := 0; b.Loop(); i++ {
+		bm.Reset()
+		if bm.FromMsg(ms[i%len(ms)], cps) != nil || bm.Marshal() != nil {
+			b.Fatal("FromMsg")
+		}
 	}
 }
