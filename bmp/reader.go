@@ -3,7 +3,9 @@ package bmp
 import (
 	"fmt"
 	"io"
+	"net/netip"
 	"strconv"
+	"time"
 
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
@@ -19,7 +21,11 @@ type Reader struct {
 	bmp  *Bmp     // reusable BMP parser
 	obmp *OpenBmp // reusable OpenBMP parser (for wrapped format)
 
+	peers  map[peerKey]*peerState // per-peer state learned from Peer Up
+	Router string                 // router name for the ROUTER tag; set from the Initiation sysName
+
 	OpenBMP bool        // true if reading OpenBMP-wrapped format
+	Session bool        // emit Peer Up as OPENs and Peer Down as NOTIFICATION?
 	NoTags  bool        // ignore message tags?
 	Stats   ReaderStats // our stats
 }
@@ -29,6 +35,8 @@ type ReaderStats struct {
 	Parsed     uint64 // parsed messages (total)
 	ParsedBgp  uint64 // parsed BGP messages from BMP
 	ParsedSkip uint64 // skipped non-Route-Monitoring messages
+	PeerUp     uint64 // Peer Up notifications
+	PeerDown   uint64 // Peer Down notifications
 	Short      uint64 // data in buffer too short, should retry
 	Garbled    uint64 // parse error
 }
@@ -118,39 +126,54 @@ func (br *Reader) WriteFunc(src []byte, cb pipe.CallbackFunc) (n int, err error)
 			}
 		}
 
-		// Only process Route Monitoring messages with BGP data
-		if br.bmp.Type != MSG_ROUTE_MONITORING || len(br.bmp.BgpData) == 0 {
+		// track the session state; collect the BGP messages to emit
+		var bgps [][]byte
+		switch br.bmp.Type {
+		case MSG_ROUTE_MONITORING:
+			if len(br.bmp.BgpData) > 0 {
+				bgps = append(bgps, br.bmp.BgpData)
+			}
+		default:
+			bgps = br.track(br.bmp)
+		}
+		if len(bgps) == 0 {
 			stats.ParsedSkip++
 			continue
 		}
-		stats.ParsedBgp++
 
-		// Parse BGP message
-		m := p.GetMsg()
-		switch k, perr := m.FromBytes(br.bmp.BgpData); {
-		case perr != nil:
-			p.PutMsg(m)
-			stats.Garbled++
-			return n, fmt.Errorf("BGP: %w", perr)
-		case k != len(br.bmp.BgpData):
-			p.PutMsg(m)
-			stats.Garbled++
-			return n, fmt.Errorf("BGP: dangling bytes %d/%d", k, len(br.bmp.BgpData))
-		}
+		for bi, bgp := range bgps {
+			stats.ParsedBgp++
 
-		// Set message metadata
-		br.setMeta(m, br.bmp, br.obmp)
+			// Parse BGP message
+			m := p.GetMsg()
+			switch k, perr := m.FromBytes(bgp); {
+			case perr != nil:
+				p.PutMsg(m)
+				stats.Garbled++
+				return n, fmt.Errorf("BGP: %w", perr)
+			case k != len(bgp):
+				p.PutMsg(m)
+				stats.Garbled++
+				return n, fmt.Errorf("BGP: dangling bytes %d/%d", k, len(bgp))
+			}
 
-		// Callback check
-		if cb != nil && !cb(m) {
-			p.PutMsg(m)
-			continue
-		}
+			// Set message metadata
+			br.setMeta(m, br.bmp, br.obmp)
+			if br.bmp.Type == MSG_PEER_UP && bi == 0 && !br.NoTags {
+				pipe.UseTags(m)["BMP_OPEN"] = "sent" // the OPEN sent by the monitored router
+			}
 
-		// Write to pipe
-		m.CopyData()
-		if err := br.in.WriteMsg(m); err != nil {
-			return n, fmt.Errorf("pipe: %w", err)
+			// Callback check
+			if cb != nil && !cb(m) {
+				p.PutMsg(m)
+				continue
+			}
+
+			// Write to pipe
+			m.CopyData()
+			if err := br.in.WriteMsg(m); err != nil {
+				return n, fmt.Errorf("pipe: %w", err)
+			}
 		}
 	}
 
@@ -193,6 +216,8 @@ func (br *Reader) FromBytes(buf []byte, bgp_msg *msg.Msg, bmp_msg *Bmp, obmp_msg
 	// only Route Monitoring messages have BGP data
 	if bmp_msg.Type != MSG_ROUTE_MONITORING {
 		return n, ErrNotRouteMonitoring
+	} else if bmp_msg.BgpData == nil {
+		return n, ErrNoData
 	}
 
 	// parse BGP message
@@ -211,6 +236,9 @@ func (br *Reader) FromBytes(buf []byte, bgp_msg *msg.Msg, bmp_msg *Bmp, obmp_msg
 // setMeta sets message time and tags from BMP and OpenBMP headers
 func (br *Reader) setMeta(m *msg.Msg, bmp *Bmp, obmp *OpenBmp) {
 	m.Time = bmp.Peer.Time
+	if m.Time.Unix() == 0 {
+		m.Time = time.Now().UTC() // NB: zero means the time is not available (RFC 7854/4.2)
+	}
 
 	// the peer A flag determines the AS_PATH encoding (RFC 7854/4.2),
 	// possibly overriding session capabilities in parsers
@@ -220,6 +248,20 @@ func (br *Reader) setMeta(m *msg.Msg, bmp *Bmp, obmp *OpenBmp) {
 		m.ParseAS4 = 1
 	}
 
+	// ADD-PATH is negotiated in the OPENs carried by Peer Up
+	// NB: unknown peer (no Peer Up seen, eg. a Kafka feed) means no data
+	if ps := br.peers[bmp.Peer.key()]; ps != nil {
+		on := ps.addpathIn
+		if bmp.Peer.IsAdjRibOut() {
+			on = ps.addpathOut
+		}
+		if on {
+			m.ParseAddPath = 1
+		} else {
+			m.ParseAddPath = -1
+		}
+	}
+
 	if br.NoTags {
 		return
 	}
@@ -227,6 +269,18 @@ func (br *Reader) setMeta(m *msg.Msg, bmp *Bmp, obmp *OpenBmp) {
 	tags := pipe.UseTags(m)
 	tags["PEER_IP"] = bmp.Peer.Address.String()
 	tags["PEER_AS"] = strconv.FormatUint(uint64(bmp.Peer.AS), 10)
+	if bmp.Peer.ID != 0 {
+		tags["PEER_ID"] = netip.AddrFrom4([4]byte(msb.AppendUint32(nil, bmp.Peer.ID))).String()
+	}
+	if rib := bmp.Peer.Rib(); rib != "in-pre" {
+		tags["BMP_RIB"] = rib // NB: the default (pre-policy Adj-RIB-In) is not tagged
+	}
+	if bmp.Peer.RD != 0 {
+		tags["PEER_RD"] = strconv.FormatUint(bmp.Peer.RD, 16)
+	}
+	if br.Router != "" {
+		tags["ROUTER"] = br.Router
+	}
 
 	// Add OpenBMP metadata if available
 	if br.OpenBMP && obmp != nil {

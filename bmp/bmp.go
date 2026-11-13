@@ -71,6 +71,7 @@ type Bmp struct {
 
 	Peer    Peer   // Per-Peer Header (for types 0,1,2,3)
 	BgpData []byte // raw BGP message (for Route Monitoring)
+	Data    []byte // message body after the headers (all types); never copied
 }
 
 // NewBmp returns a new empty BMP message
@@ -92,6 +93,7 @@ func (b *Bmp) Reset() *Bmp {
 	b.Type = 0
 	b.Peer.Reset()
 	b.BgpData = nil
+	b.Data = nil
 
 	return b
 }
@@ -134,6 +136,8 @@ func (b *Bmp) FromBytes(raw []byte) (int, error) {
 	default:
 		b.Peer.Reset()
 	}
+
+	b.Data = raw[off:ml]
 
 	// Extract BGP data for Route Monitoring messages
 	if b.Type == MSG_ROUTE_MONITORING && off < ml {
@@ -184,7 +188,11 @@ func (b *Bmp) Marshal() error {
 	if b.HasPerPeerHeader() {
 		length += PEER_HEADLEN
 	}
-	length += len(b.BgpData)
+	body := b.BgpData
+	if body == nil {
+		body = b.Data
+	}
+	length += len(body)
 
 	// allocate buffer
 	if cap(b.buf) < length {
@@ -206,9 +214,7 @@ func (b *Bmp) Marshal() error {
 	}
 
 	// bgp data
-	if len(b.BgpData) > 0 {
-		copy(b.buf[off:], b.BgpData)
-	}
+	copy(b.buf[off:], body)
 
 	b.Length = uint32(length)
 	return nil
@@ -272,6 +278,17 @@ func (b *Bmp) FromMsg(m *msg.Msg, cps caps.Caps) error {
 				b.Peer.AS = uint32(v)
 			}
 		}
+		if s := tags["PEER_ID"]; len(s) > 0 {
+			if addr, err := netip.ParseAddr(s); err == nil && addr.Is4() {
+				b.Peer.ID = msb.Uint32(addr.AsSlice())
+			}
+		}
+		if s := tags["PEER_RD"]; len(s) > 0 {
+			if v, err := strconv.ParseUint(s, 16, 64); err == nil {
+				b.Peer.RD = v // NB: opaque part of the peer key, also on global peers
+			}
+		}
+		b.Peer.SetRib(tags["BMP_RIB"])
 	}
 
 	return nil
