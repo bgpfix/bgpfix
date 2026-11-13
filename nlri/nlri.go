@@ -47,11 +47,6 @@ func FromPrefix(p netip.Prefix) Prefix {
 // FromString parses either a prefix or an address in string format,
 // and returns it normalized and wrapped in NLRI.
 func FromString(s string) (n Prefix, e error) {
-	// min. length is 7 (eg. "1.1.1.1")
-	if len(s) < 7 {
-		return n, ErrLength
-	}
-
 	// is a prefix?
 	if strings.LastIndexByte(s, '/') > 0 {
 		p, err := netip.ParsePrefix(s)
@@ -218,11 +213,8 @@ func Unmarshal(dst []Prefix, src []byte, as afi.AS, cps caps.Caps, mt meta.Meta)
 	)
 
 	// parser options override cps?
-	switch mt.ParseAddPath {
-	case -1:
-		addpath = false
-	case 1:
-		addpath = true
+	if mt.ParseAddPath != nil {
+		addpath = mt.ParseAddPath.Has(as)
 	}
 
 	for len(src) > 0 {

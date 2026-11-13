@@ -3,7 +3,7 @@ package bmp
 import (
 	"fmt"
 	"io"
-	"strconv"
+	"time"
 
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
@@ -19,9 +19,19 @@ type Reader struct {
 	bmp  *Bmp     // reusable BMP parser
 	obmp *OpenBmp // reusable OpenBMP parser (for wrapped format)
 
+	peers   map[peerKey]*peerState // per-peer state
+	lastkey peerKey                // key of lastps
+	lastps  *peerState             // last peer looked up
+	Router  string                 // router name for the ROUTER tag; set from the Initiation sysName
+
 	OpenBMP bool        // true if reading OpenBMP-wrapped format
 	NoTags  bool        // ignore message tags?
 	Stats   ReaderStats // our stats
+
+	// OnBmp, if set, is called for every BMP message other than Route Monitoring
+	// (eg. Peer Up, Peer Down, Statistics Report), after the reader state is updated.
+	// NB: bm references the input buffer and is reused after OnBmp returns.
+	OnBmp func(bm *Bmp)
 }
 
 // ReaderStats holds reader statistics
@@ -29,6 +39,8 @@ type ReaderStats struct {
 	Parsed     uint64 // parsed messages (total)
 	ParsedBgp  uint64 // parsed BGP messages from BMP
 	ParsedSkip uint64 // skipped non-Route-Monitoring messages
+	PeerUp     uint64 // Peer Up notifications
+	PeerDown   uint64 // Peer Down notifications
 	Short      uint64 // data in buffer too short, should retry
 	Garbled    uint64 // parse error
 }
@@ -53,8 +65,7 @@ func (br *Reader) Write(src []byte) (n int, err error) {
 // to be called just before the message is accepted for processing. If the callback
 // returns false, the message is silently dropped instead.
 func (br *Reader) WriteFunc(src []byte, cb pipe.CallbackFunc) (n int, err error) {
-	p := br.pipe
-	stats := &br.Stats
+	p, stats := br.pipe, &br.Stats
 
 	// append src and switch to inbuf if needed
 	n = len(src) // NB: always return n=len(src)
@@ -118,36 +129,45 @@ func (br *Reader) WriteFunc(src []byte, cb pipe.CallbackFunc) (n int, err error)
 			}
 		}
 
-		// Only process Route Monitoring messages with BGP data
-		if br.bmp.Type != MSG_ROUTE_MONITORING || len(br.bmp.BgpData) == 0 {
+		// not Route Monitoring? track the session state
+		bm := br.bmp
+		if bm.Type != MSG_ROUTE_MONITORING || len(bm.BgpData) == 0 {
 			stats.ParsedSkip++
+			br.track(bm)
+			if br.OnBmp != nil {
+				br.OnBmp(bm)
+			}
 			continue
 		}
-		stats.ParsedBgp++
 
-		// Parse BGP message
+		// parse BGP message
+		stats.ParsedBgp++
 		m := p.GetMsg()
-		switch k, perr := m.FromBytes(br.bmp.BgpData); {
+		switch k, perr := m.FromBytes(bm.BgpData); {
 		case perr != nil:
 			p.PutMsg(m)
 			stats.Garbled++
 			return n, fmt.Errorf("BGP: %w", perr)
-		case k != len(br.bmp.BgpData):
+		case k != len(bm.BgpData):
 			p.PutMsg(m)
 			stats.Garbled++
-			return n, fmt.Errorf("BGP: dangling bytes %d/%d", k, len(br.bmp.BgpData))
+			return n, fmt.Errorf("BGP: dangling bytes %d/%d", k, len(bm.BgpData))
 		}
 
-		// Set message metadata
-		br.setMeta(m, br.bmp, br.obmp)
+		// set message metadata, using the per-peer cache
+		var ps *peerState
+		if !br.NoTags || len(br.peers) > 0 {
+			ps = br.peer(&bm.Peer, !br.NoTags)
+		}
+		br.setMeta(m, bm, br.obmp, ps)
 
-		// Callback check
+		// callback check
 		if cb != nil && !cb(m) {
 			p.PutMsg(m)
 			continue
 		}
 
-		// Write to pipe
+		// write to pipe
 		m.CopyData()
 		if err := br.in.WriteMsg(m); err != nil {
 			return n, fmt.Errorf("pipe: %w", err)
@@ -193,6 +213,8 @@ func (br *Reader) FromBytes(buf []byte, bgp_msg *msg.Msg, bmp_msg *Bmp, obmp_msg
 	// only Route Monitoring messages have BGP data
 	if bmp_msg.Type != MSG_ROUTE_MONITORING {
 		return n, ErrNotRouteMonitoring
+	} else if bmp_msg.BgpData == nil {
+		return n, ErrNoData
 	}
 
 	// parse BGP message
@@ -203,14 +225,19 @@ func (br *Reader) FromBytes(buf []byte, bgp_msg *msg.Msg, bmp_msg *Bmp, obmp_msg
 	}
 
 	// set message metadata
-	br.setMeta(bgp_msg, bmp_msg, obmp_msg)
+	// NB: no per-peer state, as it would need a lock
+	br.setMeta(bgp_msg, bmp_msg, obmp_msg, nil)
 
 	return n, nil
 }
 
-// setMeta sets message time and tags from BMP and OpenBMP headers
-func (br *Reader) setMeta(m *msg.Msg, bmp *Bmp, obmp *OpenBmp) {
+// setMeta sets message time and tags from BMP and OpenBMP headers.
+// ps is the per-peer state, if any.
+func (br *Reader) setMeta(m *msg.Msg, bmp *Bmp, obmp *OpenBmp, ps *peerState) {
 	m.Time = bmp.Peer.Time
+	if m.Time.Unix() == 0 {
+		m.Time = time.Now().UTC() // NB: zero means the time is not available (RFC 7854/4.2)
+	}
 
 	// the peer A flag determines the AS_PATH encoding (RFC 7854/4.2),
 	// possibly overriding session capabilities in parsers
@@ -220,13 +247,50 @@ func (br *Reader) setMeta(m *msg.Msg, bmp *Bmp, obmp *OpenBmp) {
 		m.ParseAS4 = 1
 	}
 
+	// ADD-PATH is negotiated in the OPENs carried by Peer Up
+	// NB: unknown peer (no Peer Up seen, eg. a Kafka feed) means no data
+	// NB: negotiated per address family, so a peer may have it on IPv4 only
+	if ps != nil && ps.up {
+		on := ps.addpathIn
+		if bmp.Peer.IsAdjRibOut() {
+			on = ps.addpathOut
+		}
+		m.ParseAddPath = on
+	}
+
 	if br.NoTags {
 		return
 	}
 
+	// NB: format the peer tags once per peer, not per message
+	if ps == nil {
+		ps = new(peerState)
+	}
+	if ps.ip == "" || ps.as != bmp.Peer.AS || ps.id != bmp.Peer.ID {
+		ps.setTags(&bmp.Peer)
+	}
+
 	tags := pipe.UseTags(m)
-	tags["PEER_IP"] = bmp.Peer.Address.String()
-	tags["PEER_AS"] = strconv.FormatUint(uint64(bmp.Peer.AS), 10)
+	tags["PEER_IP"] = ps.ip
+	tags["PEER_AS"] = ps.asn
+	if ps.bgpid != "" {
+		tags["PEER_ID"] = ps.bgpid
+	}
+	if rib := bmp.Peer.Rib(); rib != "in-pre" {
+		tags["BMP_RIB"] = rib // NB: the default (pre-policy Adj-RIB-In) is not tagged
+	}
+	if ps.rd != "" {
+		tags["PEER_RD"] = ps.rd
+	}
+	switch bmp.Peer.Type {
+	case PEER_TYPE_RD:
+		tags["PEER_TYPE"] = "rd"
+	case PEER_TYPE_LOCAL:
+		tags["PEER_TYPE"] = "local"
+	}
+	if br.Router != "" {
+		tags["ROUTER"] = br.Router
+	}
 
 	// Add OpenBMP metadata if available
 	if br.OpenBMP && obmp != nil {

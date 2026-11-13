@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/binary"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
@@ -344,12 +345,13 @@ func (msg *Msg) Marshal(cps caps.Caps) error {
 		}
 		err = u.Marshal(cps)
 
-		// NB: ParseAS4 must describe msg.Data, which now follows cps
+		// NB: ParseAS4 and ADD-PATH must describe msg.Data, which now follows cps
 		if cps.Has(caps.CAP_AS4) {
 			msg.ParseAS4 = 1
 		} else {
 			msg.ParseAS4 = -1
 		}
+		msg.ParseAddPath = nil
 	case KEEPALIVE:
 		if msg.buf == nil {
 			msg.buf = make([]byte, 0)
@@ -364,6 +366,15 @@ func (msg *Msg) Marshal(cps caps.Caps) error {
 	}
 
 	return err
+}
+
+// HasAddPath returns true iff msg.Data has ADD-PATH Path Identifiers for address family as:
+// as told by msg.ParseAddPath, or else by cps in msg.Dir.
+func (msg *Msg) HasAddPath(as afi.AS, cps caps.Caps) bool {
+	if ap := msg.ParseAddPath; ap != nil {
+		return ap.Has(as)
+	}
+	return cps.AddPathEnabled(as, msg.Dir)
 }
 
 // WriteTo writes raw BGP msg.Data to w, implementing io.WriterTo.

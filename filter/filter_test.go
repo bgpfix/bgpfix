@@ -192,6 +192,7 @@ func TestParseValid(t *testing.T) {
 		`!(UPDATE && (as_origin == 39282 || !aspath[0] < 1000))`,
 		"ipv4 && as_origin == 15169",
 		"prefix ~ 8.0.0.0/8 || prefix ~ 2001:db8::/32",
+		"prefix == ::/0 || nexthop == ::1",
 
 		// no space after index (tests parser bug fix)
 		"aspath[0]== 65001",

@@ -2,7 +2,6 @@
 package bmp
 
 import (
-	"bytes"
 	"io"
 	"net/netip"
 	"strconv"
@@ -64,6 +63,7 @@ func (t MsgType) String() string {
 type Bmp struct {
 	ref bool   // true iff Data is a reference to borrowed memory
 	buf []byte // internal buffer
+	bgp []byte // internal buffer for BgpData in FromMsg (at most one BGP message)
 
 	Version uint8   // BMP version (should be 3)
 	Length  uint32  // Total message length
@@ -71,6 +71,7 @@ type Bmp struct {
 
 	Peer    Peer   // Per-Peer Header (for types 0,1,2,3)
 	BgpData []byte // raw BGP message (for Route Monitoring)
+	Data    []byte // message body after the headers (all types); never copied
 }
 
 // NewBmp returns a new empty BMP message
@@ -92,6 +93,7 @@ func (b *Bmp) Reset() *Bmp {
 	b.Type = 0
 	b.Peer.Reset()
 	b.BgpData = nil
+	b.Data = nil
 
 	return b
 }
@@ -134,6 +136,8 @@ func (b *Bmp) FromBytes(raw []byte) (int, error) {
 	default:
 		b.Peer.Reset()
 	}
+
+	b.Data = raw[off:ml]
 
 	// Extract BGP data for Route Monitoring messages
 	if b.Type == MSG_ROUTE_MONITORING && off < ml {
@@ -184,7 +188,11 @@ func (b *Bmp) Marshal() error {
 	if b.HasPerPeerHeader() {
 		length += PEER_HEADLEN
 	}
-	length += len(b.BgpData)
+	body := b.BgpData
+	if body == nil {
+		body = b.Data
+	}
+	length += len(body)
 
 	// allocate buffer
 	if cap(b.buf) < length {
@@ -206,9 +214,7 @@ func (b *Bmp) Marshal() error {
 	}
 
 	// bgp data
-	if len(b.BgpData) > 0 {
-		copy(b.buf[off:], b.BgpData)
-	}
+	copy(b.buf[off:], body)
 
 	b.Length = uint32(length)
 	return nil
@@ -240,12 +246,16 @@ func (b *Bmp) FromMsg(m *msg.Msg, cps caps.Caps) error {
 	// Set message type
 	b.Type = MSG_ROUTE_MONITORING
 
-	// Write complete BGP message (header + data) to BgpData
-	var bb bytes.Buffer
-	if _, err := m.WriteTo(&bb); err != nil {
-		return err
+	// write the complete BGP message (header + data) to BgpData
+	l := m.Len()
+	if l > msg.MAXLEN_EXT {
+		return ErrLength
 	}
-	b.BgpData = bb.Bytes()
+	bgp := append(b.bgp[:0], msg.BgpMarker...)
+	bgp = msb.AppendUint16(bgp, uint16(l))
+	bgp = append(bgp, byte(m.Type))
+	b.bgp = append(bgp, m.Data...)
+	b.BgpData = b.bgp
 
 	// Set peer time from message
 	b.Peer.Time = m.Time
@@ -272,6 +282,25 @@ func (b *Bmp) FromMsg(m *msg.Msg, cps caps.Caps) error {
 				b.Peer.AS = uint32(v)
 			}
 		}
+		if s := tags["PEER_ID"]; len(s) > 0 {
+			if addr, err := netip.ParseAddr(s); err == nil && addr.Is4() {
+				b.Peer.ID = msb.Uint32(addr.AsSlice())
+			}
+		}
+		if s := tags["PEER_RD"]; len(s) > 0 {
+			if v, err := strconv.ParseUint(s, 16, 64); err == nil {
+				b.Peer.RD = v // NB: opaque part of the peer key, also on global peers
+			}
+
+			// NB: RD and local instance peers have a distinguisher (RFC 7854/4.2)
+			switch tags["PEER_TYPE"] {
+			case "rd":
+				b.Peer.Type = PEER_TYPE_RD
+			case "local":
+				b.Peer.Type = PEER_TYPE_LOCAL
+			}
+		}
+		b.Peer.SetRib(tags["BMP_RIB"])
 	}
 
 	return nil

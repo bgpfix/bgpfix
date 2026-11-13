@@ -135,3 +135,43 @@ func (p *Peer) FromBytes(raw []byte) (int, error) {
 
 	return PEER_HEADLEN, nil
 }
+
+// Rib names the RIB view the message comes from, eg. "in-pre" for
+// pre-policy Adj-RIB-In, "out-post" for post-policy Adj-RIB-Out, or "loc".
+func (p *Peer) Rib() string {
+	switch {
+	case p.Type == PEER_TYPE_LOC_RIB:
+		return "loc"
+	case p.Flags&PEER_FLAG_O != 0 && p.Flags&PEER_FLAG_L != 0:
+		return "out-post"
+	case p.Flags&PEER_FLAG_O != 0:
+		return "out-pre"
+	case p.Flags&PEER_FLAG_L != 0:
+		return "in-post"
+	default:
+		return "in-pre"
+	}
+}
+
+// SetRib is the reverse of Rib: it replaces the RIB view of p.
+// Empty name means "in-pre"; unknown names are ignored.
+func (p *Peer) SetRib(name string) {
+	var flags uint8
+	switch name {
+	case "loc":
+		p.Type = PEER_TYPE_LOC_RIB
+	case "out-post":
+		flags = PEER_FLAG_O | PEER_FLAG_L
+	case "out-pre":
+		flags = PEER_FLAG_O
+	case "in-post":
+		flags = PEER_FLAG_L
+	case "in-pre", "":
+	default:
+		return
+	}
+	if name != "loc" && p.Type == PEER_TYPE_LOC_RIB {
+		p.Type = PEER_TYPE_GLOBAL
+	}
+	p.Flags = p.Flags&^(PEER_FLAG_O|PEER_FLAG_L) | flags
+}

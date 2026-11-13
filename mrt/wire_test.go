@@ -9,6 +9,7 @@ import (
 
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/nlri"
 	"github.com/stretchr/testify/require"
@@ -225,7 +226,7 @@ func TestBGP4_AddPath(t *testing.T) {
 
 	// the MRT subtype must be captured in message metadata
 	require.Equal(t, int8(1), m.ParseAS4)
-	require.Equal(t, int8(1), m.ParseAddPath)
+	require.Equal(t, meta.AddPathOn, m.ParseAddPath)
 
 	// parse with empty session caps: the metadata must override ADD_PATH
 	err = m.Parse(caps.Caps{})
@@ -240,7 +241,25 @@ func TestBGP4_AddPath(t *testing.T) {
 	m2 := msg.NewMsg()
 	require.NoError(t, m2.FromJSON(m.GetJSON()))
 	require.Equal(t, int8(0), m2.ParseAS4)
-	require.Equal(t, int8(0), m2.ParseAddPath)
+	require.Nil(t, m2.ParseAddPath)
+}
+
+// an unparsed IPv6 UPDATE, with ADD-PATH for IPv6 only, must be written as ADDPATH
+func TestBGP4_AddPathMP(t *testing.T) {
+	bgp := append(append([]byte(nil), msg.BgpMarker...),
+		0, 63, 2, 0, 0, 0, 40, // length, type, withdrawn, attrs: ORIGIN, AS_PATH, MP_REACH
+		0x40, 1, 1, 0, 0x40, 2, 0,
+		0x80, 14, 30, 0, 2, 1, 16, 0x20, 1, 0xd, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+		0, 0, 0, 7, 32, 0x20, 1, 0xd, 0xb8) // path id + 2001:db8::/32
+	m := msg.NewMsg()
+	_, err := m.FromBytes(bgp)
+	require.NoError(t, err)
+	m.ParseAddPath = &meta.AddPath{AS: []afi.AS{afi.AS_IPV6_UNICAST}}
+
+	mr := NewMrt()
+	mr.Switch(BGP4MP_ET)
+	require.NoError(t, mr.Bgp4.FromMsg(m, caps.Caps{}))
+	require.True(t, mr.Sub.IsBgpAddPath())
 }
 
 func TestMrt_MaxLen(t *testing.T) {

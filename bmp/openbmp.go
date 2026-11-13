@@ -48,6 +48,8 @@ type OpenBmp struct {
 	ref bool   // true iff Data is a reference to borrowed memory
 	buf []byte // internal buffer
 
+	cname, rname string // last names seen, re-used to avoid allocations
+
 	Version   uint8  // protocol version (major.minor encoded: major=byte5, minor=byte6)
 	Minor     uint8  // version minor
 	HeaderLen uint16 // total header length
@@ -163,7 +165,7 @@ func (o *OpenBmp) FromBytes(raw []byte) (int, error) {
 			nameLen := int(msb.Uint16(raw[off : off+2]))
 			off += 2
 			if off+nameLen <= int(o.HeaderLen) {
-				o.CollectorName = string(raw[off : off+nameLen])
+				o.CollectorName = reuse(&o.cname, raw[off:off+nameLen])
 				off += nameLen
 			}
 		}
@@ -189,7 +191,7 @@ func (o *OpenBmp) FromBytes(raw []byte) (int, error) {
 			nameLen := int(msb.Uint16(raw[off : off+2]))
 			off += 2
 			if off+nameLen <= int(o.HeaderLen) {
-				o.RouterName = string(raw[off : off+nameLen])
+				o.RouterName = reuse(&o.rname, raw[off:off+nameLen])
 				off += nameLen
 			}
 		}
@@ -343,4 +345,12 @@ func (o *OpenBmp) FromBmp(bm *Bmp, m *msg.Msg) error {
 	}
 
 	return nil
+}
+
+// reuse returns *last if it equals b, else sets *last to a copy of b
+func reuse(last *string, b []byte) string {
+	if string(b) != *last { // NB: no allocation
+		*last = string(b)
+	}
+	return *last
 }
