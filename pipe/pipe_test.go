@@ -719,3 +719,26 @@ func TestPipe_CallbackBlackhole(t *testing.T) {
 		t.Fatalf("expected 0 messages (blackholed), got %d", len(got))
 	}
 }
+
+func TestPipe_FutureTimeDoesNotPinLastAlive(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p := newTestPipe(ctx)
+	if err := p.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	go drainLine(p.L)
+	go drainLine(p.R)
+
+	m := newKeepalive()
+	m.Time = time.Now().Add(100 * 365 * 24 * time.Hour)
+	p.L.Input.In <- m
+	p.L.Close()
+	p.R.Close()
+	p.Stop()
+
+	if last, now := p.L.LastAlive.Load(), time.Now().Unix(); last == 0 || last > now {
+		t.Fatalf("LastAlive=%d, want within (0, %d]", last, now)
+	}
+}

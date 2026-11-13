@@ -407,6 +407,9 @@ func (f *FlowPrefix4) ToJSON(dst []byte) []byte {
 
 func (f *FlowPrefix4) FromJSON(src []byte) (err error) {
 	f.Prefix.Prefix, err = json.UnPrefix(src)
+	if err == nil && !f.Prefix.Addr().Is4() {
+		return ErrValue
+	}
 	return err
 }
 
@@ -500,6 +503,9 @@ func (f *FlowPrefix6) ToJSON(dst []byte) []byte {
 func (f *FlowPrefix6) FromJSON(src []byte) (err error) {
 	if bytes.IndexByte(src, '-') < 0 {
 		f.Prefix, err = json.UnPrefix(src)
+		if err == nil && !f.Prefix.Addr().Is6() {
+			return ErrValue
+		}
 		return err
 	}
 
@@ -530,7 +536,7 @@ func (f *FlowPrefix6) FromJSON(src []byte) (err error) {
 	}
 
 	// looks sane?
-	if l >= 0 && l <= 128 && o >= 0 && (o == 0 || o < l) {
+	if ip.Is6() && l >= 0 && l <= 128 && o >= 0 && (o == 0 || o < l) {
 		f.Prefix = netip.PrefixFrom(ip, l)
 		f.Offset = o
 		return nil

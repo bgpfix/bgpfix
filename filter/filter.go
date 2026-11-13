@@ -196,6 +196,9 @@ func (f *Filter) parse(expstr string, lvl int) (parsed *Expr, left string, err e
 			}
 
 			exp.Attr = ATTR_EXPR
+			for e := nexp; e != nil; e = e.Next {
+				exp.Types = exp.Types || e.Types // NB: only if a term can handle non-UPDATE
+			}
 			exp.Val = nexp
 			exp.Filter = f // ready for use
 			str = nstr

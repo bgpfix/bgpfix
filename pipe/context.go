@@ -191,9 +191,8 @@ func (mx *Context) ToJSON(dst []byte) []byte {
 // FromJSON unmarshals Context from JSON
 func (mx *Context) FromJSON(src []byte) error {
 	return json.ObjectEach(src, func(key string, val []byte, typ json.Type) error {
-		// special case: message action
 		if key == "ACTION" {
-			return mx.Action.FromJSON(val)
+			return nil // NB: export-only, a feed must not choose how its messages are processed
 		} else if len(val) == 0 {
 			return nil // ignore empty values
 		} else {

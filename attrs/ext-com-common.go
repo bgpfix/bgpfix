@@ -100,6 +100,15 @@ func (e *ExtcomASN) FromJSON(src []byte) error {
 	}
 	e.Value = uint32(v)
 
+	// must fit the wire fields
+	if e.Type()&EXTCOM_AS4 != 0 {
+		if e.Value > 0xffff {
+			return ErrValue
+		}
+	} else if e.ASN > 0xffff {
+		return ErrValue
+	}
+
 	return nil
 }
 

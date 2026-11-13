@@ -126,15 +126,19 @@ var DefaultFlags = [256]Flags{
 	ATTR_OTC:             ATTR_TRANSITIVE,
 }
 
-// NewAttr returns a new Attr instance for given code ac and default flags.
-func NewAttr(ac Code) Attr {
-	var flags Flags
+// defaultFlags returns the default flags for attribute code ac.
+func defaultFlags(ac Code) Flags {
 	switch ac {
 	case ATTR_ORIGIN, ATTR_ASPATH, ATTR_NEXTHOP, ATTR_LOCALPREF, ATTR_AGGREGATE:
-		flags = ATTR_TRANSITIVE
+		return ATTR_TRANSITIVE
 	default:
-		flags = ATTR_OPTIONAL | DefaultFlags[ac]
+		return ATTR_OPTIONAL | DefaultFlags[ac]
 	}
+}
+
+// NewAttr returns a new Attr instance for given code ac and default flags.
+func NewAttr(ac Code) Attr {
+	flags := defaultFlags(ac)
 
 	// select the new func, default to raw
 	newfunc := NewFuncs[ac]
