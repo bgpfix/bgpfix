@@ -287,15 +287,17 @@ func (b *Bmp) FromMsg(m *msg.Msg, cps caps.Caps) error {
 				b.Peer.ID = msb.Uint32(addr.AsSlice())
 			}
 		}
-		switch tags["PEER_TYPE"] {
-		case "rd":
-			b.Peer.Type = PEER_TYPE_RD
-		case "local":
-			b.Peer.Type = PEER_TYPE_LOCAL
-		}
 		if s := tags["PEER_RD"]; len(s) > 0 {
 			if v, err := strconv.ParseUint(s, 16, 64); err == nil {
 				b.Peer.RD = v // NB: opaque part of the peer key, also on global peers
+			}
+
+			// NB: RD and local instance peers have a distinguisher (RFC 7854/4.2)
+			switch tags["PEER_TYPE"] {
+			case "rd":
+				b.Peer.Type = PEER_TYPE_RD
+			case "local":
+				b.Peer.Type = PEER_TYPE_LOCAL
 			}
 		}
 		b.Peer.SetRib(tags["BMP_RIB"])
