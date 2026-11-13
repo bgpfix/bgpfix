@@ -6,6 +6,7 @@ import (
 
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 )
 
@@ -38,9 +39,9 @@ func (br *Reader) key(p *Peer) peerKey {
 
 // peerState is what Reader knows about a peer
 type peerState struct {
-	up         bool            // seen Peer Up?
-	addpathIn  map[afi.AS]bool // ADD-PATH on routes received from the peer (Adj-RIB-In)
-	addpathOut map[afi.AS]bool // ADD-PATH on routes sent to the peer (Adj-RIB-Out)
+	up         bool          // seen Peer Up?
+	addpathIn  *meta.AddPath // ADD-PATH on routes received from the peer (Adj-RIB-In)
+	addpathOut *meta.AddPath // ADD-PATH on routes sent to the peer (Adj-RIB-Out)
 
 	as, id             uint32 // peer AS and BGP ID behind the tag values below
 	ip, asn, bgpid, rd string // tag values
@@ -176,27 +177,27 @@ func (b *Bmp) SetTermination(reason uint16) {
 	b.Data = msb.AppendUint16([]byte{0, 1, 0, 2}, reason)
 }
 
-// addpath returns the address families with ADD-PATH negotiated from snd to rcv, or nil if none
-func addpath(snd, rcv *msg.Msg) (on map[afi.AS]bool) {
+// addpath returns the address families with ADD-PATH negotiated from snd to rcv
+func addpath(snd, rcv *msg.Msg) *meta.AddPath {
 	s, _ := snd.Open.Caps.Get(caps.CAP_ADDPATH).(*caps.AddPath)
 	r, _ := rcv.Open.Caps.Get(caps.CAP_ADDPATH).(*caps.AddPath)
 	if s == nil || r == nil {
-		return nil
+		return meta.AddPathOff
 	}
+	ap := new(meta.AddPath)
 	for as := range s.Proto {
 		if s.Has(as, caps.ADDPATH_SEND) && r.Has(as, caps.ADDPATH_RECEIVE) {
-			if on == nil {
-				on = make(map[afi.AS]bool)
-			}
-			on[as] = true
+			ap.AS = append(ap.AS, as)
 		}
 	}
-	return on
+	if len(ap.AS) == 0 {
+		return meta.AddPathOff
+	}
+	return ap
 }
 
-// track updates the reader state with a non-Route-Monitoring message bm.
-// Returns BGP messages to emit, if any (only in br.Session mode).
-func (br *Reader) track(bm *Bmp) (bgps [][]byte) {
+// track updates the reader state with a non-Route-Monitoring message bm
+func (br *Reader) track(bm *Bmp) {
 	switch bm.Type {
 	case MSG_INITIATION:
 		for raw := bm.Data; len(raw) >= 4; {
@@ -213,49 +214,50 @@ func (br *Reader) track(bm *Bmp) (bgps [][]byte) {
 		br.Stats.PeerUp++
 		var pu PeerUp
 		if bm.PeerUp(&pu) != nil {
-			return nil
+			return
 		}
 
 		// parse both OPENs for the negotiated ADD-PATH
 		sent, rcvd := msg.NewMsg(), msg.NewMsg()
 		if _, err := sent.FromBytes(pu.SentOpen); err != nil || sent.Parse(caps.Caps{}) != nil || sent.Type != msg.OPEN || sent.Open.ParseCaps() != nil {
-			return nil
+			return
 		}
 		if _, err := rcvd.FromBytes(pu.RcvdOpen); err != nil || rcvd.Parse(caps.Caps{}) != nil || rcvd.Type != msg.OPEN || rcvd.Open.ParseCaps() != nil {
-			return nil
+			return
 		}
 		if ps := br.peer(&bm.Peer, true); ps != nil {
 			ps.up = true
 			ps.addpathIn = addpath(rcvd, sent)
 			ps.addpathOut = addpath(sent, rcvd)
 		}
-		if br.Session {
-			bgps = append(bgps, pu.SentOpen, pu.RcvdOpen)
-		}
 
 	case MSG_PEER_DOWN:
 		br.Stats.PeerDown++
 		delete(br.peers, br.key(&bm.Peer))
 		br.lastps = nil
-
-		// reasons 1 and 3 carry a NOTIFICATION
-		if br.Session && len(bm.Data) > 1 && (bm.Data[0] == 1 || bm.Data[0] == 3) {
-			if l := bgpLen(bm.Data[1:]); l > 0 {
-				bgps = append(bgps, bm.Data[1:1+l])
-			}
-		}
-
-	case MSG_ROUTE_MIRRORING:
-		// TLV type 0 is a verbatim BGP message
-		for raw := bm.Data; br.Session && len(raw) >= 4; {
-			typ, l := msb.Uint16(raw[0:2]), int(msb.Uint16(raw[2:4]))
-			if l > len(raw)-4 {
-				break
-			} else if typ == 0 && bgpLen(raw[4:4+l]) == l {
-				bgps = append(bgps, raw[4:4+l])
-			}
-			raw = raw[4+l:]
-		}
 	}
-	return bgps
+}
+
+// Stats calls fn for each counter and gauge in Statistics Report b (RFC 7854 section 4.8).
+// as is the address family of per-AFI/SAFI gauges, else 0.
+func (b *Bmp) Stats(fn func(typ uint16, as afi.AS, val uint64)) error {
+	if b.Type != MSG_STATISTICS_REPORT || len(b.Data) < 4 {
+		return ErrShort
+	}
+	for raw := b.Data[4:]; len(raw) >= 4; {
+		typ, l := msb.Uint16(raw[0:2]), int(msb.Uint16(raw[2:4]))
+		if l > len(raw)-4 {
+			return ErrLength
+		}
+		switch v := raw[4 : 4+l]; l {
+		case 4:
+			fn(typ, 0, uint64(msb.Uint32(v)))
+		case 8:
+			fn(typ, 0, msb.Uint64(v))
+		case 11: // AFI, SAFI, gauge
+			fn(typ, afi.NewAS(afi.AFI(msb.Uint16(v)), afi.SAFI(v[2])), msb.Uint64(v[3:]))
+		}
+		raw = raw[4+l:]
+	}
+	return nil
 }

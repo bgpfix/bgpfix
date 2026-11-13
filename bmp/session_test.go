@@ -8,6 +8,7 @@ import (
 
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
 	"github.com/stretchr/testify/require"
@@ -74,13 +75,10 @@ func TestReader_AddPath(t *testing.T) {
 		add(func(b *Bmp) { b.Type = MSG_ROUTE_MONITORING; b.BgpData = addpathUpdate })
 
 		// NB: the callback drops the messages, so look at them right there
-		var flags []int8
+		var aps []*meta.AddPath
 		var routers, reach []string
 		_, err := br.WriteFunc(stream, func(m *msg.Msg) bool {
-			flags = append(flags, m.ParseAddPath)
-			if m.AddPath != nil {
-				flags[len(flags)-1] = 2 // per family
-			}
+			aps = append(aps, m.ParseAddPath)
 			routers = append(routers, pipe.GetTags(m)["ROUTER"])
 			require.NoError(t, m.Parse(caps.Caps{}))
 			for _, p := range m.Update.AllReach() {
@@ -92,39 +90,59 @@ func TestReader_AddPath(t *testing.T) {
 		require.EqualValues(t, 1, br.Stats.PeerUp)
 		require.EqualValues(t, 1, br.Stats.PeerDown)
 		require.Equal(t, []string{"rtr1", "rtr1", "rtr1"}, routers)
+		require.Nil(t, aps[2]) // NB: no state after Peer Down
 		if addpath {
-			require.Equal(t, []int8{2, 2, 0}, flags) // NB: no state after Peer Down
+			require.Equal(t, []afi.AS{afi.AS_IPV4_UNICAST}, aps[0].AS)
 			require.Equal(t, []string{"#7#10.0.0.0/24", "2001:db8::/32"}, reach[:2])
 		} else {
-			require.Equal(t, []int8{-1, -1, 0}, flags)
+			require.Equal(t, meta.AddPathOff, aps[0])
 		}
 	}
 }
 
-// in Session mode, Peer Up yields both OPENs and Peer Down its NOTIFICATION
-func TestReader_Session(t *testing.T) {
+// Writer output must be a valid BMP session for Reader: ADD-PATH survives the
+// synthesized Peer Up, and OnBmp sees the other messages, including statistics
+func TestWriter(t *testing.T) {
+	var cps caps.Caps
+	cps.Use(caps.CAP_AS4)
+
+	// an UPDATE with Path Identifiers, from peer 10.0.0.1
+	m := msg.NewMsg()
+	_, err := m.FromBytes(addpathUpdate)
+	require.NoError(t, err)
+	m.ParseAddPath = meta.AddPathOn
+	pipe.UseTags(m)["PEER_IP"] = "10.0.0.1"
+
+	b := NewBmp()
+	require.NoError(t, b.FromMsg(m, cps))
+	require.NoError(t, b.Marshal())
+	w := Writer{SysName: "rtr1"}
+	stream := append(w.Prepend(nil, b, m, cps), b.Bytes()...)
+	stream = append(w.Prepend(stream, b, m, cps), b.Bytes()...) // NB: no second Peer Up
+
+	// a Statistics Report: 5 rejected prefixes, 1000 routes in Adj-RIB-In
+	st := NewBmp()
+	st.Type, st.Peer = MSG_STATISTICS_REPORT, b.Peer
+	st.Data = []byte{0, 0, 0, 2, 0, 0, 0, 4, 0, 0, 0, 5, 0, 7, 0, 8, 0, 0, 0, 0, 0, 0, 3, 0xe8}
+	require.NoError(t, st.Marshal())
+	stream = append(stream, st.Bytes()...)
+
 	br := NewReader(testPipe(t), nil)
-	br.Session = true
-
-	notify := append(append([]byte(nil), msg.BgpMarker...), 0, 21, 3, 6, 2) // Cease / Administrative Shutdown
-	open := testOpen(t, false)
-	var stream []byte
-	for _, set := range []func(b *Bmp){
-		func(b *Bmp) { b.SetPeerUp(&PeerUp{SentOpen: open, RcvdOpen: open}) },
-		func(b *Bmp) { b.SetPeerDown(notify) },
-	} {
-		b := NewBmp()
-		b.Peer = Peer{Address: netip.MustParseAddr("10.0.0.1"), AS: 65001}
-		set(b)
-		require.NoError(t, b.Marshal())
-		stream = append(stream, b.Bytes()...)
+	var types []string
+	var stats []uint64
+	br.OnBmp = func(bm *Bmp) {
+		types = append(types, bm.Type.String())
+		bm.Stats(func(typ uint16, as afi.AS, val uint64) { stats = append(stats, uint64(typ), val) })
 	}
-
-	var got []string
-	_, err := br.WriteFunc(stream, func(m *msg.Msg) bool {
-		got = append(got, m.Type.String()+pipe.GetTags(m)["BMP_OPEN"])
+	var reach []string
+	_, err = br.WriteFunc(stream, func(m *msg.Msg) bool {
+		require.NoError(t, m.Parse(caps.Caps{}))
+		reach = append(reach, m.Update.Reach[0].String())
 		return false
 	})
 	require.NoError(t, err)
-	require.Equal(t, []string{"OPENsent", "OPEN", "NOTIFY"}, got)
+	require.Equal(t, []string{"INITIATION", "PEER_UP", "STATISTICS_REPORT"}, types)
+	require.Equal(t, []string{"#7#10.0.0.0/24", "#7#10.0.0.0/24"}, reach)
+	require.Equal(t, []uint64{0, 5, 7, 1000}, stats)
+	require.Equal(t, "rtr1", br.Router)
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/pipe"
 )
@@ -85,9 +86,9 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg, cps caps.Caps) error {
 	// address family when known; otherwise assume the legacy IPv4 unicast NLRI
 	addpath := false
 	if m.Upper == msg.UPDATE {
-		addpath = cps.AddPathEnabled(m.Update.AfiSafi(), m.Dir)
+		addpath = m.AddPath(m.Update.AfiSafi(), cps)
 	} else if m.Type == msg.UPDATE {
-		addpath = cps.AddPathEnabled(afi.AS_IPV4_UNICAST, m.Dir)
+		addpath = m.AddPath(afi.AS_IPV4_UNICAST, cps)
 	}
 	if m.ParseAS4 == 1 || (m.ParseAS4 == 0 && cps.Has(caps.CAP_AS4)) {
 		if addpath {
@@ -163,9 +164,9 @@ func (b4 *Bgp4) ToMsg(m *msg.Msg, notags bool) error {
 		m.ParseAS4 = -1
 	}
 	if mrt.Sub.IsBgpAddPath() {
-		m.ParseAddPath = 1
+		m.ParseAddPath = meta.AddPathOn
 	} else {
-		m.ParseAddPath = -1
+		m.ParseAddPath = meta.AddPathOff
 	}
 
 	// copy BGP4MP metadata?

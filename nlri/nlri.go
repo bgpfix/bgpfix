@@ -213,10 +213,8 @@ func Unmarshal(dst []Prefix, src []byte, as afi.AS, cps caps.Caps, mt meta.Meta)
 	)
 
 	// parser options override cps?
-	if mt.AddPath != nil {
-		addpath = mt.AddPath[as]
-	} else if mt.ParseAddPath != 0 {
-		addpath = mt.ParseAddPath > 0
+	if mt.ParseAddPath != nil {
+		addpath = mt.ParseAddPath.Has(as)
 	}
 
 	for len(src) > 0 {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/attrs"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/nlri"
 	"github.com/bgpfix/bgpfix/pipe"
@@ -180,7 +181,7 @@ func (br *Reader) newPending(ats, nh []byte, pe *PeerEntry) (*tablePending, erro
 	} else {
 		m.ParseAS4 = -1
 	}
-	m.ParseAddPath = -1
+	m.ParseAddPath = meta.AddPathOff
 
 	// parse the attributes
 	u.AttrsRaw = ats

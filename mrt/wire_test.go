@@ -9,6 +9,7 @@ import (
 
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/nlri"
 	"github.com/stretchr/testify/require"
@@ -225,7 +226,7 @@ func TestBGP4_AddPath(t *testing.T) {
 
 	// the MRT subtype must be captured in message metadata
 	require.Equal(t, int8(1), m.ParseAS4)
-	require.Equal(t, int8(1), m.ParseAddPath)
+	require.Equal(t, meta.AddPathOn, m.ParseAddPath)
 
 	// parse with empty session caps: the metadata must override ADD_PATH
 	err = m.Parse(caps.Caps{})
@@ -240,7 +241,7 @@ func TestBGP4_AddPath(t *testing.T) {
 	m2 := msg.NewMsg()
 	require.NoError(t, m2.FromJSON(m.GetJSON()))
 	require.Equal(t, int8(0), m2.ParseAS4)
-	require.Equal(t, int8(0), m2.ParseAddPath)
+	require.Nil(t, m2.ParseAddPath)
 }
 
 func TestMrt_MaxLen(t *testing.T) {

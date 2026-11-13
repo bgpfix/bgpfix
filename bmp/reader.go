@@ -25,9 +25,13 @@ type Reader struct {
 	Router  string                 // router name for the ROUTER tag; set from the Initiation sysName
 
 	OpenBMP bool        // true if reading OpenBMP-wrapped format
-	Session bool        // emit Peer Up as OPENs and Peer Down as NOTIFICATION?
 	NoTags  bool        // ignore message tags?
 	Stats   ReaderStats // our stats
+
+	// OnBmp, if set, is called for every BMP message other than Route Monitoring
+	// (eg. Peer Up, Peer Down, Statistics Report), after the reader state is updated.
+	// NB: bm references the input buffer and is reused after OnBmp returns.
+	OnBmp func(bm *Bmp)
 }
 
 // ReaderStats holds reader statistics
@@ -61,7 +65,7 @@ func (br *Reader) Write(src []byte) (n int, err error) {
 // to be called just before the message is accepted for processing. If the callback
 // returns false, the message is silently dropped instead.
 func (br *Reader) WriteFunc(src []byte, cb pipe.CallbackFunc) (n int, err error) {
-	stats := &br.Stats
+	p, stats := br.pipe, &br.Stats
 
 	// append src and switch to inbuf if needed
 	n = len(src) // NB: always return n=len(src)
@@ -125,71 +129,52 @@ func (br *Reader) WriteFunc(src []byte, cb pipe.CallbackFunc) (n int, err error)
 			}
 		}
 
-		// Route Monitoring: the hot path
-		if br.bmp.Type == MSG_ROUTE_MONITORING {
-			if len(br.bmp.BgpData) == 0 {
-				stats.ParsedSkip++
-			} else if err := br.emit(br.bmp.BgpData, false, cb); err != nil {
-				return n, err
+		// not Route Monitoring? track the session state
+		bm := br.bmp
+		if bm.Type != MSG_ROUTE_MONITORING || len(bm.BgpData) == 0 {
+			stats.ParsedSkip++
+			br.track(bm)
+			if br.OnBmp != nil {
+				br.OnBmp(bm)
 			}
 			continue
 		}
 
-		// other types: track the session state, maybe emit BGP messages
-		bgps := br.track(br.bmp)
-		if len(bgps) == 0 {
-			stats.ParsedSkip++
+		// parse BGP message
+		stats.ParsedBgp++
+		m := p.GetMsg()
+		switch k, perr := m.FromBytes(bm.BgpData); {
+		case perr != nil:
+			p.PutMsg(m)
+			stats.Garbled++
+			return n, fmt.Errorf("BGP: %w", perr)
+		case k != len(bm.BgpData):
+			p.PutMsg(m)
+			stats.Garbled++
+			return n, fmt.Errorf("BGP: dangling bytes %d/%d", k, len(bm.BgpData))
 		}
-		for i, bgp := range bgps {
-			if err := br.emit(bgp, br.bmp.Type == MSG_PEER_UP && i == 0, cb); err != nil {
-				return n, err
-			}
+
+		// set message metadata, using the per-peer cache
+		var ps *peerState
+		if !br.NoTags || len(br.peers) > 0 {
+			ps = br.peer(&bm.Peer, !br.NoTags)
+		}
+		br.setMeta(m, bm, br.obmp, ps)
+
+		// callback check
+		if cb != nil && !cb(m) {
+			p.PutMsg(m)
+			continue
+		}
+
+		// write to pipe
+		m.CopyData()
+		if err := br.in.WriteMsg(m); err != nil {
+			return n, fmt.Errorf("pipe: %w", err)
 		}
 	}
 
 	return n, nil
-}
-
-// emit parses BGP message bgp from br.bmp and writes it to the pipe input
-func (br *Reader) emit(bgp []byte, sent bool, cb pipe.CallbackFunc) error {
-	p, stats := br.pipe, &br.Stats
-	stats.ParsedBgp++
-
-	// parse BGP message
-	m := p.GetMsg()
-	switch k, perr := m.FromBytes(bgp); {
-	case perr != nil:
-		p.PutMsg(m)
-		stats.Garbled++
-		return fmt.Errorf("BGP: %w", perr)
-	case k != len(bgp):
-		p.PutMsg(m)
-		stats.Garbled++
-		return fmt.Errorf("BGP: dangling bytes %d/%d", k, len(bgp))
-	}
-
-	// set message metadata, using the per-peer cache
-	var ps *peerState
-	if !br.NoTags || len(br.peers) > 0 {
-		ps = br.peer(&br.bmp.Peer, !br.NoTags)
-	}
-	br.setMeta(m, br.bmp, br.obmp, ps)
-	if sent && !br.NoTags {
-		pipe.UseTags(m)["BMP_OPEN"] = "sent" // the OPEN sent by the monitored router
-	}
-
-	// callback check
-	if cb != nil && !cb(m) {
-		p.PutMsg(m)
-		return nil
-	}
-
-	// write to pipe
-	m.CopyData()
-	if err := br.in.WriteMsg(m); err != nil {
-		return fmt.Errorf("pipe: %w", err)
-	}
-	return nil
 }
 
 // FromBytes parses the first BMP message in buf and references it in bgp_msg.
@@ -270,11 +255,7 @@ func (br *Reader) setMeta(m *msg.Msg, bmp *Bmp, obmp *OpenBmp, ps *peerState) {
 		if bmp.Peer.IsAdjRibOut() {
 			on = ps.addpathOut
 		}
-		if on != nil {
-			m.AddPath = on
-		} else {
-			m.ParseAddPath = -1
-		}
+		m.ParseAddPath = on
 	}
 
 	if br.NoTags {
