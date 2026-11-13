@@ -47,11 +47,6 @@ func FromPrefix(p netip.Prefix) Prefix {
 // FromString parses either a prefix or an address in string format,
 // and returns it normalized and wrapped in NLRI.
 func FromString(s string) (n Prefix, e error) {
-	// min. length is 7 (eg. "1.1.1.1")
-	if len(s) < 7 {
-		return n, ErrLength
-	}
-
 	// is a prefix?
 	if strings.LastIndexByte(s, '/') > 0 {
 		p, err := netip.ParsePrefix(s)
