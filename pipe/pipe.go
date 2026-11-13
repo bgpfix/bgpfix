@@ -41,6 +41,7 @@ type Pipe struct {
 	wgstart sync.WaitGroup // 1 before start, 0 after start
 
 	evch   chan *Event           // pipe event input
+	evstop chan struct{}         // closed to stop the event handlers
 	evwg   sync.WaitGroup        // event handler routine
 	events map[string][]*Handler // maps events to their handlers
 	evseq  atomic.Uint64         // last event seq number assigned
@@ -84,6 +85,7 @@ func NewPipe(ctx context.Context) *Pipe {
 		}},
 	}
 	p.evch = make(chan *Event, 100)
+	p.evstop = make(chan struct{})
 
 	p.wgstart.Add(1)
 	return p
@@ -219,7 +221,7 @@ func (p *Pipe) Stop() {
 	p.wgstart.Wait()
 
 	// publish the event (ignore the global context); NB: try sync first,
-	// as the async send may lose the race with close(p.evch) below
+	// as the async send may lose the race with close(p.evstop) below
 	if ev := (&Event{Type: EVENT_STOP}); !p.sendEvent(ev, nil, true) {
 		go p.sendEvent(ev, nil, false)
 	}
@@ -246,7 +248,7 @@ func (p *Pipe) Stop() {
 	p.R.Wait()
 
 	// stop the event handlers and wait for them to finish
-	close(p.evch)
+	close(p.evstop)
 	p.evwg.Wait()
 }
 
