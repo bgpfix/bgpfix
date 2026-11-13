@@ -4,7 +4,11 @@
 // message parsers take Meta, which is part of msg.Msg.
 package meta
 
-import "time"
+import (
+	"time"
+
+	"github.com/bgpfix/bgpfix/afi"
+)
 
 // Meta holds optional BGP message metadata: the direction, sequence number
 // and timestamp, plus per-message parser options.
@@ -19,6 +23,10 @@ type Meta struct {
 	// 0 = no data, -1 = disabled, 1 = enabled
 	ParseAS4     int8 // 4-byte ASN encoding (CAP_AS4)
 	ParseAddPath int8 // ADD-PATH encoding (CAP_ADDPATH)
+
+	// ADD-PATH per address family, if not nil (overrides ParseAddPath)
+	// NB: shared and read-only; families not in the map have it disabled
+	AddPath map[afi.AS]bool
 }
 
 // Reset resets the metadata to its zero value.

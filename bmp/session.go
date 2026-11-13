@@ -2,7 +2,9 @@ package bmp
 
 import (
 	"net/netip"
+	"strconv"
 
+	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/msg"
 )
@@ -28,10 +30,52 @@ func (p *Peer) key() peerKey {
 	return peerKey{p.Type, p.RD, p.Address}
 }
 
-// peerState is what Reader learns from Peer Up
+// peerState is what Reader knows about a peer
 type peerState struct {
-	addpathIn  bool // ADD-PATH on routes received from the peer (Adj-RIB-In)
-	addpathOut bool // ADD-PATH on routes sent to the peer (Adj-RIB-Out)
+	up         bool            // seen Peer Up?
+	addpathIn  map[afi.AS]bool // ADD-PATH on routes received from the peer (Adj-RIB-In)
+	addpathOut map[afi.AS]bool // ADD-PATH on routes sent to the peer (Adj-RIB-Out)
+
+	as, id             uint32 // peer AS and BGP ID behind the tag values below
+	ip, asn, bgpid, rd string // tag values
+}
+
+// setTags formats the tag values of p
+func (ps *peerState) setTags(p *Peer) {
+	ps.as, ps.id = p.AS, p.ID
+	ps.ip = p.Address.String()
+	ps.asn = strconv.FormatUint(uint64(p.AS), 10)
+	ps.bgpid, ps.rd = "", ""
+	if p.ID != 0 {
+		ps.bgpid = netip.AddrFrom4([4]byte{byte(p.ID >> 24), byte(p.ID >> 16), byte(p.ID >> 8), byte(p.ID)}).String()
+	}
+	if p.RD != 0 {
+		ps.rd = strconv.FormatUint(p.RD, 16)
+	}
+}
+
+// peer returns the state of p, creating it if needed and create is true.
+// Returns nil if not found, or if MAXPEERS is reached.
+func (br *Reader) peer(p *Peer, create bool) *peerState {
+	if len(br.peers) == 0 && !create {
+		return nil
+	}
+	k := p.key()
+	if br.lastps != nil && br.lastkey == k {
+		return br.lastps // NB: routers send updates in bursts per peer
+	}
+	ps := br.peers[k]
+	if ps == nil && create && len(br.peers) < MAXPEERS {
+		if br.peers == nil {
+			br.peers = make(map[peerKey]*peerState)
+		}
+		ps = new(peerState)
+		br.peers[k] = ps
+	}
+	if ps != nil {
+		br.lastkey, br.lastps = k, ps
+	}
+	return ps
 }
 
 // PeerUp represents the body of Peer Up Notification (RFC 7854 section 4.10)
@@ -129,19 +173,22 @@ func (b *Bmp) SetTermination(reason uint16) {
 	b.Data = msb.AppendUint16([]byte{0, 1, 0, 2}, reason)
 }
 
-// addpath returns true iff any address family has ADD-PATH negotiated from snd to rcv
-func addpath(snd, rcv *msg.Msg) bool {
+// addpath returns the address families with ADD-PATH negotiated from snd to rcv, or nil if none
+func addpath(snd, rcv *msg.Msg) (on map[afi.AS]bool) {
 	s, _ := snd.Open.Caps.Get(caps.CAP_ADDPATH).(*caps.AddPath)
 	r, _ := rcv.Open.Caps.Get(caps.CAP_ADDPATH).(*caps.AddPath)
 	if s == nil || r == nil {
-		return false
+		return nil
 	}
 	for as := range s.Proto {
 		if s.Has(as, caps.ADDPATH_SEND) && r.Has(as, caps.ADDPATH_RECEIVE) {
-			return true
+			if on == nil {
+				on = make(map[afi.AS]bool)
+			}
+			on[as] = true
 		}
 	}
-	return false
+	return on
 }
 
 // track updates the reader state with a non-Route-Monitoring message bm.
@@ -167,7 +214,6 @@ func (br *Reader) track(bm *Bmp) (bgps [][]byte) {
 		}
 
 		// parse both OPENs for the negotiated ADD-PATH
-		ps := new(peerState)
 		sent, rcvd := msg.NewMsg(), msg.NewMsg()
 		if _, err := sent.FromBytes(pu.SentOpen); err != nil || sent.Parse(caps.Caps{}) != nil || sent.Type != msg.OPEN || sent.Open.ParseCaps() != nil {
 			return nil
@@ -175,14 +221,10 @@ func (br *Reader) track(bm *Bmp) (bgps [][]byte) {
 		if _, err := rcvd.FromBytes(pu.RcvdOpen); err != nil || rcvd.Parse(caps.Caps{}) != nil || rcvd.Type != msg.OPEN || rcvd.Open.ParseCaps() != nil {
 			return nil
 		}
-		ps.addpathIn = addpath(rcvd, sent)
-		ps.addpathOut = addpath(sent, rcvd)
-
-		if br.peers == nil {
-			br.peers = make(map[peerKey]*peerState)
-		}
-		if len(br.peers) < MAXPEERS {
-			br.peers[bm.Peer.key()] = ps
+		if ps := br.peer(&bm.Peer, true); ps != nil {
+			ps.up = true
+			ps.addpathIn = addpath(rcvd, sent)
+			ps.addpathOut = addpath(sent, rcvd)
 		}
 		if br.Session {
 			bgps = append(bgps, pu.SentOpen, pu.RcvdOpen)
@@ -191,6 +233,7 @@ func (br *Reader) track(bm *Bmp) (bgps [][]byte) {
 	case MSG_PEER_DOWN:
 		br.Stats.PeerDown++
 		delete(br.peers, bm.Peer.key())
+		br.lastps = nil
 
 		// reasons 1 and 3 carry a NOTIFICATION
 		if br.Session && len(bm.Data) > 1 && (bm.Data[0] == 1 || bm.Data[0] == 3) {

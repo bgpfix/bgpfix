@@ -21,6 +21,15 @@ var addpathUpdate = append(append([]byte(nil), msg.BgpMarker...),
 	0x40, 1, 1, 0, 0x40, 2, 0, 0x40, 3, 4, 10, 0, 0, 1,
 	0, 0, 0, 7, 24, 10, 0, 0) // path id + prefix
 
+// an UPDATE for 2001:db8::/32 in MP_REACH, without a Path Identifier
+var mpUpdate = append(append([]byte(nil), msg.BgpMarker...),
+	0, 59, 2, // length, type
+	0, 0, // withdrawn
+	0, 36, // attrs: ORIGIN, AS_PATH (empty), MP_REACH
+	0x40, 1, 1, 0, 0x40, 2, 0,
+	0x80, 14, 26, 0, 2, 1, 16, 0x20, 1, 0xd, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0,
+	32, 0x20, 1, 0xd, 0xb8)
+
 // testPipe returns a started pipe: Reader needs its message pool
 // NB: never stopped, as Pipe.Stop() races with the start events under -race
 func testPipe(t *testing.T) *pipe.Pipe {
@@ -60,6 +69,7 @@ func TestReader_AddPath(t *testing.T) {
 		add(func(b *Bmp) { b.SetInitiation("rtr1", "test") })
 		add(func(b *Bmp) { b.SetPeerUp(&PeerUp{SentOpen: open, RcvdOpen: open}) })
 		add(func(b *Bmp) { b.Type = MSG_ROUTE_MONITORING; b.BgpData = addpathUpdate })
+		add(func(b *Bmp) { b.Type = MSG_ROUTE_MONITORING; b.BgpData = mpUpdate }) // NB: no ADD-PATH on IPv6
 		add(func(b *Bmp) { b.SetPeerDown(nil) })
 		add(func(b *Bmp) { b.Type = MSG_ROUTE_MONITORING; b.BgpData = addpathUpdate })
 
@@ -68,21 +78,25 @@ func TestReader_AddPath(t *testing.T) {
 		var routers, reach []string
 		_, err := br.WriteFunc(stream, func(m *msg.Msg) bool {
 			flags = append(flags, m.ParseAddPath)
+			if m.AddPath != nil {
+				flags[len(flags)-1] = 2 // per family
+			}
 			routers = append(routers, pipe.GetTags(m)["ROUTER"])
-			if m.Parse(caps.Caps{}) == nil && len(m.Update.Reach) == 1 {
-				reach = append(reach, m.Update.Reach[0].String())
+			require.NoError(t, m.Parse(caps.Caps{}))
+			for _, p := range m.Update.AllReach() {
+				reach = append(reach, p.String())
 			}
 			return false
 		})
 		require.NoError(t, err)
 		require.EqualValues(t, 1, br.Stats.PeerUp)
 		require.EqualValues(t, 1, br.Stats.PeerDown)
-		require.Equal(t, []string{"rtr1", "rtr1"}, routers)
+		require.Equal(t, []string{"rtr1", "rtr1", "rtr1"}, routers)
 		if addpath {
-			require.Equal(t, []int8{1, 0}, flags) // NB: no state after Peer Down
-			require.Equal(t, "#7#10.0.0.0/24", reach[0])
+			require.Equal(t, []int8{2, 2, 0}, flags) // NB: no state after Peer Down
+			require.Equal(t, []string{"#7#10.0.0.0/24", "2001:db8::/32"}, reach[:2])
 		} else {
-			require.Equal(t, []int8{-1, 0}, flags)
+			require.Equal(t, []int8{-1, -1, 0}, flags)
 		}
 	}
 }
