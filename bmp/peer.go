@@ -153,16 +153,25 @@ func (p *Peer) Rib() string {
 	}
 }
 
-// SetRib is the reverse of Rib. Unknown names (and "in-pre") are ignored.
+// SetRib is the reverse of Rib: it replaces the RIB view of p.
+// Empty name means "in-pre"; unknown names are ignored.
 func (p *Peer) SetRib(name string) {
+	var flags uint8
 	switch name {
 	case "loc":
 		p.Type = PEER_TYPE_LOC_RIB
 	case "out-post":
-		p.Flags |= PEER_FLAG_O | PEER_FLAG_L
+		flags = PEER_FLAG_O | PEER_FLAG_L
 	case "out-pre":
-		p.Flags |= PEER_FLAG_O
+		flags = PEER_FLAG_O
 	case "in-post":
-		p.Flags |= PEER_FLAG_L
+		flags = PEER_FLAG_L
+	case "in-pre", "":
+	default:
+		return
 	}
+	if name != "loc" && p.Type == PEER_TYPE_LOC_RIB {
+		p.Type = PEER_TYPE_GLOBAL
+	}
+	p.Flags = p.Flags&^(PEER_FLAG_O|PEER_FLAG_L) | flags
 }

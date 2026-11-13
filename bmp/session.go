@@ -24,10 +24,16 @@ type peerKey struct {
 	Type    uint8
 	RD      uint64
 	Address netip.Addr
+	Router  netip.Addr // NB: OpenBMP feeds multiplex many routers
 }
 
-func (p *Peer) key() peerKey {
-	return peerKey{p.Type, p.RD, p.Address}
+// key returns the key of peer p in the current message
+func (br *Reader) key(p *Peer) peerKey {
+	k := peerKey{Type: p.Type, RD: p.RD, Address: p.Address}
+	if br.OpenBMP {
+		k.Router = br.obmp.RouterIP
+	}
+	return k
 }
 
 // peerState is what Reader knows about a peer
@@ -60,7 +66,7 @@ func (br *Reader) peer(p *Peer, create bool) *peerState {
 	if len(br.peers) == 0 && !create {
 		return nil
 	}
-	k := p.key()
+	k := br.key(p)
 	if br.lastps != nil && br.lastkey == k {
 		return br.lastps // NB: routers send updates in bursts per peer
 	}
@@ -129,7 +135,7 @@ func (b *Bmp) PeerUp(pu *PeerUp) error {
 
 // SetPeerUp makes b a Peer Up Notification for b.Peer, to be marshaled next.
 func (b *Bmp) SetPeerUp(pu *PeerUp) {
-	b.Type = MSG_PEER_UP
+	b.Type, b.BgpData = MSG_PEER_UP, nil
 	buf := make([]byte, 20, 20+len(pu.SentOpen)+len(pu.RcvdOpen)+len(pu.Info))
 	if pu.LocalAddr.Is4() {
 		copy(buf[12:16], pu.LocalAddr.AsSlice())
@@ -146,7 +152,7 @@ func (b *Bmp) SetPeerUp(pu *PeerUp) {
 // SetPeerDown makes b a Peer Down Notification for b.Peer (reason 5: de-configured),
 // or reason 1 (local NOTIFICATION) if notify is a BGP message.
 func (b *Bmp) SetPeerDown(notify []byte) {
-	b.Type = MSG_PEER_DOWN
+	b.Type, b.BgpData = MSG_PEER_DOWN, nil
 	if len(notify) > 0 {
 		b.Data = append([]byte{1}, notify...)
 	} else {
@@ -163,13 +169,13 @@ func AppendInfo(dst []byte, typ uint16, val string) []byte {
 
 // SetInitiation makes b an Initiation message, to be marshaled next.
 func (b *Bmp) SetInitiation(sysName, sysDescr string) {
-	b.Type = MSG_INITIATION
+	b.Type, b.BgpData = MSG_INITIATION, nil
 	b.Data = AppendInfo(AppendInfo(nil, INFO_SYS_DESCR, sysDescr), INFO_SYS_NAME, sysName)
 }
 
 // SetTermination makes b a Termination message with given reason code.
 func (b *Bmp) SetTermination(reason uint16) {
-	b.Type = MSG_TERMINATION
+	b.Type, b.BgpData = MSG_TERMINATION, nil
 	b.Data = msb.AppendUint16([]byte{0, 1, 0, 2}, reason)
 }
 
@@ -232,7 +238,7 @@ func (br *Reader) track(bm *Bmp) (bgps [][]byte) {
 
 	case MSG_PEER_DOWN:
 		br.Stats.PeerDown++
-		delete(br.peers, bm.Peer.key())
+		delete(br.peers, br.key(&bm.Peer))
 		br.lastps = nil
 
 		// reasons 1 and 3 carry a NOTIFICATION
