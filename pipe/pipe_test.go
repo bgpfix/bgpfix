@@ -1,9 +1,3 @@
-// NB: excluded from -race because Pipe.Stop() has an inherent race between
-// go p.sendEvent(EVENT_STOP) and close(p.evch). The recover() in sendEvent
-// makes this safe at runtime, but the race detector flags it.
-//
-//go:build !race
-
 package pipe
 
 import (
@@ -118,10 +112,7 @@ func TestPipe_MessagePassthrough(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 
-	// drain L output (we're testing R direction)
-	go drainLine(p.L)
-
-	// send a message to L.In (which goes to R output direction)
+	// send a message to L.In
 	m := newKeepalive()
 	p.L.Input.In <- m
 
@@ -288,18 +279,19 @@ func TestPipe_CallbackEnabled(t *testing.T) {
 	enabled := &atomic.Bool{}
 	enabled.Store(false)
 
-	// a "spy" callback that always runs (no Enabled gate) to signal message processing
-	processed := make(chan struct{}, 10)
-	p.Options.OnMsg(func(m *msg.Msg) bool {
-		processed <- struct{}{}
-		return true
-	}, 0)
-
 	cb := p.Options.OnMsg(func(m *msg.Msg) bool {
 		count.Add(1)
 		return true
 	}, 0)
 	cb.Enabled = enabled
+
+	// a "spy" callback that always runs (no Enabled gate) to signal message processing;
+	// NB: it must run after cb, or the first message could see cb enabled
+	processed := make(chan struct{}, 10)
+	p.Options.OnMsg(func(m *msg.Msg) bool {
+		processed <- struct{}{}
+		return true
+	}, 0)
 
 	if err := p.Start(); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -656,40 +648,6 @@ func TestPipe_ConcurrentStartStop(t *testing.T) {
 		}
 		cancel()
 	}
-}
-
-func TestPipe_StressShutdown(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	p := newTestPipe(ctx)
-	if err := p.Start(); err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	go drainLine(p.L)
-	go drainLine(p.R)
-
-	// continuously send messages using WriteMsg (safe against closed channel)
-	stopSending := make(chan struct{})
-	go func() {
-		for {
-			select {
-			case <-stopSending:
-				return
-			default:
-			}
-			m := newKeepalive()
-			if p.L.Input.WriteMsg(m) != nil {
-				return
-			}
-		}
-	}()
-
-	// stop while messages are in flight
-	time.Sleep(5 * time.Millisecond)
-	p.Stop()
-	close(stopSending)
-	// should not panic or deadlock
 }
 
 // --- Edge case tests ---

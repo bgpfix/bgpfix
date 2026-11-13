@@ -1,8 +1,3 @@
-// NB: excluded from -race for the same reason as pipe tests: Pipe.Stop()
-// has an inherent race handled by recover(), which the detector flags.
-//
-//go:build !race
-
 package mrt
 
 import (
