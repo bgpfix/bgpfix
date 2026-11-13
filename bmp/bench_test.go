@@ -3,6 +3,7 @@ package bmp
 import (
 	"bytes"
 	"context"
+	"net/netip"
 	"os"
 	"testing"
 
@@ -100,6 +101,25 @@ func BenchmarkFromMsg(b *testing.B) {
 		bm.Reset()
 		if bm.FromMsg(ms[i%len(ms)], cps) != nil || bm.Marshal() != nil {
 			b.Fatal("FromMsg")
+		}
+	}
+}
+
+// BenchmarkOpenBmp measures parsing the OpenBMP header of a RouteViews-like record
+func BenchmarkOpenBmp(b *testing.B) {
+	o := NewOpenBmp()
+	o.CollectorName, o.RouterName = "bmp01", "route-views2"
+	o.RouterIP = netip.MustParseAddr("192.0.2.1")
+	o.Data = loadRM(b)[0]
+	if err := o.Marshal(); err != nil {
+		b.Fatal(err)
+	}
+	raw := append([]byte(nil), o.buf...)
+	b.ReportAllocs()
+	for b.Loop() {
+		o.Reset()
+		if _, err := o.FromBytes(raw); err != nil {
+			b.Fatal(err)
 		}
 	}
 }
