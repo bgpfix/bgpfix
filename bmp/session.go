@@ -58,7 +58,7 @@ func (ps *peerState) setTags(p *Peer) {
 	if p.ID != 0 {
 		ps.bgpid = netip.AddrFrom4([4]byte{byte(p.ID >> 24), byte(p.ID >> 16), byte(p.ID >> 8), byte(p.ID)}).String()
 	}
-	if p.RD != 0 {
+	if p.RD != 0 || p.Type == PEER_TYPE_RD || p.Type == PEER_TYPE_LOCAL { // NB: FromMsg needs PEER_RD for PEER_TYPE
 		ps.rd = strconv.FormatUint(p.RD, 16)
 	}
 }
