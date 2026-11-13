@@ -169,7 +169,11 @@ func (br *Reader) emit(bgp []byte, sent bool, cb pipe.CallbackFunc) error {
 	}
 
 	// set message metadata, using the per-peer cache
-	br.setMeta(m, br.bmp, br.obmp, br.peer(&br.bmp.Peer, !br.NoTags))
+	var ps *peerState
+	if !br.NoTags || len(br.peers) > 0 {
+		ps = br.peer(&br.bmp.Peer, !br.NoTags)
+	}
+	br.setMeta(m, br.bmp, br.obmp, ps)
 	if sent && !br.NoTags {
 		pipe.UseTags(m)["BMP_OPEN"] = "sent" // the OPEN sent by the monitored router
 	}

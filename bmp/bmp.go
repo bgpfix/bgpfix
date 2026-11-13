@@ -63,7 +63,7 @@ func (t MsgType) String() string {
 type Bmp struct {
 	ref bool   // true iff Data is a reference to borrowed memory
 	buf []byte // internal buffer
-	bgp []byte // internal buffer for BgpData (FromMsg)
+	bgp []byte // internal buffer for BgpData in FromMsg (at most one BGP message)
 
 	Version uint8   // BMP version (should be 3)
 	Length  uint32  // Total message length
@@ -94,11 +94,6 @@ func (b *Bmp) Reset() *Bmp {
 	b.Peer.Reset()
 	b.BgpData = nil
 	b.Data = nil
-	if cap(b.bgp) < 64*1024 {
-		b.bgp = b.bgp[:0]
-	} else {
-		b.bgp = nil
-	}
 
 	return b
 }

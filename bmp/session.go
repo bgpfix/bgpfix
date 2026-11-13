@@ -63,9 +63,6 @@ func (ps *peerState) setTags(p *Peer) {
 // peer returns the state of p, creating it if needed and create is true.
 // Returns nil if not found, or if MAXPEERS is reached.
 func (br *Reader) peer(p *Peer, create bool) *peerState {
-	if len(br.peers) == 0 && !create {
-		return nil
-	}
 	k := br.key(p)
 	if br.lastps != nil && br.lastkey == k {
 		return br.lastps // NB: routers send updates in bursts per peer
