@@ -282,6 +282,12 @@ func (br *Reader) setMeta(m *msg.Msg, bmp *Bmp, obmp *OpenBmp, ps *peerState) {
 	if ps.rd != "" {
 		tags["PEER_RD"] = ps.rd
 	}
+	switch bmp.Peer.Type {
+	case PEER_TYPE_RD:
+		tags["PEER_TYPE"] = "rd"
+	case PEER_TYPE_LOCAL:
+		tags["PEER_TYPE"] = "local"
+	}
 	if br.Router != "" {
 		tags["ROUTER"] = br.Router
 	}

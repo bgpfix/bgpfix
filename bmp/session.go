@@ -25,14 +25,16 @@ type peerKey struct {
 	Type    uint8
 	RD      uint64
 	Address netip.Addr
-	Router  netip.Addr // NB: OpenBMP feeds multiplex many routers
+	Router  netip.Addr // NB: OpenBMP feeds multiplex many routers,
+	Name    string     // identified by their IP and/or name,
+	Coll    string     // per collector
 }
 
 // key returns the key of peer p in the current message
 func (br *Reader) key(p *Peer) peerKey {
 	k := peerKey{Type: p.Type, RD: p.RD, Address: p.Address}
-	if br.OpenBMP {
-		k.Router = br.obmp.RouterIP
+	if o := br.obmp; br.OpenBMP {
+		k.Router, k.Name, k.Coll = o.RouterIP, o.RouterName, o.CollectorName
 	}
 	return k
 }

@@ -156,6 +156,7 @@ func (in *Input) process() {
 		eval        = filter.NewEval(true)
 		closed      bool
 		last_update int64
+		last_raw    int64 // last UPDATE timestamp before clampNow
 		eor_done    bool
 		eor_todo    int
 	)
@@ -310,11 +311,11 @@ input:
 
 		case msg.UPDATE:
 			// new UNIX timestamp for UPDATE?
-			// NB: reads the clock about once per second, also for senders with clocks ahead
-			if t > last_update { // local check to reduce atomic ops
-				now := time.Now().Unix()
-				last_update = min(t, now+60) // NB: never pinned far in the future
-				t = min(t, now)
+			// NB: t != last_raw reads the clock about once per second, also for senders with clocks ahead
+			if t > last_update && t != last_raw { // local checks to reduce clock reads and atomic ops
+				last_raw = t
+				t = clampNow(t)
+				last_update = t
 				oldt := l.LastUpdate.Load()
 				if t > oldt && l.LastUpdate.CompareAndSwap(oldt, t) {
 					p.Event(EVENT_UPDATE, m.Dir, t)

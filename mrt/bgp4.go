@@ -82,13 +82,18 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg, cps caps.Caps) error {
 
 	// select the subtype matching how m.Data was marshaled, as told by cps
 	// NB: m.ParseAS4 overrides cps, eg. for unmodified 2-byte input
-	// NB: ADD-PATH is negotiated per AFI/SAFI + direction, so use the message
-	// address family when known; otherwise assume the legacy IPv4 unicast NLRI
+	// NB: ADD-PATH is negotiated per AFI/SAFI + direction, so it may depend on
+	// the message address family: parse the message to get it, if needed
 	addpath := false
-	if m.Upper == msg.UPDATE {
-		addpath = m.HasAddPath(m.Update.AfiSafi(), cps)
-	} else if m.Type == msg.UPDATE {
-		addpath = m.HasAddPath(afi.AS_IPV4_UNICAST, cps)
+	if m.Type == msg.UPDATE {
+		as := afi.AS_IPV4_UNICAST
+		if ap := m.ParseAddPath; m.Upper != msg.UPDATE && (ap == nil && cps.Has(caps.CAP_ADDPATH) || ap != nil && !ap.All && len(ap.AS) > 0) {
+			m.Parse(cps)
+		}
+		if m.Upper == msg.UPDATE {
+			as = m.Update.AfiSafi()
+		}
+		addpath = m.HasAddPath(as, cps)
 	}
 	if m.ParseAS4 == 1 || (m.ParseAS4 == 0 && cps.Has(caps.CAP_AS4)) {
 		if addpath {

@@ -88,6 +88,17 @@ func NewPeerUp(p *Peer, m *msg.Msg, cps caps.Caps) *PeerUp {
 				mp.Add(as.Afi(), as.Safi())
 			}
 		}
+		if ap := m.ParseAddPath; ap != nil {
+			for _, as := range ap.AS {
+				mp.Add(as.Afi(), as.Safi())
+			}
+		}
+		if m.Upper == msg.UPDATE {
+			as := m.Update.AfiSafi()
+			mp.Add(as.Afi(), as.Safi())
+		}
+
+		// NB: m tells the encoding of one direction only: assume Adj-RIB-In and -Out share it
 		for _, as := range mp.Sorted() {
 			if m.HasAddPath(as, cps) {
 				o.Caps.Use(caps.CAP_ADDPATH).(*caps.AddPath).Add(as, caps.ADDPATH_BIDIR)
