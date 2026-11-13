@@ -310,9 +310,11 @@ input:
 
 		case msg.UPDATE:
 			// new UNIX timestamp for UPDATE?
+			// NB: reads the clock about once per second, also for senders with clocks ahead
 			if t > last_update { // local check to reduce atomic ops
-				t = clampNow(t)
-				last_update = t
+				now := time.Now().Unix()
+				last_update = min(t, now+60) // NB: never pinned far in the future
+				t = min(t, now)
 				oldt := l.LastUpdate.Load()
 				if t > oldt && l.LastUpdate.CompareAndSwap(oldt, t) {
 					p.Event(EVENT_UPDATE, m.Dir, t)
