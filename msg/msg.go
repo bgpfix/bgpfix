@@ -368,9 +368,9 @@ func (msg *Msg) Marshal(cps caps.Caps) error {
 	return err
 }
 
-// AddPath returns true iff msg.Data has ADD-PATH Path Identifiers for address family as:
+// HasAddPath returns true iff msg.Data has ADD-PATH Path Identifiers for address family as:
 // as told by msg.ParseAddPath, or else by cps in msg.Dir.
-func (msg *Msg) AddPath(as afi.AS, cps caps.Caps) bool {
+func (msg *Msg) HasAddPath(as afi.AS, cps caps.Caps) bool {
 	if ap := msg.ParseAddPath; ap != nil {
 		return ap.Has(as)
 	}

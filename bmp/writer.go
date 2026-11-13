@@ -64,7 +64,7 @@ func (w *Writer) Prepend(dst []byte, b *Bmp, m *msg.Msg, cps caps.Caps) []byte {
 
 // NewPeerUp returns a Peer Up for peer p with synthesized OPENs: the AS number and
 // BGP ID of p, IPv4 and IPv6 unicast plus the families in cps, and ADD-PATH where m has
-// Path Identifiers (see msg.Msg.AddPath), so a station decodes m right.
+// Path Identifiers (see msg.Msg.HasAddPath), so a station decodes m right.
 func NewPeerUp(p *Peer, m *msg.Msg, cps caps.Caps) *PeerUp {
 	mkopen := func(id uint32) []byte {
 		om := msg.NewMsg().Switch(msg.OPEN)
@@ -89,7 +89,7 @@ func NewPeerUp(p *Peer, m *msg.Msg, cps caps.Caps) *PeerUp {
 			}
 		}
 		for _, as := range mp.Sorted() {
-			if m.AddPath(as, cps) {
+			if m.HasAddPath(as, cps) {
 				o.Caps.Use(caps.CAP_ADDPATH).(*caps.AddPath).Add(as, caps.ADDPATH_BIDIR)
 			}
 		}

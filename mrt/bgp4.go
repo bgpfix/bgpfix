@@ -86,9 +86,9 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg, cps caps.Caps) error {
 	// address family when known; otherwise assume the legacy IPv4 unicast NLRI
 	addpath := false
 	if m.Upper == msg.UPDATE {
-		addpath = m.AddPath(m.Update.AfiSafi(), cps)
+		addpath = m.HasAddPath(m.Update.AfiSafi(), cps)
 	} else if m.Type == msg.UPDATE {
-		addpath = m.AddPath(afi.AS_IPV4_UNICAST, cps)
+		addpath = m.HasAddPath(afi.AS_IPV4_UNICAST, cps)
 	}
 	if m.ParseAS4 == 1 || (m.ParseAS4 == 0 && cps.Has(caps.CAP_AS4)) {
 		if addpath {
