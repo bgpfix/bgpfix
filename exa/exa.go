@@ -28,6 +28,10 @@ type Exa struct {
 	Aggregator      string   // aggregator, eg. 65000:192.0.2.1
 	OriginatorID    string   // originator-id, eg. 192.0.2.1
 	ClusterList     []string // cluster-list, eg. 192.0.2.1
+
+	// flow route: the match components, eg. "destination 192.0.2.0/24", "destination-port =80 =443";
+	// actions are in ExtCommunity (and NextHop)
+	Flow []string
 }
 
 // NewExa returns a new, empty Exa instance
@@ -63,10 +67,11 @@ func (x *Exa) Reset() {
 	x.Aggregator = ""
 	x.OriginatorID = ""
 	x.ClusterList = x.ClusterList[:0]
+	x.Flow = x.Flow[:0]
 }
 
 // exaSyntax pads list delimiters with spaces, like the ExaBGP tokeniser does
-var exaSyntax = strings.NewReplacer("[", " [ ", "]", " ] ", "(", " ( ", ")", " ) ")
+var exaSyntax = strings.NewReplacer("[", " [ ", "]", " ] ", "(", " ( ", ")", " ) ", "{", " { ", "}", " } ", ";", " ; ")
 
 // Parse parses an ExaBGP route command line:
 //
@@ -74,6 +79,8 @@ var exaSyntax = strings.NewReplacer("[", " [ ", "]", " ] ", "(", " ( ", ")", " )
 //	announce attributes [next-hop <ip|self>] [<attribute> ...] nlri <prefix> ...
 //	withdraw route <prefix> (attributes, if any, are ignored)
 //	withdraw attributes [<attribute> ...] nlri <prefix> ...
+//	announce flow route <match> ... <action> ... (also as { match { ...; } then { ...; } })
+//	withdraw flow route <match> ...
 //
 // "ipv4 unicast" and "ipv6 unicast" can be used in place of "route".
 // A leading "neighbor <ip> ..." selector is skipped.
@@ -110,6 +117,11 @@ func (x *Exa) Parse(line string) error {
 			return ErrOnlyRoute
 		}
 		tok = tok[3:]
+	case "flow":
+		if tok[2] != "route" {
+			return ErrOnlyRoute
+		}
+		return x.parseFlow(tok[3:])
 	case "attributes": // many prefixes, after nlri
 		i := slices.Index(tok, "nlri")
 		if i < 0 || i == len(tok)-1 {
@@ -147,51 +159,59 @@ func (x *Exa) Parse(line string) error {
 		}
 		tok = tok[n:]
 
-		switch key {
-		case "next-hop":
-			x.NextHop = vals[0]
-		case "origin":
-			x.Origin = vals[0]
-		case "as-path":
-			for _, v := range vals {
-				if v == "(" || v == ")" {
-					continue // NB: AS sets are flattened
-				}
-				asn, err := strconv.ParseUint(v, 10, 32)
-				if err != nil {
-					return ErrInvalidValue
-				}
-				x.ASPath = append(x.ASPath, uint32(asn))
-			}
-		case "med", "local-preference":
-			val, err := strconv.ParseUint(vals[0], 10, 32)
-			if err != nil {
-				return ErrInvalidValue
-			}
-			v := uint32(val)
-			if key == "med" {
-				x.MED = &v
-			} else {
-				x.LocalPref = &v
-			}
-		case "community":
-			x.Community = parseCommunity(x.Community, vals)
-		case "large-community":
-			x.LargeCommunity = append(x.LargeCommunity, vals...)
-		case "extended-community":
-			x.ExtCommunity = append(x.ExtCommunity, vals...)
-		case "aggregator":
-			x.Aggregator = vals[0]
-		case "originator-id":
-			x.OriginatorID = vals[0]
-		case "cluster-list":
-			x.ClusterList = append(x.ClusterList, vals...)
-		default:
-			// NB: do not announce a route without what was asked for
-			return fmt.Errorf("%w: %s", ErrUnsupported, key)
+		if err := x.parseAttr(key, vals); err != nil {
+			return err
 		}
 	}
 
+	return nil
+}
+
+// parseAttr parses the attribute key with given values
+func (x *Exa) parseAttr(key string, vals []string) error {
+	switch key {
+	case "next-hop":
+		x.NextHop = vals[0]
+	case "origin":
+		x.Origin = vals[0]
+	case "as-path":
+		for _, v := range vals {
+			if v == "(" || v == ")" {
+				continue // NB: AS sets are flattened
+			}
+			asn, err := strconv.ParseUint(v, 10, 32)
+			if err != nil {
+				return ErrInvalidValue
+			}
+			x.ASPath = append(x.ASPath, uint32(asn))
+		}
+	case "med", "local-preference":
+		val, err := strconv.ParseUint(vals[0], 10, 32)
+		if err != nil {
+			return ErrInvalidValue
+		}
+		v := uint32(val)
+		if key == "med" {
+			x.MED = &v
+		} else {
+			x.LocalPref = &v
+		}
+	case "community":
+		x.Community = parseCommunity(x.Community, vals)
+	case "large-community":
+		x.LargeCommunity = append(x.LargeCommunity, vals...)
+	case "extended-community":
+		x.ExtCommunity = append(x.ExtCommunity, vals...)
+	case "aggregator":
+		x.Aggregator = vals[0]
+	case "originator-id":
+		x.OriginatorID = vals[0]
+	case "cluster-list":
+		x.ClusterList = append(x.ClusterList, vals...)
+	default:
+		// NB: do not announce a route without what was asked for
+		return fmt.Errorf("%w: %s", ErrUnsupported, key)
+	}
 	return nil
 }
 
@@ -202,7 +222,9 @@ func (x *Exa) String() string {
 	}
 
 	// NB: route for a single prefix, else attributes ... nlri
-	if len(x.Prefixes) == 1 {
+	if len(x.Flow) > 0 {
+		return x.flowString()
+	} else if len(x.Prefixes) == 1 {
 		x.Tok = append(x.Tok[:0], x.Action, "route", x.Prefixes[0])
 	} else {
 		x.Tok = append(x.Tok[:0], x.Action, "attributes")

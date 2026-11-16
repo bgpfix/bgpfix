@@ -491,3 +491,60 @@ func TestMoreAttributes(t *testing.T) {
 		assert.Error(t, x.ToMsg(msg.NewMsg()), bad)
 	}
 }
+
+// NB: the expected lines were checked against ExaBGP 5.0.15, which sends the same for both forms
+func TestFlow(t *testing.T) {
+	lines := [][2]string{
+		{"announce flow route { match { destination 10.0.0.1/32; protocol tcp; destination-port =80; } then { discard; } }",
+			"announce flow route destination 10.0.0.1/32 protocol =6 destination-port =80 discard"},
+		{"announce flow route destination 10.0.0.2/32 source 192.0.2.0/24 protocol [ =tcp =udp ] port >1024&<2048 rate-limit 9600",
+			"announce flow route destination 10.0.0.2/32 source 192.0.2.0/24 protocol [ =6 =17 ] port >1024&<2048 rate-limit 9600"},
+		{"announce flow route { match { destination 10.0.0.3/32; tcp-flags [ syn !ack ]; packet-length >=100&<=200; fragment [ is-fragment first-fragment ]; } then { redirect 65000:100; action sample-terminal; } }",
+			"announce flow route destination 10.0.0.3/32 tcp-flags [ 0x2 !0x10 ] packet-length >=100&<=200 fragment [ 0x2 0x4 ] redirect 65000:100 action sample-terminal"},
+		{"announce flow route { match { destination 10.0.0.4/32; icmp-type =8; icmp-code =0; dscp =10; source-port =53; } then { mark 12; community [65000:1]; } }",
+			"announce flow route destination 10.0.0.4/32 source-port =53 icmp-type =8 icmp-code =0 dscp =10 mark 12 community [ 65000:1 ]"},
+		{"announce flow route { match { destination 2001:db8::/48; next-header udp; destination-port =53; } then { rate-limit 1000 packets; } }",
+			"announce flow route destination 2001:db8::/48 next-header =17 destination-port =53 rate-limit 1000 packets"},
+		{"announce flow route { match { destination 10.0.0.5/32; tcp-flags [ =syn+ack fin&!rst ]; } then { redirect 192.0.2.9; } }",
+			"announce flow route destination 10.0.0.5/32 tcp-flags [ =0x12 0x1&!0x4 ] redirect 192.0.2.9"},
+		{"announce flow route { match { destination 10.0.0.6/32; protocol 6; tcp-flags 0x12; } then { copy 192.0.2.9; extended-community [ target:65000:1 ]; } }",
+			"announce flow route destination 10.0.0.6/32 protocol =6 tcp-flags 0x12 copy 192.0.2.9 extended-community [ target:65000:1 ]"},
+		{"announce flow route { match { destination 10.0.0.7/32; } then { redirect 4200000000:5; redirect-to-nexthop; } }",
+			"announce flow route destination 10.0.0.7/32 redirect 4200000000:5 redirect-to-nexthop"},
+		{"announce flow route { match { source 2001:db8:1::/64/32; flow-label =5; traffic-class =3; } then { discard; } }",
+			"announce flow route source 0:0:1::/64/32 traffic-class =3 flow-label =5 discard"}, // NB: only the bits after the offset are sent
+		{"withdraw flow route { match { destination 10.0.0.1/32; protocol tcp; destination-port =80; } then { discard; } }",
+			"withdraw flow route destination 10.0.0.1/32 protocol =6 destination-port =80"},
+	}
+	for _, l := range lines {
+		x, err := NewExaLine(l[0])
+		require.NoError(t, err, l[0])
+		m := msg.NewMsg()
+		require.NoError(t, x.ToMsg(m), l[0])
+
+		// NB: over the wire
+		require.NoError(t, m.Marshal(caps.Caps{}))
+		var wire bytes.Buffer
+		m.WriteTo(&wire)
+		m2 := msg.NewMsg()
+		_, err = m2.FromBytes(wire.Bytes())
+		require.NoError(t, err)
+		require.NoError(t, m2.Parse(caps.Caps{}))
+
+		n := 0
+		y := NewExa()
+		for range y.IterMsg(m2) {
+			assert.Equal(t, l[1], y.String())
+			n++
+		}
+		assert.Equal(t, 1, n, l[0])
+	}
+
+	for _, bad := range []string{"then { discard; }", "destination 10.0.0.1/32 destination-port =http", "destination 10.0.0.1/32 tcp-flags =", "destination 10.0.0.1/33", "destination 10.0.0.1/32 rate-limit x", "source 2001:db8::/32/40"} {
+		x, err := NewExaLine("announce flow route " + bad)
+		if err == nil {
+			err = x.ToMsg(msg.NewMsg())
+		}
+		assert.Error(t, err, bad)
+	}
+}

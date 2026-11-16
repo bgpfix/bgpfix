@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/attrs"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/meta"
@@ -21,6 +22,8 @@ func (x *Exa) ToMsg(m *msg.Msg) error {
 
 	if x.Action != "announce" && x.Action != "withdraw" {
 		return ErrInvalidAction
+	} else if len(x.Flow) > 0 {
+		return x.flowToMsg(u)
 	} else if len(x.Prefixes) == 0 {
 		return ErrInvalidPrefix
 	}
@@ -53,7 +56,7 @@ func (x *Exa) ToMsg(m *msg.Msg) error {
 // writeAttrs creates the BGP attributes from Exa fields
 func (x *Exa) writeAttrs(u *msg.Update) error {
 	// Next hop is required for announcements
-	if x.NextHop != "" && x.NextHop != "self" {
+	if x.NextHop != "" && x.NextHop != "self" && len(x.Flow) == 0 {
 		addr, err := netip.ParseAddr(x.NextHop)
 		if err != nil {
 			return ErrInvalidNextHop
@@ -305,7 +308,39 @@ func (x *Exa) IterMsg(m *msg.Msg) iter.Seq[*Exa] {
 			for _, prefix := range u.AllUnreach() {
 				x.Prefixes = append(x.Prefixes, prefix.String())
 			}
-			yield(x)
+			if !yield(x) {
+				return
+			}
+		}
+
+		// Handle Flowspec: a line per rule
+		for _, code := range []attrs.Code{attrs.ATTR_MP_REACH, attrs.ATTR_MP_UNREACH} {
+			mp, _ := u.Attrs.Get(code).(*attrs.MP)
+			if mp == nil {
+				continue
+			}
+			fs, _ := mp.Value.(*attrs.MPFlowspec)
+			if fs == nil {
+				continue
+			}
+			for _, rule := range fs.Rules {
+				x.Reset()
+				x.Action = "withdraw"
+				if code == attrs.ATTR_MP_REACH {
+					x.Action = "announce"
+					x.readMsgAttrs(u)
+					if fs.NextHop.IsValid() {
+						x.NextHop = fs.NextHop.String()
+					}
+				}
+				v6 := 0
+				if mp.Afi() == afi.AFI_IPV6 {
+					v6 = 1
+				}
+				if x.readFlow(rule, v6); len(x.Flow) > 0 && !yield(x) {
+					return
+				}
+			}
 		}
 	}
 }
