@@ -1,6 +1,7 @@
 package exa
 
 import (
+	"encoding/binary"
 	"fmt"
 	"iter"
 	"net/netip"
@@ -8,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/bgpfix/bgpfix/attrs"
+	"github.com/bgpfix/bgpfix/caps"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/nlri"
 )
@@ -109,7 +112,124 @@ func (x *Exa) writeAttrs(u *msg.Update) error {
 		u.Attrs.Use(attrs.ATTR_LARGE_COMMUNITY).(*attrs.LargeCom).Add(uint32(v[0]), uint32(v[1]), uint32(v[2]))
 	}
 
+	// Extended communities
+	for _, c := range x.ExtCommunity {
+		v, err := parseExtcom(c)
+		if err != nil {
+			return err
+		}
+		ec := u.Attrs.Use(attrs.ATTR_EXT_COMMUNITY).(*attrs.Extcom)
+		if err := ec.Unmarshal(binary.BigEndian.AppendUint64(nil, v), caps.Caps{}, meta.Meta{}); err != nil {
+			return ErrInvalidCommunity
+		}
+	}
+
+	// Aggregation
+	if x.AtomicAggregate {
+		u.Attrs.Use(attrs.ATTR_AGGREGATE)
+	}
+	if x.Aggregator != "" {
+		as, ip, _ := strings.Cut(x.Aggregator, ":")
+		asn, err1 := strconv.ParseUint(as, 10, 32)
+		addr, err2 := netip.ParseAddr(ip)
+		if err1 != nil || err2 != nil || !addr.Is4() {
+			return ErrInvalidValue
+		}
+		agg := u.Attrs.Use(attrs.ATTR_AGGREGATOR).(*attrs.Aggregator)
+		agg.ASN, agg.Addr = uint32(asn), addr
+	}
+
+	// Route reflection
+	if x.OriginatorID != "" {
+		addr, err := netip.ParseAddr(x.OriginatorID)
+		if err != nil || !addr.Is4() {
+			return ErrInvalidValue
+		}
+		u.Attrs.Use(attrs.ATTR_ORIGINATOR).(*attrs.IP).Addr = addr
+	}
+	for _, c := range x.ClusterList {
+		addr, err := netip.ParseAddr(c)
+		if err != nil || !addr.Is4() {
+			return ErrInvalidValue
+		}
+		cl := u.Attrs.Use(attrs.ATTR_CLUSTER_LIST).(*attrs.IPList)
+		cl.Addr = append(cl.Addr, addr)
+	}
+
 	return nil
+}
+
+// parseExtcom parses an extended community in ExaBGP format:
+// target:<asn|ip>:<number>, origin:<asn|ip>:<number>, or 0x<16 hex digits>
+func parseExtcom(s string) (uint64, error) {
+	if len(s) == 18 && strings.HasPrefix(s, "0x") {
+		v, err := strconv.ParseUint(s[2:], 16, 64)
+		if err != nil {
+			return 0, ErrInvalidCommunity
+		}
+		return v, nil
+	}
+
+	parts := strings.Split(s, ":")
+	if len(parts) != 3 {
+		return 0, ErrInvalidCommunity
+	}
+
+	var typ uint64
+	switch parts[0] {
+	case "target":
+		typ = uint64(attrs.EXTCOM_TARGET)
+	case "origin":
+		typ = uint64(attrs.EXTCOM_ORIGIN)
+	default:
+		return 0, ErrInvalidCommunity
+	}
+
+	// global administrator: IPv4 address, 2-byte ASN, or 4-byte ASN
+	var val uint64
+	nbits := 16 // local administrator size
+	if addr, err := netip.ParseAddr(parts[1]); err == nil && addr.Is4() {
+		typ |= uint64(attrs.EXTCOM_IP4)
+		val = uint64(binary.BigEndian.Uint32(addr.AsSlice())) << 16
+	} else if asn, err := strconv.ParseUint(parts[1], 10, 32); err != nil {
+		return 0, ErrInvalidCommunity
+	} else if asn > 0xffff {
+		typ |= uint64(attrs.EXTCOM_AS4)
+		val = asn << 16
+	} else {
+		val = asn << 32
+		nbits = 32
+	}
+
+	num, err := strconv.ParseUint(parts[2], 10, nbits)
+	if err != nil {
+		return 0, ErrInvalidCommunity
+	}
+	return typ<<48 | val | num, nil
+}
+
+// formatExtcom is the reverse of parseExtcom
+func formatExtcom(v uint64) string {
+	name := ""
+	switch attrs.ExtcomType(v >> 48).Subtype() {
+	case attrs.EXTCOM_TARGET:
+		name = "target"
+	case attrs.EXTCOM_ORIGIN:
+		name = "origin"
+	}
+
+	if name != "" {
+		switch attrs.ExtcomType(v>>48) & 0xff00 { // NB: transitive only
+		case attrs.EXTCOM_AS2:
+			return fmt.Sprintf("%s:%d:%d", name, uint16(v>>32), uint32(v))
+		case attrs.EXTCOM_AS4:
+			return fmt.Sprintf("%s:%d:%d", name, uint32(v>>16), uint16(v))
+		case attrs.EXTCOM_IP4:
+			ip := netip.AddrFrom4([4]byte{byte(v >> 40), byte(v >> 32), byte(v >> 24), byte(v >> 16)})
+			return fmt.Sprintf("%s:%s:%d", name, ip, uint16(v))
+		}
+	}
+	return fmt.Sprintf("0x%016x", v)
 }
 
 // writeCommunity creates the COMMUNITY attribute using the bgpipe pattern
@@ -263,6 +383,32 @@ func (x *Exa) readMsgAttrs(u *msg.Update) {
 		}
 
 		x.Community = communities
+	}
+
+	// Extended communities
+	if ec, ok := u.Attrs.Get(attrs.ATTR_EXT_COMMUNITY).(*attrs.Extcom); ok {
+		for i, val := range ec.Value {
+			if val != nil {
+				v := uint64(ec.Type[i])<<48 | val.Marshal()&0xffffffffffff
+				x.ExtCommunity = append(x.ExtCommunity, formatExtcom(v))
+			}
+		}
+	}
+
+	// Aggregation
+	x.AtomicAggregate = u.Attrs.Has(attrs.ATTR_AGGREGATE)
+	if agg, ok := u.Attrs.Get(attrs.ATTR_AGGREGATOR).(*attrs.Aggregator); ok && agg.Addr.IsValid() {
+		x.Aggregator = fmt.Sprintf("%d:%s", agg.ASN, agg.Addr)
+	}
+
+	// Route reflection
+	if id, ok := u.Attrs.Get(attrs.ATTR_ORIGINATOR).(*attrs.IP); ok && id.Addr.IsValid() {
+		x.OriginatorID = id.Addr.String()
+	}
+	if cl, ok := u.Attrs.Get(attrs.ATTR_CLUSTER_LIST).(*attrs.IPList); ok {
+		for _, addr := range cl.Addr {
+			x.ClusterList = append(x.ClusterList, addr.String())
+		}
 	}
 
 	// Large communities

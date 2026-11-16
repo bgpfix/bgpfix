@@ -1,10 +1,12 @@
 package exa
 
 import (
+	"bytes"
 	"cmp"
 	"net/netip"
 	"testing"
 
+	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/msg"
 	"github.com/bgpfix/bgpfix/nlri"
 	"github.com/stretchr/testify/assert"
@@ -158,6 +160,20 @@ func TestLineParsing(t *testing.T) {
 				Community:      []string{"65000:1"},
 				LargeCommunity: []string{"65000:1:2"},
 			},
+		},
+		{
+			name: "neighbor selector, more attributes",
+			line: "neighbor 192.0.2.1 local-as 65000 announce route 10.0.0.0/8 next-hop 10.0.0.1 extended-community [target:65000:1 0x0002fde800000001] atomic-aggregate aggregator (65000:192.0.2.9) originator-id 192.0.2.7 cluster-list [192.0.2.8]",
+			expect: Exa{
+				Action:  "announce",
+				Prefix:  "10.0.0.0/8",
+				NextHop: "10.0.0.1",
+			},
+		},
+		{
+			name: "unsupported attribute",
+			line: "announce route 10.0.0.0/8 next-hop 10.0.0.1 label 100",
+			fail: true,
 		},
 		{
 			name: "invalid med",
@@ -439,4 +455,38 @@ func TestErrorHandling(t *testing.T) {
 // Helper function to create uint32 pointer
 func uint32Ptr(v uint32) *uint32 {
 	return &v
+}
+
+func TestMoreAttributes(t *testing.T) {
+	// what ExaBGP accepts -> what we write back
+	lines := map[string]string{
+		"neighbor 192.0.2.1 announce route 10.0.0.0/8 next-hop 10.0.0.1 extended-community [target:65000:1 origin:192.0.2.1:2 target:4200000000:3 0x4002fde800000001] atomic-aggregate aggregator (65000:192.0.2.9)": "announce route 10.0.0.0/8 next-hop 10.0.0.1 origin IGP extended-community [ target:65000:1 origin:192.0.2.1:2 target:4200000000:3 0x4002fde800000001 ] atomic-aggregate aggregator ( 65000:192.0.2.9 )",
+		"announce route 10.0.0.0/8 next-hop 10.0.0.1 originator-id 192.0.2.7 cluster-list [192.0.2.8 192.0.2.9]":                                                                                                     "announce route 10.0.0.0/8 next-hop 10.0.0.1 origin IGP originator-id 192.0.2.7 cluster-list [ 192.0.2.8 192.0.2.9 ]",
+	}
+	for line, want := range lines {
+		x, err := NewExaLine(line)
+		require.NoError(t, err, line)
+		m := msg.NewMsg()
+		require.NoError(t, x.ToMsg(m), line)
+
+		// NB: over the wire
+		require.NoError(t, m.Marshal(caps.Caps{}))
+		var wire bytes.Buffer
+		m.WriteTo(&wire)
+		m2 := msg.NewMsg()
+		_, err = m2.FromBytes(wire.Bytes())
+		require.NoError(t, err)
+		require.NoError(t, m2.Parse(caps.Caps{}))
+
+		y := NewExa()
+		for range y.IterMsg(m2) {
+			assert.Equal(t, want, y.String())
+		}
+	}
+
+	for _, bad := range []string{"extended-community target:1", "extended-community foo:1:2", "extended-community target:65000:4294967296", "aggregator 65000", "cluster-list [ x ]"} {
+		x, err := NewExaLine("announce route 10.0.0.0/8 next-hop 10.0.0.1 " + bad)
+		require.NoError(t, err, bad)
+		assert.Error(t, x.ToMsg(msg.NewMsg()), bad)
+	}
 }
