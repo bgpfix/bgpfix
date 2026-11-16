@@ -2,24 +2,36 @@
 package exa
 
 import (
+	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
 
 // Exa represents an ExaBGP route announcement/withdrawal
-// Focuses on the most commonly used attributes (80/20 approach)
 type Exa struct {
 	Str string   // parsed line (optional)
 	Tok []string // all tokens in line (optional)
 
 	Action    string   // announce or withdraw
-	Prefix    string   // IP prefix (e.g., "10.0.0.1/24")
+	Prefixes  []string // IP prefixes (e.g., "10.0.0.1/24"), all IPv4 or all IPv6
 	NextHop   string   // next-hop IP address or "self"
 	Origin    string   // IGP, EGP, INCOMPLETE (optional)
 	ASPath    []uint32 // AS path sequence (optional)
 	MED       *uint32  // Multi-Exit Discriminator (optional)
 	LocalPref *uint32  // Local preference (optional)
 	Community []string // Community values in brackets [no-export] or [123:456]
+
+	LargeCommunity  []string // large communities, eg. 65000:1:2
+	ExtCommunity    []string // extended communities, eg. target:65000:1 or 0x0002fde800000001
+	AtomicAggregate bool     // atomic-aggregate
+	Aggregator      string   // aggregator, eg. 65000:192.0.2.1
+	OriginatorID    string   // originator-id, eg. 192.0.2.1
+	ClusterList     []string // cluster-list, eg. 192.0.2.1
+
+	// flow route: the match components, eg. "destination 192.0.2.0/24", "destination-port =80 =443";
+	// actions are in ExtCommunity (and NextHop)
+	Flow []string
 }
 
 // NewExa returns a new, empty Exa instance
@@ -42,98 +54,165 @@ func (x *Exa) Reset() {
 	x.Str = ""
 	x.Tok = x.Tok[:0]
 	x.Action = ""
-	x.Prefix = ""
+	x.Prefixes = x.Prefixes[:0]
 	x.NextHop = ""
 	x.Origin = ""
 	x.ASPath = x.ASPath[:0]
 	x.MED = nil
 	x.LocalPref = nil
 	x.Community = x.Community[:0]
+	x.LargeCommunity = x.LargeCommunity[:0]
+	x.ExtCommunity = x.ExtCommunity[:0]
+	x.AtomicAggregate = false
+	x.Aggregator = ""
+	x.OriginatorID = ""
+	x.ClusterList = x.ClusterList[:0]
+	x.Flow = x.Flow[:0]
 }
 
-// ParseRoute parses an ExaBGP route command line
-// Supports:
-// - announce route <prefix> next-hop <ip|self> [origin <origin>] [as-path [asn...]] [med <value>] [local-preference <value>] [community [value...]]
-// - withdraw route <prefix>
+// exaSyntax pads list delimiters with spaces, like the ExaBGP tokeniser does
+var exaSyntax = strings.NewReplacer("[", " [ ", "]", " ] ", "(", " ( ", ")", " ) ", "{", " { ", "}", " } ", ";", " ; ")
+
+// Parse parses an ExaBGP route command line:
+//
+//	announce route <prefix> [next-hop <ip|self>] [<attribute> ...]
+//	announce attributes [next-hop <ip|self>] [<attribute> ...] nlri <prefix> ...
+//	withdraw route <prefix> (attributes, if any, are ignored)
+//	withdraw attributes [<attribute> ...] nlri <prefix> ...
+//	announce flow route <match> ... <action> ... (also as { match { ...; } then { ...; } })
+//	withdraw flow route <match> ...
+//
+// "ipv4 unicast" and "ipv6 unicast" can be used in place of "route".
+// A leading "neighbor <ip> ..." selector is skipped.
 func (x *Exa) Parse(line string) error {
+	x.Reset()
 	x.Str = strings.TrimSpace(line)
 	if x.Str == "" {
 		return ErrEmptyLine
 	}
+	x.Tok = strings.Fields(exaSyntax.Replace(x.Str))
+	tok := x.Tok
 
-	x.Tok = strings.Fields(x.Str)
-	if len(x.Tok) < 3 {
+	// skip the neighbor selector, if any
+	if tok[0] == "neighbor" {
+		for len(tok) > 0 && tok[0] != "announce" && tok[0] != "withdraw" {
+			tok = tok[1:]
+		}
+	}
+	if len(tok) < 3 {
 		return ErrInvalidFormat
 	}
 
 	// Basic validation
-	x.Action = x.Tok[0]
-	x.Prefix = x.Tok[2]
+	x.Action = tok[0]
 	if x.Action != "announce" && x.Action != "withdraw" {
 		return ErrInvalidAction
-	} else if x.Tok[1] != "route" {
+	}
+
+	// route, or its equivalent: ipv4 unicast / ipv6 unicast
+	switch tok[1] {
+	case "route":
+		tok = tok[2:]
+	case "ipv4", "ipv6":
+		if tok[2] != "unicast" || len(tok) < 4 {
+			return ErrOnlyRoute
+		}
+		tok = tok[3:]
+	case "flow":
+		if tok[2] != "route" {
+			return ErrOnlyRoute
+		}
+		return x.parseFlow(tok[3:])
+	case "attributes": // many prefixes, after nlri
+		i := slices.Index(tok, "nlri")
+		if i < 0 || i == len(tok)-1 {
+			return ErrInvalidFormat
+		}
+		x.Prefixes = append(x.Prefixes, tok[i+1:]...)
+		tok = tok[2:i]
+	default:
 		return ErrOnlyRoute
 	}
+	if len(x.Prefixes) == 0 {
+		x.Prefixes, tok = append(x.Prefixes, tok[0]), tok[1:]
+	}
 
-	// withdraw has no further parameters
+	// NB: ExaBGP accepts attributes in withdraw (eg. next-hop), but does not need them
 	if x.Action == "withdraw" {
-		if len(x.Tok) > 3 {
-			return ErrInvalidFormat
+		return nil
+	}
+
+	// parse the attributes
+	for len(tok) > 0 {
+		var key string
+		key, tok = tok[0], tok[1:]
+
+		// attributes with no value
+		if key == "atomic-aggregate" {
+			x.AtomicAggregate = true
+			continue
+		}
+
+		// take the value(s): [ a b ], ( a ), or a
+		vals, n := parseList(tok)
+		if len(vals) == 0 && key != "as-path" {
+			return ErrMissingValue
+		}
+		tok = tok[n:]
+
+		if err := x.parseAttr(key, vals); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// parseAttr parses the attribute key with given values
+func (x *Exa) parseAttr(key string, vals []string) error {
+	switch key {
+	case "next-hop":
+		x.NextHop = vals[0]
+	case "origin":
+		x.Origin = vals[0]
+	case "as-path":
+		for _, v := range vals {
+			if v == "(" || v == ")" {
+				continue // NB: AS sets are flattened
+			}
+			asn, err := strconv.ParseUint(v, 10, 32)
+			if err != nil {
+				return ErrInvalidValue
+			}
+			x.ASPath = append(x.ASPath, uint32(asn))
+		}
+	case "med", "local-preference":
+		val, err := strconv.ParseUint(vals[0], 10, 32)
+		if err != nil {
+			return ErrInvalidValue
+		}
+		v := uint32(val)
+		if key == "med" {
+			x.MED = &v
 		} else {
-			return nil
+			x.LocalPref = &v
 		}
+	case "community":
+		x.Community = parseCommunity(x.Community, vals)
+	case "large-community":
+		x.LargeCommunity = append(x.LargeCommunity, vals...)
+	case "extended-community":
+		x.ExtCommunity = append(x.ExtCommunity, vals...)
+	case "aggregator":
+		x.Aggregator = vals[0]
+	case "originator-id":
+		x.OriginatorID = vals[0]
+	case "cluster-list":
+		x.ClusterList = append(x.ClusterList, vals...)
+	default:
+		// NB: do not announce a route without what was asked for
+		return fmt.Errorf("%w: %s", ErrUnsupported, key)
 	}
-
-	// Parse remaining r.Tok
-	i := 3
-	for i < len(x.Tok) {
-		switch x.Tok[i] {
-		case "next-hop":
-			if i+1 >= len(x.Tok) {
-				return ErrMissingValue
-			}
-			x.NextHop = x.Tok[i+1]
-			i += 2
-		case "origin":
-			if i+1 >= len(x.Tok) {
-				return ErrMissingValue
-			}
-			x.Origin = x.Tok[i+1]
-			i += 2
-		case "as-path":
-			// Parse AS path: as-path [ 65001 65002 ]
-			aspath, consumed := parseAspath(x.Tok[i+1:])
-			x.ASPath = aspath
-			i += consumed + 1
-		case "med":
-			if i+1 >= len(x.Tok) {
-				return ErrMissingValue
-			}
-			if val, err := strconv.ParseUint(x.Tok[i+1], 10, 32); err == nil {
-				med := uint32(val)
-				x.MED = &med
-			}
-			i += 2
-		case "local-preference":
-			if i+1 >= len(x.Tok) {
-				return ErrMissingValue
-			}
-			if val, err := strconv.ParseUint(x.Tok[i+1], 10, 32); err == nil {
-				lp := uint32(val)
-				x.LocalPref = &lp
-			}
-			i += 2
-		case "community":
-			// Parse community: community [ no-export ] or community [ 666:666 ]
-			communities, consumed := parseCommunity(x.Tok[i+1:])
-			x.Community = communities
-			i += consumed + 1
-		default:
-			// Skip unknown r.Tokens
-			i++
-		}
-	}
-
 	return nil
 }
 
@@ -143,7 +222,14 @@ func (x *Exa) String() string {
 		return x.Str
 	}
 
-	x.Tok = append(x.Tok[:0], x.Action, "route", x.Prefix)
+	// NB: route for a single prefix, else attributes ... nlri
+	if len(x.Flow) > 0 {
+		return x.flowString()
+	} else if len(x.Prefixes) == 1 {
+		x.Tok = append(x.Tok[:0], x.Action, "route", x.Prefixes[0])
+	} else {
+		x.Tok = append(x.Tok[:0], x.Action, "attributes")
+	}
 
 	if x.NextHop != "" {
 		x.Tok = append(x.Tok, "next-hop", x.NextHop)
@@ -174,69 +260,83 @@ func (x *Exa) String() string {
 		x.Tok = append(x.Tok, "community", communityStr)
 	}
 
+	if len(x.LargeCommunity) > 0 {
+		x.Tok = append(x.Tok, "large-community", formatCommunity(x.LargeCommunity))
+	}
+
+	if len(x.ExtCommunity) > 0 {
+		x.Tok = append(x.Tok, "extended-community", formatCommunity(x.ExtCommunity))
+	}
+
+	if x.AtomicAggregate {
+		x.Tok = append(x.Tok, "atomic-aggregate")
+	}
+
+	if x.Aggregator != "" {
+		x.Tok = append(x.Tok, "aggregator", "(", x.Aggregator, ")")
+	}
+
+	if x.OriginatorID != "" {
+		x.Tok = append(x.Tok, "originator-id", x.OriginatorID)
+	}
+
+	if len(x.ClusterList) > 0 {
+		x.Tok = append(x.Tok, "cluster-list", formatCommunity(x.ClusterList))
+	}
+
+	if len(x.Prefixes) != 1 {
+		x.Tok = append(append(x.Tok, "nlri"), x.Prefixes...)
+	}
+
 	x.Str = strings.Join(x.Tok, " ")
 	return x.Str
 }
 
-// parseAspath parses AS path from tokens like: [ 65001 65002 ]
-func parseAspath(tokens []string) ([]uint32, int) {
-	if len(tokens) == 0 || tokens[0] != "[" {
+// parseList returns the values of a list like [ a b ] or ( a ), or a single value,
+// and the number of tokens consumed.
+func parseList(tokens []string) ([]string, int) {
+	if len(tokens) == 0 {
 		return nil, 0
 	}
 
-	var asns []uint32
-	consumed := 1 // for opening [
-
-	for i := 1; i < len(tokens); i++ {
-		consumed++
-		if tokens[i] == "]" {
-			break
-		}
-		if asn, err := strconv.ParseUint(tokens[i], 10, 32); err == nil {
-			asns = append(asns, uint32(asn))
-		}
+	end := ""
+	switch tokens[0] {
+	case "[":
+		end = "]"
+	case "(":
+		end = ")"
+	default:
+		return tokens[:1], 1
 	}
 
-	return asns, consumed
+	for i := 1; i < len(tokens); i++ {
+		if tokens[i] == end {
+			return tokens[1:i], i + 1
+		}
+	}
+	return tokens[1:], len(tokens) // NB: not closed
 }
 
-// parseCommunity parses community from tokens like: [ no-export ] or [ 666:666 ]
-func parseCommunity(tokens []string) ([]string, int) {
-	if len(tokens) == 0 || tokens[0] != "[" {
-		return nil, 0
-	}
-
-	var communities []string
-	consumed := 1 // for opening [
-
-	for i := 1; i < len(tokens); i++ {
-		consumed++
-		if tokens[i] == "]" {
-			break
-		}
-
-		// Normalize community name to canonical form
-		community := tokens[i]
+// parseCommunity appends communities in vals to dst, normalizing well-known names
+func parseCommunity(dst []string, vals []string) []string {
+	for _, community := range vals {
 		normalized := strings.ToLower(strings.ReplaceAll(community, "_", "-"))
-
 		switch normalized {
 		case "no-export", "noexport":
-			communities = append(communities, "no-export")
+			dst = append(dst, "no-export")
 		case "no-advertise", "noadvertise":
-			communities = append(communities, "no-advertise")
+			dst = append(dst, "no-advertise")
 		case "no-export-subconfed", "noexportsubconfed":
-			communities = append(communities, "no-export-subconfed")
+			dst = append(dst, "no-export-subconfed")
 		case "no-peer", "nopeer":
-			communities = append(communities, "no-peer")
+			dst = append(dst, "no-peer")
 		case "blackhole":
-			communities = append(communities, "blackhole")
+			dst = append(dst, "blackhole")
 		default:
-			// For AS:value format, keep original (case-sensitive for numbers)
-			communities = append(communities, community)
+			dst = append(dst, community)
 		}
 	}
-
-	return communities, consumed
+	return dst
 }
 
 // formatCommunity formats communities as ExaBGP expects: [ no-export ] or [ 123:456 ]
