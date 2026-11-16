@@ -3,6 +3,7 @@ package exa
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -13,7 +14,7 @@ type Exa struct {
 	Tok []string // all tokens in line (optional)
 
 	Action    string   // announce or withdraw
-	Prefix    string   // IP prefix (e.g., "10.0.0.1/24")
+	Prefixes  []string // IP prefixes (e.g., "10.0.0.1/24"), all IPv4 or all IPv6
 	NextHop   string   // next-hop IP address or "self"
 	Origin    string   // IGP, EGP, INCOMPLETE (optional)
 	ASPath    []uint32 // AS path sequence (optional)
@@ -49,7 +50,7 @@ func (x *Exa) Reset() {
 	x.Str = ""
 	x.Tok = x.Tok[:0]
 	x.Action = ""
-	x.Prefix = ""
+	x.Prefixes = x.Prefixes[:0]
 	x.NextHop = ""
 	x.Origin = ""
 	x.ASPath = x.ASPath[:0]
@@ -70,7 +71,9 @@ var exaSyntax = strings.NewReplacer("[", " [ ", "]", " ] ", "(", " ( ", ")", " )
 // Parse parses an ExaBGP route command line:
 //
 //	announce route <prefix> [next-hop <ip|self>] [<attribute> ...]
+//	announce attributes [next-hop <ip|self>] [<attribute> ...] nlri <prefix> ...
 //	withdraw route <prefix> (attributes, if any, are ignored)
+//	withdraw attributes [<attribute> ...] nlri <prefix> ...
 //
 // "ipv4 unicast" and "ipv6 unicast" can be used in place of "route".
 // A leading "neighbor <ip> ..." selector is skipped.
@@ -107,10 +110,19 @@ func (x *Exa) Parse(line string) error {
 			return ErrOnlyRoute
 		}
 		tok = tok[3:]
+	case "attributes": // many prefixes, after nlri
+		i := slices.Index(tok, "nlri")
+		if i < 0 || i == len(tok)-1 {
+			return ErrInvalidFormat
+		}
+		x.Prefixes = append(x.Prefixes, tok[i+1:]...)
+		tok = tok[2:i]
 	default:
 		return ErrOnlyRoute
 	}
-	x.Prefix, tok = tok[0], tok[1:]
+	if len(x.Prefixes) == 0 {
+		x.Prefixes, tok = append(x.Prefixes, tok[0]), tok[1:]
+	}
 
 	// NB: ExaBGP accepts attributes in withdraw (eg. next-hop), but does not need them
 	if x.Action == "withdraw" {
@@ -189,7 +201,12 @@ func (x *Exa) String() string {
 		return x.Str
 	}
 
-	x.Tok = append(x.Tok[:0], x.Action, "route", x.Prefix)
+	// NB: route for a single prefix, else attributes ... nlri
+	if len(x.Prefixes) == 1 {
+		x.Tok = append(x.Tok[:0], x.Action, "route", x.Prefixes[0])
+	} else {
+		x.Tok = append(x.Tok[:0], x.Action, "attributes")
+	}
 
 	if x.NextHop != "" {
 		x.Tok = append(x.Tok, "next-hop", x.NextHop)
@@ -242,6 +259,10 @@ func (x *Exa) String() string {
 
 	if len(x.ClusterList) > 0 {
 		x.Tok = append(x.Tok, "cluster-list", formatCommunity(x.ClusterList))
+	}
+
+	if len(x.Prefixes) != 1 {
+		x.Tok = append(append(x.Tok, "nlri"), x.Prefixes...)
 	}
 
 	x.Str = strings.Join(x.Tok, " ")

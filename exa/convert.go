@@ -19,26 +19,34 @@ import (
 func (x *Exa) ToMsg(m *msg.Msg) error {
 	u := &m.Switch(msg.UPDATE).Update
 
-	// Parse the prefix
-	prefix, err := netip.ParsePrefix(x.Prefix)
-	if err != nil {
+	if x.Action != "announce" && x.Action != "withdraw" {
+		return ErrInvalidAction
+	} else if len(x.Prefixes) == 0 {
 		return ErrInvalidPrefix
 	}
-	pfx := nlri.FromPrefix(prefix)
 
-	// Set up the message based on action
-	switch x.Action {
-	case "announce":
-		u.AddReach(pfx)
-		if err := x.writeAttrs(u); err != nil {
-			return err
+	// add the prefixes, all of one address family (ie. one UPDATE)
+	var is4 bool
+	for i, s := range x.Prefixes {
+		prefix, err := netip.ParsePrefix(s)
+		if err != nil {
+			return ErrInvalidPrefix
+		} else if i == 0 {
+			is4 = prefix.Addr().Is4()
+		} else if prefix.Addr().Is4() != is4 {
+			return ErrInvalidPrefix
 		}
-	case "withdraw":
-		u.AddUnreach(pfx)
-	default:
-		return ErrInvalidAction
+
+		if x.Action == "announce" {
+			u.AddReach(nlri.FromPrefix(prefix))
+		} else {
+			u.AddUnreach(nlri.FromPrefix(prefix))
+		}
 	}
 
+	if x.Action == "announce" {
+		return x.writeAttrs(u)
+	}
 	return nil
 }
 
@@ -268,8 +276,8 @@ func (x *Exa) writeCommunity(u *msg.Update) error {
 	return nil
 }
 
-// IterMsg returns an iterator that converts bgpfix Msg (UPDATE) to Exa lines.
-// For each reachable and unreachable prefix, it returns x after updating it.
+// IterMsg returns an iterator that converts bgpfix Msg (UPDATE) to Exa lines:
+// it returns x updated with all reachable prefixes, then with all unreachable prefixes.
 func (x *Exa) IterMsg(m *msg.Msg) iter.Seq[*Exa] {
 	return func(yield func(*Exa) bool) {
 		if m == nil || m.Type != msg.UPDATE {
@@ -283,11 +291,10 @@ func (x *Exa) IterMsg(m *msg.Msg) iter.Seq[*Exa] {
 			x.Action = "announce"
 			x.readMsgAttrs(u)
 			for _, prefix := range u.AllReach() {
-				x.Str = "" // force update
-				x.Prefix = prefix.String()
-				if !yield(x) {
-					return
-				}
+				x.Prefixes = append(x.Prefixes, prefix.String())
+			}
+			if !yield(x) {
+				return
 			}
 		}
 
@@ -296,12 +303,9 @@ func (x *Exa) IterMsg(m *msg.Msg) iter.Seq[*Exa] {
 			x.Reset()
 			x.Action = "withdraw"
 			for _, prefix := range u.AllUnreach() {
-				x.Str = "" // force update
-				x.Prefix = prefix.String()
-				if !yield(x) {
-					return
-				}
+				x.Prefixes = append(x.Prefixes, prefix.String())
 			}
+			yield(x)
 		}
 	}
 }
