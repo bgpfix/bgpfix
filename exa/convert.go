@@ -61,25 +61,20 @@ func (x *Exa) writeAttrs(u *msg.Update) error {
 		}
 	}
 
-	// Origin attribute
-	if x.Origin != "" {
-		orig := u.Attrs.Use(attrs.ATTR_ORIGIN).(*attrs.Origin)
-		switch strings.ToUpper(x.Origin) {
-		case "IGP":
-			orig.Origin = 0
-		case "EGP":
-			orig.Origin = 1
-		case "INCOMPLETE":
-			orig.Origin = 2
-		default:
-			return ErrInvalidOrigin
-		}
+	// NB: ORIGIN and AS_PATH are mandatory (RFC 4271), a route without them
+	// is treated as withdrawn: default to IGP and an empty path, like ExaBGP
+	orig := u.Attrs.Use(attrs.ATTR_ORIGIN).(*attrs.Origin)
+	switch strings.ToUpper(x.Origin) {
+	case "", "IGP":
+		orig.Origin = 0
+	case "EGP":
+		orig.Origin = 1
+	case "INCOMPLETE":
+		orig.Origin = 2
+	default:
+		return ErrInvalidOrigin
 	}
-
-	// AS path
-	if len(x.ASPath) > 0 {
-		u.Attrs.Use(attrs.ATTR_ASPATH).(*attrs.Aspath).Set(x.ASPath)
-	}
+	u.Attrs.Use(attrs.ATTR_ASPATH).(*attrs.Aspath).Set(x.ASPath)
 
 	// MED
 	if x.MED != nil {

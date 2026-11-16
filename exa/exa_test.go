@@ -1,6 +1,7 @@
 package exa
 
 import (
+	"cmp"
 	"net/netip"
 	"testing"
 
@@ -101,7 +102,7 @@ func TestLineRoundTrip(t *testing.T) {
 				// For withdrawals, attributes are not preserved, so only check for announcements
 				if src.Action == "announce" {
 					assert.Equal(t, src.NextHop, dst.NextHop, "NextHop mismatch")
-					assert.Equal(t, src.Origin, dst.Origin, "Origin mismatch")
+					assert.Equal(t, cmp.Or(src.Origin, "IGP"), dst.Origin, "Origin mismatch") // NB: the default
 					assert.Equal(t, src.ASPath, dst.ASPath, "ASPath mismatch")
 					assert.Equal(t, src.MED, dst.MED, "MED mismatch")
 					assert.Equal(t, src.LocalPref, dst.LocalPref, "LocalPref mismatch")
