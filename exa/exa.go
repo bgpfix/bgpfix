@@ -85,6 +85,7 @@ var exaSyntax = strings.NewReplacer("[", " [ ", "]", " ] ", "(", " ( ", ")", " )
 // "ipv4 unicast" and "ipv6 unicast" can be used in place of "route".
 // A leading "neighbor <ip> ..." selector is skipped.
 func (x *Exa) Parse(line string) error {
+	x.Reset()
 	x.Str = strings.TrimSpace(line)
 	if x.Str == "" {
 		return ErrEmptyLine
