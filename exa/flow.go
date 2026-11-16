@@ -133,15 +133,18 @@ func (x *Exa) parseFlow(tok []string) error {
 			}
 			act(typ, uint64(math.Float32bits(float32(rate))))
 		case "redirect": // redirect <asn>:<number>, or to an IP address (next-hop)
-			as, num, ok := strings.Cut(v, ":")
-			asn, err1 := strconv.ParseUint(as, 10, 32)
-			if !ok || err1 != nil {
+			if _, err := netip.ParseAddr(strings.Trim(v, "[]")); err == nil {
 				x.NextHop = strings.Trim(v, "[]")
 				act(flowRedirectNH, 0)
-			} else if n, err := strconv.ParseUint(num, 10, 32); err != nil {
+				break
+			}
+			as, num, _ := strings.Cut(v, ":")
+			asn, err1 := strconv.ParseUint(as, 10, 32)
+			n, err2 := strconv.ParseUint(num, 10, 32)
+			if err1 != nil || err2 != nil || (asn > 0xffff && n > 0xffff) {
 				return ErrInvalidValue
 			} else if asn > 0xffff {
-				act(flowRedirectAS4, asn<<16|n&0xffff)
+				act(flowRedirectAS4, asn<<16|n)
 			} else {
 				act(flowRedirectAS2, asn<<32|n)
 			}
@@ -194,8 +197,10 @@ func (x *Exa) flowString() string {
 		val := v & 0xffffffffffff
 		switch v >> 48 {
 		case flowRateBytes, flowRatePackets:
-			rate := max(math.Float32frombits(uint32(val)), 0)
-			if v>>48 == flowRatePackets {
+			rate := math.Float32frombits(uint32(val))
+			if val>>32 != 0 || float32(uint32(rate)) != rate {
+				ext = append(ext, c) // NB: has an ASN, or is not a whole number: keep as is
+			} else if v>>48 == flowRatePackets {
 				x.Tok = append(x.Tok, "rate-limit", strconv.FormatUint(uint64(rate), 10), "packets")
 			} else if rate == 0 {
 				x.Tok = append(x.Tok, "discard")
@@ -217,7 +222,11 @@ func (x *Exa) flowString() string {
 		case flowMark:
 			x.Tok = append(x.Tok, "mark", strconv.FormatUint(val&0x3f, 10))
 		case flowAction:
-			x.Tok = append(x.Tok, "action", [4]string{"sample-terminal", "terminal", "sample", "sample-terminal"}[val&3])
+			if name := [4]string{"", "terminal", "sample", "sample-terminal"}[val&3]; name != "" {
+				x.Tok = append(x.Tok, "action", name)
+			} else {
+				ext = append(ext, c)
+			}
 		default:
 			ext = append(ext, c)
 		}
@@ -268,6 +277,9 @@ func (x *Exa) flowToMsg(u *msg.Update) error {
 		} else if as == afi.AS_IPV4_FLOWSPEC {
 			var p netip.Prefix
 			p, err = netip.ParsePrefix(val)
+			if err == nil && !p.Addr().Is4() {
+				err = ErrInvalidPrefix
+			}
 			rule[ft] = &attrs.FlowPrefix4{Prefix: nlri.FromPrefix(p)}
 		} else { // IPv6: address/length[/offset]
 			fp := &attrs.FlowPrefix6{}
@@ -278,7 +290,7 @@ func (x *Exa) flowToMsg(u *msg.Update) error {
 			if err == nil {
 				fp.Prefix, err = netip.ParsePrefix(val)
 			}
-			if err == nil && (fp.Offset < 0 || fp.Offset > 0 && fp.Offset >= fp.Prefix.Bits()) {
+			if err == nil && (!fp.Prefix.Addr().Is6() || fp.Offset < 0 || fp.Offset > 0 && fp.Offset >= fp.Prefix.Bits()) {
 				err = ErrInvalidPrefix
 			}
 			rule[ft] = fp

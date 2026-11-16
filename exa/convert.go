@@ -288,29 +288,43 @@ func (x *Exa) IterMsg(m *msg.Msg) iter.Seq[*Exa] {
 		}
 		u := &m.Update
 
-		// Handle announcements (reachable prefixes)
-		if u.HasReach() {
+		// NB: IPv4 in the UPDATE and another family in MP_* are separate lines,
+		// each with its own next-hop
+		reach, unreach := u.ReachMP().Prefixes(), u.UnreachMP().Prefixes()
+		each := func(action string, prefixes []nlri.Prefix, nh netip.Addr) bool {
+			if len(prefixes) == 0 {
+				return true
+			}
 			x.Reset()
-			x.Action = "announce"
-			x.readMsgAttrs(u)
-			for _, prefix := range u.AllReach() {
+			x.Action = action
+			if action == "announce" {
+				x.readMsgAttrs(u)
+				x.NextHop = ""
+				if nh.IsValid() && !nh.IsUnspecified() {
+					x.NextHop = nh.String()
+				}
+			}
+			for _, prefix := range prefixes {
 				x.Prefixes = append(x.Prefixes, prefix.String())
 			}
-			if !yield(x) {
-				return
-			}
+			return yield(x)
 		}
 
-		// Handle withdrawals (unreachable prefixes)
-		if u.HasUnreach() {
-			x.Reset()
-			x.Action = "withdraw"
-			for _, prefix := range u.AllUnreach() {
-				x.Prefixes = append(x.Prefixes, prefix.String())
-			}
-			if !yield(x) {
-				return
-			}
+		var nh4 netip.Addr
+		if nh, ok := u.Attrs.Get(attrs.ATTR_NEXTHOP).(*attrs.IP); ok {
+			nh4 = nh.Addr
+		}
+		if !each("announce", u.Reach, nh4) {
+			return
+		}
+		if reach != nil && !each("announce", reach.Prefixes, reach.NextHop) {
+			return
+		}
+		if !each("withdraw", u.Unreach, nh4) {
+			return
+		}
+		if unreach != nil && !each("withdraw", unreach.Prefixes, nh4) {
+			return
 		}
 
 		// Handle Flowspec: a line per rule
@@ -350,17 +364,6 @@ func (x *Exa) readMsgAttrs(u *msg.Update) {
 	// no attributes defined?
 	if u.Attrs.Len() == 0 {
 		return
-	}
-
-	// Next hop - directly check from attributes since we know they're available
-	if nh, ok := u.Attrs.Get(attrs.ATTR_NEXTHOP).(*attrs.IP); ok {
-		if nh.Addr.IsValid() && !nh.Addr.IsUnspecified() {
-			x.NextHop = nh.Addr.String()
-		}
-	} else if mp := u.ReachMP().Prefixes(); mp != nil {
-		if mp.NextHop.IsValid() && !mp.NextHop.IsUnspecified() {
-			x.NextHop = mp.NextHop.String()
-		}
 	}
 
 	// Origin

@@ -513,6 +513,10 @@ func TestFlow(t *testing.T) {
 			"announce flow route destination 10.0.0.7/32 redirect 4200000000:5 redirect-to-nexthop"},
 		{"announce flow route { match { source 2001:db8:1::/64/32; flow-label =5; traffic-class =3; } then { discard; } }",
 			"announce flow route source 0:0:1::/64/32 traffic-class =3 flow-label =5 discard"}, // NB: only the bits after the offset are sent
+		{"announce flow route destination 2001:db8::/48 redirect 2001:db8::1",
+			"announce flow route destination 2001:db8::/48 redirect 2001:db8::1"},
+		{"announce flow route destination 10.0.0.8/32 extended-community [ 0x8007000000000000 0x8006000a3f000000 ]", // NB: no names for these
+			"announce flow route destination 10.0.0.8/32 extended-community [ 0x8007000000000000 0x8006000a3f000000 ]"},
 		{"withdraw flow route { match { destination 10.0.0.1/32; protocol tcp; destination-port =80; } then { discard; } }",
 			"withdraw flow route destination 10.0.0.1/32 protocol =6 destination-port =80"},
 	}
@@ -540,11 +544,35 @@ func TestFlow(t *testing.T) {
 		assert.Equal(t, 1, n, l[0])
 	}
 
-	for _, bad := range []string{"then { discard; }", "destination 10.0.0.1/32 destination-port =http", "destination 10.0.0.1/32 tcp-flags =", "destination 10.0.0.1/33", "destination 10.0.0.1/32 rate-limit x", "source 2001:db8::/32/40"} {
+	for _, bad := range []string{"then { discard; }", "destination 10.0.0.1/32 destination-port =http", "destination 10.0.0.1/32 tcp-flags =", "destination 10.0.0.1/33", "destination 10.0.0.1/32 rate-limit x", "source 2001:db8::/32/40",
+		"destination 10.0.0.0/8 next-header udp discard", "destination-ipv4 2001:db8::/32 discard", "destination 10.0.0.1/32 redirect 4200000000:65536"} {
 		x, err := NewExaLine("announce flow route " + bad)
 		if err == nil {
 			err = x.ToMsg(msg.NewMsg())
 		}
 		assert.Error(t, err, bad)
 	}
+}
+
+// an UPDATE with IPv4 and IPv6 routes takes a line per address family, each with its next-hop
+func TestMixedFamilies(t *testing.T) {
+	m := msg.NewMsg()
+	x, err := NewExaLine("announce attributes next-hop 192.0.2.1 med 5 nlri 10.0.0.0/24 10.0.1.0/24")
+	require.NoError(t, err)
+	require.NoError(t, x.ToMsg(m))
+	m.Update.AddReach(nlri.FromPrefix(netip.MustParsePrefix("2001:db8::/32")))
+	m.Update.ReachMP().Prefixes().NextHop = netip.MustParseAddr("2001:db8::1")
+
+	var lines []string
+	x = NewExa()
+	for range x.IterMsg(m) {
+		lines = append(lines, x.String())
+		_, err := NewExaLine(x.String())
+		require.NoError(t, err)
+		require.NoError(t, x.ToMsg(msg.NewMsg()))
+	}
+	assert.Equal(t, []string{
+		"announce attributes next-hop 192.0.2.1 origin IGP med 5 nlri 10.0.0.0/24 10.0.1.0/24",
+		"announce route 2001:db8::/32 next-hop 2001:db8::1 origin IGP med 5",
+	}, lines)
 }
