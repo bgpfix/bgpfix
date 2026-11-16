@@ -20,6 +20,8 @@ type Exa struct {
 	MED       *uint32  // Multi-Exit Discriminator (optional)
 	LocalPref *uint32  // Local preference (optional)
 	Community []string // Community values in brackets [no-export] or [123:456]
+
+	LargeCommunity []string // Large community values, eg. 65000:1:2
 }
 
 // NewExa returns a new, empty Exa instance
@@ -49,43 +51,55 @@ func (x *Exa) Reset() {
 	x.MED = nil
 	x.LocalPref = nil
 	x.Community = x.Community[:0]
+	x.LargeCommunity = x.LargeCommunity[:0]
 }
 
-// ParseRoute parses an ExaBGP route command line
+// exaSyntax pads list delimiters with spaces, like the ExaBGP tokeniser does
+var exaSyntax = strings.NewReplacer("[", " [ ", "]", " ] ", "(", " ( ", ")", " ) ")
+
+// Parse parses an ExaBGP route command line
 // Supports:
-// - announce route <prefix> next-hop <ip|self> [origin <origin>] [as-path [asn...]] [med <value>] [local-preference <value>] [community [value...]]
-// - withdraw route <prefix>
+// - announce route <prefix> next-hop <ip|self> [origin <origin>] [as-path [asn...]] [med <value>] [local-preference <value>] [community [value...]] [large-community [value...]]
+// - withdraw route <prefix> (attributes, if any, are ignored)
+// - "ipv4 unicast" and "ipv6 unicast" in place of "route"
 func (x *Exa) Parse(line string) error {
 	x.Str = strings.TrimSpace(line)
 	if x.Str == "" {
 		return ErrEmptyLine
 	}
 
-	x.Tok = strings.Fields(x.Str)
+	x.Tok = strings.Fields(exaSyntax.Replace(x.Str))
 	if len(x.Tok) < 3 {
 		return ErrInvalidFormat
 	}
 
 	// Basic validation
 	x.Action = x.Tok[0]
-	x.Prefix = x.Tok[2]
 	if x.Action != "announce" && x.Action != "withdraw" {
 		return ErrInvalidAction
-	} else if x.Tok[1] != "route" {
-		return ErrOnlyRoute
 	}
 
-	// withdraw has no further parameters
-	if x.Action == "withdraw" {
-		if len(x.Tok) > 3 {
-			return ErrInvalidFormat
-		} else {
-			return nil
+	// route, or its equivalent: ipv4 unicast / ipv6 unicast
+	i := 2
+	switch x.Tok[1] {
+	case "route":
+	case "ipv4", "ipv6":
+		if x.Tok[2] != "unicast" || len(x.Tok) < 4 {
+			return ErrOnlyRoute
 		}
+		i = 3
+	default:
+		return ErrOnlyRoute
+	}
+	x.Prefix = x.Tok[i]
+	i++
+
+	// NB: ExaBGP accepts attributes in withdraw (eg. next-hop), but does not need them
+	if x.Action == "withdraw" {
+		return nil
 	}
 
 	// Parse remaining r.Tok
-	i := 3
 	for i < len(x.Tok) {
 		switch x.Tok[i] {
 		case "next-hop":
@@ -101,32 +115,50 @@ func (x *Exa) Parse(line string) error {
 			x.Origin = x.Tok[i+1]
 			i += 2
 		case "as-path":
-			// Parse AS path: as-path [ 65001 65002 ]
-			aspath, consumed := parseAspath(x.Tok[i+1:])
-			x.ASPath = aspath
+			// as-path [ 65001 65002 ] or as-path 65001
+			vals, consumed := parseList(x.Tok[i+1:])
+			for _, v := range vals {
+				if v == "(" || v == ")" {
+					continue // NB: AS sets are flattened
+				}
+				asn, err := strconv.ParseUint(v, 10, 32)
+				if err != nil {
+					return ErrInvalidValue
+				}
+				x.ASPath = append(x.ASPath, uint32(asn))
+			}
 			i += consumed + 1
 		case "med":
 			if i+1 >= len(x.Tok) {
 				return ErrMissingValue
 			}
-			if val, err := strconv.ParseUint(x.Tok[i+1], 10, 32); err == nil {
-				med := uint32(val)
-				x.MED = &med
+			val, err := strconv.ParseUint(x.Tok[i+1], 10, 32)
+			if err != nil {
+				return ErrInvalidValue
 			}
+			med := uint32(val)
+			x.MED = &med
 			i += 2
 		case "local-preference":
 			if i+1 >= len(x.Tok) {
 				return ErrMissingValue
 			}
-			if val, err := strconv.ParseUint(x.Tok[i+1], 10, 32); err == nil {
-				lp := uint32(val)
-				x.LocalPref = &lp
+			val, err := strconv.ParseUint(x.Tok[i+1], 10, 32)
+			if err != nil {
+				return ErrInvalidValue
 			}
+			lp := uint32(val)
+			x.LocalPref = &lp
 			i += 2
 		case "community":
-			// Parse community: community [ no-export ] or community [ 666:666 ]
-			communities, consumed := parseCommunity(x.Tok[i+1:])
-			x.Community = communities
+			// community [ no-export 666:666 ] or community 666:666
+			vals, consumed := parseList(x.Tok[i+1:])
+			x.Community = parseCommunity(x.Community, vals)
+			i += consumed + 1
+		case "large-community":
+			// large-community [ 65000:1:2 ] or large-community 65000:1:2
+			vals, consumed := parseList(x.Tok[i+1:])
+			x.LargeCommunity = append(x.LargeCommunity, vals...)
 			i += consumed + 1
 		default:
 			// Skip unknown r.Tokens
@@ -174,69 +206,51 @@ func (x *Exa) String() string {
 		x.Tok = append(x.Tok, "community", communityStr)
 	}
 
+	if len(x.LargeCommunity) > 0 {
+		x.Tok = append(x.Tok, "large-community", formatCommunity(x.LargeCommunity))
+	}
+
 	x.Str = strings.Join(x.Tok, " ")
 	return x.Str
 }
 
-// parseAspath parses AS path from tokens like: [ 65001 65002 ]
-func parseAspath(tokens []string) ([]uint32, int) {
-	if len(tokens) == 0 || tokens[0] != "[" {
+// parseList returns the values of a list like [ a b ], or a single value,
+// and the number of tokens consumed.
+func parseList(tokens []string) ([]string, int) {
+	if len(tokens) == 0 {
 		return nil, 0
+	} else if tokens[0] != "[" {
+		return tokens[:1], 1
 	}
-
-	var asns []uint32
-	consumed := 1 // for opening [
 
 	for i := 1; i < len(tokens); i++ {
-		consumed++
 		if tokens[i] == "]" {
-			break
-		}
-		if asn, err := strconv.ParseUint(tokens[i], 10, 32); err == nil {
-			asns = append(asns, uint32(asn))
+			return tokens[1:i], i + 1
 		}
 	}
-
-	return asns, consumed
+	return tokens[1:], len(tokens) // NB: missing ]
 }
 
-// parseCommunity parses community from tokens like: [ no-export ] or [ 666:666 ]
-func parseCommunity(tokens []string) ([]string, int) {
-	if len(tokens) == 0 || tokens[0] != "[" {
-		return nil, 0
-	}
-
-	var communities []string
-	consumed := 1 // for opening [
-
-	for i := 1; i < len(tokens); i++ {
-		consumed++
-		if tokens[i] == "]" {
-			break
-		}
-
-		// Normalize community name to canonical form
-		community := tokens[i]
+// parseCommunity appends communities in vals to dst, normalizing well-known names
+func parseCommunity(dst []string, vals []string) []string {
+	for _, community := range vals {
 		normalized := strings.ToLower(strings.ReplaceAll(community, "_", "-"))
-
 		switch normalized {
 		case "no-export", "noexport":
-			communities = append(communities, "no-export")
+			dst = append(dst, "no-export")
 		case "no-advertise", "noadvertise":
-			communities = append(communities, "no-advertise")
+			dst = append(dst, "no-advertise")
 		case "no-export-subconfed", "noexportsubconfed":
-			communities = append(communities, "no-export-subconfed")
+			dst = append(dst, "no-export-subconfed")
 		case "no-peer", "nopeer":
-			communities = append(communities, "no-peer")
+			dst = append(dst, "no-peer")
 		case "blackhole":
-			communities = append(communities, "blackhole")
+			dst = append(dst, "blackhole")
 		default:
-			// For AS:value format, keep original (case-sensitive for numbers)
-			communities = append(communities, community)
+			dst = append(dst, community)
 		}
 	}
-
-	return communities, consumed
+	return dst
 }
 
 // formatCommunity formats communities as ExaBGP expects: [ no-export ] or [ 123:456 ]

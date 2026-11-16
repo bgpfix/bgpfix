@@ -9,6 +9,7 @@ var (
 	ErrInvalidAction    = errors.New("command must start with announce or withdraw")
 	ErrOnlyRoute        = errors.New("only route commands supported")
 	ErrMissingValue     = errors.New("parameter requires value")
+	ErrInvalidValue     = errors.New("invalid parameter value")
 	ErrInvalidPrefix    = errors.New("invalid prefix format")
 	ErrInvalidNextHop   = errors.New("invalid next-hop IP address")
 	ErrInvalidOrigin    = errors.New("invalid origin")

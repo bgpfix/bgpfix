@@ -54,6 +54,8 @@ func (x *Exa) writeAttrs(u *msg.Update) error {
 				return ErrInvalidNextHop
 			}
 			mp.NextHop = addr
+		} else if mp := u.ReachMP().Prefixes(); mp != nil {
+			mp.NextHop = netip.AddrFrom16(addr.As16()) // IPv4-mapped, like ExaBGP
 		} else {
 			u.Attrs.Use(attrs.ATTR_NEXTHOP).(*attrs.IP).Addr = addr
 		}
@@ -94,6 +96,22 @@ func (x *Exa) writeAttrs(u *msg.Update) error {
 		if err := x.writeCommunity(u); err != nil {
 			return err
 		}
+	}
+
+	// Large communities
+	for _, c := range x.LargeCommunity {
+		var v [3]uint64
+		parts := strings.Split(c, ":")
+		if len(parts) != 3 {
+			return ErrInvalidCommunity
+		}
+		for i := range parts {
+			var err error
+			if v[i], err = strconv.ParseUint(parts[i], 10, 32); err != nil {
+				return ErrInvalidCommunity
+			}
+		}
+		u.Attrs.Use(attrs.ATTR_LARGE_COMMUNITY).(*attrs.LargeCom).Add(uint32(v[0]), uint32(v[1]), uint32(v[2]))
 	}
 
 	return nil
@@ -250,5 +268,12 @@ func (x *Exa) readMsgAttrs(u *msg.Update) {
 		}
 
 		x.Community = communities
+	}
+
+	// Large communities
+	if lc, ok := u.Attrs.Get(attrs.ATTR_LARGE_COMMUNITY).(*attrs.LargeCom); ok {
+		for i := range lc.ASN {
+			x.LargeCommunity = append(x.LargeCommunity, fmt.Sprintf("%d:%d:%d", lc.ASN[i], lc.Value1[i], lc.Value2[i]))
+		}
 	}
 }

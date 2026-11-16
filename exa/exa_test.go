@@ -139,8 +139,28 @@ func TestLineParsing(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid withdraw",
-			line: "withdraw route 192.168.1.0/24 as-path [ 65001 ]",
+			name: "withdraw with attributes",
+			line: "withdraw route 192.168.1.0/24 next-hop 10.0.0.1 as-path [ 65001 ]",
+			expect: Exa{
+				Action: "withdraw",
+				Prefix: "192.168.1.0/24",
+			},
+		},
+		{
+			name: "compact lists, single values, ipv4 unicast",
+			line: "announce ipv4 unicast 10.0.0.0/8 next-hop 10.0.0.1 as-path [65001 65002] community 65000:1 large-community [65000:1:2]",
+			expect: Exa{
+				Action:         "announce",
+				Prefix:         "10.0.0.0/8",
+				NextHop:        "10.0.0.1",
+				ASPath:         []uint32{65001, 65002},
+				Community:      []string{"65000:1"},
+				LargeCommunity: []string{"65000:1:2"},
+			},
+		},
+		{
+			name: "invalid med",
+			line: "announce route 10.0.0.0/8 next-hop 10.0.0.1 med abc",
 			fail: true,
 		},
 		{
@@ -258,6 +278,7 @@ func TestLineParsing(t *testing.T) {
 			assert.Equal(t, tc.expect.MED, line.MED)
 			assert.Equal(t, tc.expect.LocalPref, line.LocalPref)
 			assert.Equal(t, tc.expect.Community, line.Community)
+			assert.Equal(t, tc.expect.LargeCommunity, line.LargeCommunity)
 		})
 	}
 }
