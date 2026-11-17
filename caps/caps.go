@@ -189,10 +189,14 @@ func (cps *Caps) ToJSON(dst []byte) []byte {
 	}
 
 	dst = append(dst, '{')
+	first := true
 	cps.Each(func(i int, cc Code, cap Cap) {
-		if i > 0 {
+		if cc > 0xff {
+			return // NB: pseudo-capability, internal
+		} else if !first {
 			dst = append(dst, ',')
 		}
+		first = false
 		dst = cc.ToJSON(dst)
 		dst = append(dst, ':')
 		dst = cap.ToJSON(dst)

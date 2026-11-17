@@ -166,3 +166,14 @@ func TestCapCode_Unknown_JSON(t *testing.T) {
 	buf := Code(200).ToJSON(nil)
 	require.Equal(t, `"CAP_200"`, string(buf))
 }
+
+// pseudo-capabilities are not in JSON
+func TestToJSONPseudo(t *testing.T) {
+	var cps Caps
+	cps.Use(CAP_AS_GUESS)
+	cps.Use(CAP_ROUTE_REFRESH)
+	cps.Use(CAP_ADDPATH_GUESS)
+	if s := string(cps.ToJSON(nil)); s != `{"ROUTE_REFRESH":true}` {
+		t.Errorf("got %s", s)
+	}
+}
