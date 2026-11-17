@@ -41,11 +41,12 @@ type Pipe struct {
 	wgstart sync.WaitGroup // 1 before start, 0 after start
 	estab   atomic.Bool    // true iff EVENT_ESTABLISHED emitted
 
-	evch   chan *Event           // pipe event input
-	evstop chan struct{}         // closed to stop the event handlers
-	evwg   sync.WaitGroup        // event handler routine
-	events map[string][]*Handler // maps events to their handlers
-	evseq  atomic.Uint64         // last event seq number assigned
+	evch    chan *Event           // pipe event input
+	evstop  chan struct{}         // closed to stop the event handlers
+	evwg    sync.WaitGroup        // event handler routine
+	events  map[string][]*Handler // maps events to their handlers
+	evseq   atomic.Uint64         // last event seq number assigned
+	evdefer atomic.Int32          // events waiting asynchronously for evch
 
 	msgpool *sync.Pool // pool for new messages
 }

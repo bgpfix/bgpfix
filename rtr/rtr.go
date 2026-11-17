@@ -142,14 +142,21 @@ func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 		return err
 	}
 
+	connStart := time.Now()
 	got := false // any PDU received on this connection?
 	for {
 		// NB: a live cache answers our queries well within the Expire Interval;
 		// don't let a silent one block us (and keep the data) forever
+		// NB: counted from the last EndOfData (or the connection start), so that
+		// other PDUs don't extend it
 		c.mu.Lock()
-		timeout := c.expire
+		since := connStart
+		if c.lastEOD.After(since) {
+			since = c.lastEOD
+		}
+		deadline := since.Add(c.expire)
 		c.mu.Unlock()
-		conn.SetReadDeadline(time.Now().Add(timeout))
+		conn.SetReadDeadline(deadline)
 
 		h, err := readHeader(conn)
 		if err != nil {
@@ -520,7 +527,8 @@ func (c *Client) dispatchEndOfData(h pduHeader, payload []byte) error {
 	c.sessid = h.Session
 	c.hasSerial = true
 	c.lastEOD = time.Now()
-	if len(payload) >= 16 { // v1+: refresh, retry, expire intervals
+	c.expire = ExpireDefault // v0 has no intervals
+	if len(payload) >= 16 {  // v1+: refresh, retry, expire intervals
 		c.expire = min(max(time.Duration(msb.Uint32(payload[12:16]))*time.Second, ExpireMin), ExpireMax)
 	}
 	sessid := h.Session

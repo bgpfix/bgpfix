@@ -1,6 +1,7 @@
 package bmp
 
 import (
+	"hash/fnv"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -40,11 +41,12 @@ func (br *Reader) key(p *Peer) peerKey {
 	if o := br.obmp; br.OpenBMP {
 		// NB: names come from the wire, don't let them blow up memory
 		k.Router, k.Name, k.Coll = o.RouterIP, o.RouterName, o.CollectorName
-		if len(k.Name) > MAXNAME {
-			k.Name = k.Name[:MAXNAME]
-		}
-		if len(k.Coll) > MAXNAME {
-			k.Coll = k.Coll[:MAXNAME]
+		for _, name := range [2]*string{&k.Name, &k.Coll} {
+			if len(*name) > MAXNAME { // keep the identity: prefix + hash of the whole name
+				h := fnv.New64a()
+				h.Write([]byte(*name))
+				*name = (*name)[:MAXNAME] + strconv.FormatUint(h.Sum64(), 16)
+			}
 		}
 	}
 	return k

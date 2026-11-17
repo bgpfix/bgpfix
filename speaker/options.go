@@ -32,5 +32,5 @@ type Options struct {
 	RemoteASN      int64      // expected remote ASN; -1 means accept any
 	RemoteHoldTime int        // minimum remote hold time (s); <= 0 means any
 	RemoteId       netip.Addr // expected remote identifier; unspecified means any
-	RemoteCaps     caps.Caps  // minimum remote capabilities; set to nil to block a capability
+	RemoteCaps     caps.Caps  // remote capabilities that must be present (non-nil) or absent (nil); contents are not checked
 }

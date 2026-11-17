@@ -202,6 +202,9 @@ func (p *Pipe) Event(et string, args ...any) *Event {
 // evTimeout is how long sendEvent() can block on a full event queue
 const evTimeout = time.Second
 
+// evDeferMax is the max. number of events waiting asynchronously for the queue
+const evDeferMax = 1024
+
 // sendEvent stamps ev and sends it to the event handlers, unless ctx (may be nil)
 // is done or the pipe is stopped; if not sent, closes ev.done.
 //
@@ -213,16 +216,25 @@ func (p *Pipe) sendEvent(ev *Event, ctx context.Context) {
 	ev.Time = time.Now().UTC()
 	ev.Seq = p.evseq.Add(1)
 
-	// fast path
+	var ctxdone <-chan struct{}
+	if ctx != nil {
+		ctxdone = ctx.Done()
+	}
+
+	// shutdown wins over sending; then the fast path
+	select {
+	case <-ctxdone:
+		close(ev.done)
+		return
+	case <-p.evstop:
+		close(ev.done)
+		return
+	default:
+	}
 	select {
 	case p.evch <- ev:
 		return
 	default:
-	}
-
-	var ctxdone <-chan struct{}
-	if ctx != nil {
-		ctxdone = ctx.Done()
 	}
 
 	t := time.NewTimer(evTimeout)
@@ -231,7 +243,13 @@ func (p *Pipe) sendEvent(ev *Event, ctx context.Context) {
 	case p.evch <- ev:
 		return
 	case <-t.C:
+		// NB: bound the deferred senders, drop the event if too many (the queue is stuck)
+		if p.evdefer.Add(1) > evDeferMax {
+			p.evdefer.Add(-1)
+			break
+		}
 		go func() {
+			defer p.evdefer.Add(-1)
 			select {
 			case p.evch <- ev:
 				return
