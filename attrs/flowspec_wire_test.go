@@ -314,11 +314,14 @@ func TestFlowGeneric_EdgeCases(t *testing.T) {
 
 	t.Run("empty input", func(t *testing.T) {
 		fg := NewFlowGeneric(FLOW_PORT).(*FlowGeneric)
-		n, err := fg.Unmarshal([]byte{}, cps)
-		// Empty input is valid - returns 0 ops
-		require.NoError(t, err)
-		require.Equal(t, 0, n)
-		require.Len(t, fg.Op, 0)
+		_, err := fg.Unmarshal([]byte{}, cps)
+		require.Error(t, err) // RFC 8955: at least one operator
+	})
+
+	t.Run("no end-of-list", func(t *testing.T) {
+		fg := NewFlowGeneric(FLOW_PORT).(*FlowGeneric)
+		_, err := fg.Unmarshal([]byte{0x01, 80}, cps) // ==80 without the end-of-list bit
+		require.Error(t, err)
 	})
 
 	t.Run("truncated value", func(t *testing.T) {

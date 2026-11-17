@@ -72,6 +72,8 @@ func (e *ExtcomFlowRate) FromJSON(src []byte) error {
 type ExtcomFlowAction struct {
 	Terminal bool // if set, keep collecting rules and apply all that match
 	Sample   bool // if set, enable sampling and logging
+
+	rsvd uint64 // other bits, kept as-is
 }
 
 const (
@@ -86,11 +88,12 @@ func NewExtcomFlowAction(et ExtcomType) ExtcomValue {
 func (e *ExtcomFlowAction) Unmarshal(raw uint64) error {
 	e.Terminal = raw&EXTCOM_FLOW_ACTION_TERMINAL != 0
 	e.Sample = raw&EXTCOM_FLOW_ACTION_SAMPLE != 0
+	e.rsvd = raw &^ (EXTCOM_FLOW_ACTION_TERMINAL | EXTCOM_FLOW_ACTION_SAMPLE)
 	return nil
 }
 
 func (e *ExtcomFlowAction) Marshal() uint64 {
-	var raw uint64
+	raw := e.rsvd
 	if e.Terminal {
 		raw |= EXTCOM_FLOW_ACTION_TERMINAL
 	}
@@ -117,6 +120,8 @@ func (e *ExtcomFlowAction) FromJSON(src []byte) error {
 
 type ExtcomFlowRedirectNH struct {
 	Copy bool
+
+	rsvd uint64 // other bits, kept as-is
 }
 
 func NewExtcomFlowRedirectNH(et ExtcomType) ExtcomValue {
@@ -125,11 +130,12 @@ func NewExtcomFlowRedirectNH(et ExtcomType) ExtcomValue {
 
 func (e *ExtcomFlowRedirectNH) Unmarshal(raw uint64) error {
 	e.Copy = raw&0x01 != 0
+	e.rsvd = raw &^ 0x01
 	return nil
 }
 
 func (e *ExtcomFlowRedirectNH) Marshal() uint64 {
-	var raw uint64
+	raw := e.rsvd
 	if e.Copy {
 		raw |= 0x01
 	}
@@ -150,6 +156,8 @@ func (e *ExtcomFlowRedirectNH) FromJSON(src []byte) error {
 
 type ExtcomFlowDSCP struct {
 	DSCP uint8
+
+	rsvd uint64 // other bits, kept as-is
 }
 
 func NewExtcomFlowDSCP(et ExtcomType) ExtcomValue {
@@ -158,11 +166,12 @@ func NewExtcomFlowDSCP(et ExtcomType) ExtcomValue {
 
 func (e *ExtcomFlowDSCP) Unmarshal(raw uint64) error {
 	e.DSCP = uint8(raw & 0b00111111)
+	e.rsvd = raw &^ 0b00111111
 	return nil
 }
 
 func (e *ExtcomFlowDSCP) Marshal() uint64 {
-	var raw uint64
+	raw := e.rsvd
 	raw |= uint64(e.DSCP & 0b00111111)
 	return raw
 }

@@ -7,6 +7,7 @@ package caps
 
 import (
 	"fmt"
+	"iter"
 	"sort"
 
 	"github.com/bgpfix/bgpfix/binary"
@@ -75,6 +76,22 @@ func (cps *Caps) SetFrom(src Caps) {
 	}
 }
 
+// Replace makes cps equal to src: sets all capabilities from src,
+// then drops the others. Concurrent readers never see cps empty
+// (unless src is empty), nor miss a capability present in both.
+func (cps *Caps) Replace(src Caps) {
+	cps.SetFrom(src)
+	if cps.Valid() {
+		for cc := range cps.db.All() {
+			if !src.Valid() {
+				cps.db.Delete(cc)
+			} else if _, ok := src.db.Load(cc); !ok {
+				cps.db.Delete(cc)
+			}
+		}
+	}
+}
+
 // Get returns cps[cc] or nil if not possible.
 func (cps *Caps) Get(cc Code) (cap Cap) {
 	if cps.Valid() {
@@ -117,6 +134,15 @@ func (cps *Caps) Use(cc Code) Cap {
 	cap := NewCap(cc)
 	cap, _ = cps.db.LoadOrStore(cc, cap)
 	return cap
+}
+
+// All iterates over all capabilities in cps, including nil values, in no particular order.
+func (cps *Caps) All() iter.Seq2[Code, Cap] {
+	return func(yield func(Code, Cap) bool) {
+		if cps.Valid() {
+			cps.db.Range(yield)
+		}
+	}
 }
 
 // Each executes cb for each non-nil capability in cps,

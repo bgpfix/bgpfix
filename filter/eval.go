@@ -45,6 +45,7 @@ func (ev *Eval) SetMsg(m *msg.Msg) *Eval {
 // SetPipe sets the optional, read-only Pipe context, in a way that
 // avoids a cyclic import vs. the pipe package.
 func (ev *Eval) SetPipe(kv *xsync.Map[string, any], caps caps.Caps, tags map[string]string) *Eval {
+	clear(ev.cache) // NB: results may depend on the pipe context
 	ev.PipeKV = kv
 	ev.PipeCaps = caps
 	ev.PipeTags = tags
@@ -93,6 +94,8 @@ func (ev *Eval) exprEval(first *Expr) Res {
 		switch {
 		case !is_update && !e.Types:
 			res = RES_FALSE // no need to run
+		case e.Tags:
+			res = e.eval(ev) // NB: tags may change between callbacks, don't cache
 		case len(ev.cache) > 0:
 			var ok bool
 			if res, ok = ev.cache[e.String]; ok {

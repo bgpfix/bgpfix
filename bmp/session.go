@@ -3,6 +3,7 @@ package bmp
 import (
 	"net/netip"
 	"strconv"
+	"strings"
 
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
@@ -20,6 +21,9 @@ const (
 // MAXPEERS bounds the per-peer state kept by Reader
 const MAXPEERS = 1 << 16
 
+// MAXNAME bounds the length of OpenBMP router / collector names in peer keys
+const MAXNAME = 64
+
 // peerKey identifies a monitored peer (RFC 7854 section 4.2)
 type peerKey struct {
 	Type    uint8
@@ -34,7 +38,14 @@ type peerKey struct {
 func (br *Reader) key(p *Peer) peerKey {
 	k := peerKey{Type: p.Type, RD: p.RD, Address: p.Address}
 	if o := br.obmp; br.OpenBMP {
+		// NB: names come from the wire, don't let them blow up memory
 		k.Router, k.Name, k.Coll = o.RouterIP, o.RouterName, o.CollectorName
+		if len(k.Name) > MAXNAME {
+			k.Name = k.Name[:MAXNAME]
+		}
+		if len(k.Coll) > MAXNAME {
+			k.Coll = k.Coll[:MAXNAME]
+		}
 	}
 	return k
 }
@@ -76,6 +87,7 @@ func (br *Reader) peer(p *Peer, create bool) *peerState {
 			br.peers = make(map[peerKey]*peerState)
 		}
 		ps = new(peerState)
+		k.Name, k.Coll = strings.Clone(k.Name), strings.Clone(k.Coll) // NB: don't pin the source
 		br.peers[k] = ps
 	}
 	if ps != nil {

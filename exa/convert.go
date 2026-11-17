@@ -351,7 +351,7 @@ func (x *Exa) IterMsg(m *msg.Msg) iter.Seq[*Exa] {
 				if mp.Afi() == afi.AFI_IPV6 {
 					v6 = 1
 				}
-				if x.readFlow(rule, v6); len(x.Flow) > 0 && !yield(x) {
+				if x.readFlow(rule, v6) && len(x.Flow) > 0 && !yield(x) {
 					return
 				}
 			}

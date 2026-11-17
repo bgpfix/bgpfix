@@ -195,44 +195,56 @@ func (p *Pipe) Event(et string, args ...any) *Event {
 		ev.Value = vals
 	}
 
-	sent := p.sendEvent(ev, p.Ctx, false)
-	if !sent {
-		close(ev.done)
-	}
-
+	p.sendEvent(ev, p.Ctx)
 	return ev
 }
 
-// sendEvent sends ev with given ctx; if noblock is true, it never blocks on full channel
-func (p *Pipe) sendEvent(ev *Event, ctx context.Context, noblock bool) (sent bool) {
+// evTimeout is how long sendEvent() can block on a full event queue
+const evTimeout = time.Second
+
+// sendEvent stamps ev and sends it to the event handlers, unless ctx (may be nil)
+// is done or the pipe is stopped; if not sent, closes ev.done.
+//
+// NB: may be called from an event handler, so it must not block forever: if all
+// handlers block here on a full queue, nobody would drain it. Hence, it blocks
+// for up to evTimeout (backpressure), and then sends ev asynchronously.
+func (p *Pipe) sendEvent(ev *Event, ctx context.Context) {
 	ev.Pipe = p
 	ev.Time = time.Now().UTC()
 	ev.Seq = p.evseq.Add(1)
 
-	var ctxchan <-chan struct{}
-	if ctx != nil {
-		ctxchan = ctx.Done()
+	// fast path
+	select {
+	case p.evch <- ev:
+		return
+	default:
 	}
 
-	if noblock {
-		select {
-		case <-ctxchan:
-			return false
-		case p.evch <- ev:
-			return true
-		default:
-			return false
-		}
-	} else {
-		select {
-		case <-ctxchan:
-			return false
-		case <-p.evstop:
-			return false // nobody is going to read it
-		case p.evch <- ev:
-			return true
-		}
+	var ctxdone <-chan struct{}
+	if ctx != nil {
+		ctxdone = ctx.Done()
 	}
+
+	t := time.NewTimer(evTimeout)
+	defer t.Stop()
+	select {
+	case p.evch <- ev:
+		return
+	case <-t.C:
+		go func() {
+			select {
+			case p.evch <- ev:
+				return
+			case <-ctxdone:
+			case <-p.evstop:
+			}
+			close(ev.done)
+		}()
+		return
+	case <-ctxdone:
+	case <-p.evstop:
+	}
+	close(ev.done)
 }
 
 // eventHandler reads p.evch and broadcasts events to handlers
@@ -288,8 +300,6 @@ func (p *Pipe) eventHandler(wg *sync.WaitGroup) {
 		}
 
 		// event is done
-		if ev.done != nil {
-			close(ev.done)
-		}
+		close(ev.done)
 	}
 }

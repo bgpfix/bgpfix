@@ -3,7 +3,6 @@ package attrs
 import (
 	"net/netip"
 
-	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
 	"github.com/bgpfix/bgpfix/meta"
@@ -55,13 +54,9 @@ func (a *MPPrefixes) Unmarshal(cps caps.Caps, mt meta.Meta) error {
 			a.NextHop = addr
 			a.LinkLocal = ll
 		} else if addr.Is6() {
-			// IPv6 nexthop for AFI=1 reachable prefixes?
-			enh, ok := cps.Get(caps.CAP_EXTENDED_NEXTHOP).(*caps.ExtNH)
-			if !ok || !enh.Has(a.AS, afi.AFI_IPV6) {
-				return ErrValue
-			}
-
-			// yes!
+			// IPv6 nexthop for AFI=1 reachable prefixes (RFC 8950)
+			// NB: accept even if not negotiated: the NH length is unambiguous,
+			// and feeds (MRT, BMP, RIS Live) have no session caps at all
 			a.NextHop = addr
 			a.LinkLocal = ll
 		} else {

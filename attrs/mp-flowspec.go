@@ -176,9 +176,17 @@ func (a *MPFlowspec) Unmarshal(cps caps.Caps, _ meta.Meta) error {
 		data = data[l:]
 
 		rule := make(FlowRule)
+		var last FlowType
 		for len(val) > 0 {
 			ft := FlowType(val[0])
 			val = val[1:] // eat the type
+
+			// NB: RFC 8955 4.2: components must be in strictly increasing order,
+			// otherwise a re-marshal would silently change the rule
+			if ft <= last {
+				return ErrValue
+			}
+			last = ft
 
 			// create and parse FlowValue
 			fv := NewFlowValue(ft, a.Afi())
@@ -369,7 +377,7 @@ func NewFlowRaw(FlowType) FlowValue {
 }
 
 func (f *FlowRaw) Unmarshal(src []byte, cps caps.Caps) (int, error) {
-	f.Raw = src
+	f.Raw = append(f.Raw[:0], src...) // NB: copy, src may be overwritten
 	return len(src), nil
 }
 
@@ -603,11 +611,12 @@ func (fv *FlowGeneric) Unmarshal(buf []byte, cps caps.Caps) (int, error) {
 
 		// end-of-list marker?
 		if op&FLOW_OP_LAST != 0 {
-			break
+			return n, nil
 		}
 	}
 
-	return n, nil
+	// NB: an empty list, or no end-of-list marker, is malformed
+	return 0, ErrLength
 }
 
 func (f *FlowGeneric) Marshal(dst []byte, cps caps.Caps) []byte {

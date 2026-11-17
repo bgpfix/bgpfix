@@ -290,11 +290,17 @@ func (msg *Msg) Parse(cps caps.Caps) (err error) {
 		err = o.ParseCaps()
 	case UPDATE:
 		u := &msg.Update
-		err = u.Parse(cps)
-		if err != nil {
-			break
+		for retry := true; ; retry = false {
+			err = u.Parse(cps)
+			if err == nil {
+				err = u.ParseAttrs(cps)
+			}
+
+			// maybe an ADD-PATH mismatch? guess and retry once
+			if !retry || !u.guessAddPath(cps, err != nil) {
+				break
+			}
 		}
-		err = u.ParseAttrs(cps)
 	case KEEPALIVE:
 		if len(msg.Data) != 0 {
 			err = ErrLength
@@ -314,6 +320,8 @@ func (msg *Msg) Parse(cps caps.Caps) (err error) {
 		msg.Upper = msg.Type
 		msg.json = msg.json[:0]
 		msg.Version++
+	} else {
+		msg.Upper = INVALID // NB: sub-parsers may have set it already
 	}
 
 	return err

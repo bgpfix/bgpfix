@@ -398,7 +398,7 @@ func TestPipe_EventStopFires(t *testing.T) {
 	go drainLine(p.R)
 
 	// send a message so L.Wait()/R.Wait() inside Stop() take some time,
-	// giving the async sendEvent(EVENT_STOP) goroutine time to deliver
+	// giving the EVENT_STOP handler time to run
 	p.L.Input.In <- newKeepalive()
 	time.Sleep(10 * time.Millisecond)
 

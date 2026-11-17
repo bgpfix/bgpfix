@@ -18,7 +18,7 @@ func NewRaw(cc Code) Cap {
 
 func (c *Raw) Unmarshal(buf []byte, caps Caps) error {
 	if len(buf) > 0 {
-		c.Raw = append(c.Raw, buf)
+		c.Raw = append(c.Raw, append([]byte(nil), buf...)) // NB: copy, buf may be overwritten
 	}
 	return nil
 }
