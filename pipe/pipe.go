@@ -3,6 +3,7 @@ package pipe
 
 import (
 	"context"
+	"maps"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -61,6 +62,7 @@ func NewPipe(ctx context.Context) *Pipe {
 
 	p.Caps.Init() // NB: makes it thread-safe
 	p.KV = xsync.NewMap[string, any]()
+	p.msgpool = new(sync.Pool) // NB: Options.MsgPool can override it in Start()
 
 	p.R = &Line{
 		Pipe: p,
@@ -105,8 +107,6 @@ func (p *Pipe) attach() error {
 
 	if opts.MsgPool != nil {
 		p.msgpool = opts.MsgPool
-	} else {
-		p.msgpool = new(sync.Pool)
 	}
 
 	// attach Inputs to Lines
@@ -318,6 +318,20 @@ func (p *Pipe) PutMsg(m *msg.Msg) {
 	mx.Reset()
 	m.Reset()
 	p.msgpool.Put(m)
+}
+
+// CopyMsg returns a new message from the pool, with the contents, metadata and tags of m.
+// Use it to hold a message for later, eg. to send it again with Input.WriteMsg.
+// The copy is not parsed. Returns nil if m can't be marshaled.
+func (p *Pipe) CopyMsg(m *msg.Msg) *msg.Msg {
+	if m.Marshal(p.Caps) != nil {
+		return nil
+	}
+	c := m.CopyTo(p.GetMsg())
+	if tags := GetTags(m); len(tags) > 0 {
+		maps.Copy(UseTags(c), tags)
+	}
+	return c
 }
 
 // ParseMsg parses given message m (if needed), in the context of this Pipe.

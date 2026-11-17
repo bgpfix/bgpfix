@@ -262,6 +262,19 @@ func (msg *Msg) FromBytes(buf []byte) (off int, err error) {
 	return off + dlen, nil
 }
 
+// CopyTo copies the metadata and raw contents of msg to dst, and returns dst.
+// The upper layer is not copied: dst needs Parse(). Call Marshal() first if msg was edited.
+func (msg *Msg) CopyTo(dst *Msg) *Msg {
+	dst.Reset()
+	dst.Meta = msg.Meta
+	dst.Type = msg.Type
+	if msg.Data != nil {
+		dst.buf = append(dst.buf[:0], msg.Data...)
+		dst.Data = dst.buf
+	}
+	return dst
+}
+
 // Parse parses msg.Data into the upper layer iff needed.
 // Capabilities in caps can infuence the upper layer decoders.
 // Can reference data in msg.Data, so call CopyData() first if needed.

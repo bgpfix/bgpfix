@@ -17,18 +17,15 @@ const ACTION_OK Action = 0
 const (
 	// Keep the message for later use, do not re-use its memory.
 	//
-	// You must use this if you wish to re-inject the message,
-	// or keep reference to some value inside the msg.
+	// Use it to keep a reference to the msg, or to some value inside it.
+	// To hold a message and send it later, keep Pipe.CopyMsg() of it instead:
+	// re-injecting the very same message is not safe, as the pipe may still use it.
 	//
 	// Once set, you must not remove this action from a message
 	// unless you know you are the sole owner of this message.
 	ACTION_BORROW Action = 1 << iota
 
 	// Drop the message/event immediately (skip other calls, drop from output).
-	//
-	// If you want to re-inject the message later, set ACTION_BORROW too.
-	// When re-injecting, clear the Action first, and remember the message will re-start
-	// processing from the next callback, unless you clear its Context.
 	ACTION_DROP
 
 	// Accept the message/event immediately (skip other calls, proceed to output)

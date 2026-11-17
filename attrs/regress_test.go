@@ -54,3 +54,16 @@ func TestFlowspecMalformed(t *testing.T) {
 		}
 	}
 }
+
+// a superfluous extended length flag survives a re-marshal
+func TestExtendedFlagKept(t *testing.T) {
+	in := []byte{0x50, 0x02, 0x00, 0x04, 0x02, 0x01, 0xfd, 0xe8} // AS_PATH 65000, extended length
+	at := NewAttr(ATTR_ASPATH)
+	if err := at.Unmarshal(in[4:], caps.Caps{}, meta.Meta{}); err != nil {
+		t.Fatal(err)
+	}
+	at.SetFlags(Flags(in[0]))
+	if out := at.Marshal(nil, caps.Caps{}, meta.Meta{}); !bytes.Equal(in, out) {
+		t.Errorf("in=%x out=%x", in, out)
+	}
+}
