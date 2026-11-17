@@ -89,6 +89,7 @@ func CopyThrough(p *pipe.Pipe, lhs, rhs io.ReadWriteCloser) (lhsb, rhsb []int, e
 
 	// double-sure
 	p.Stop()
+	p.Wait()
 	lhs.Close()
 	if rhs != nil {
 		rhs.Close()

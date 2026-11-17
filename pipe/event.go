@@ -246,6 +246,7 @@ func (p *Pipe) sendEvent(ev *Event, ctx context.Context) {
 		// NB: bound the deferred senders, drop the event if too many (the queue is stuck)
 		if p.evdefer.Add(1) > evDeferMax {
 			p.evdefer.Add(-1)
+			p.Warn().Str("event", ev.Type).Msg("event queue stuck, dropping event")
 			break
 		}
 		go func() {

@@ -93,15 +93,15 @@ func NewClient(opts *Options) *Client {
 	return c
 }
 
-// NB: Run fails with a timeout if nothing arrives within the Expire Interval (RFC 8210
-// section 6), so the caller must query (SendSerial) more often than that; caches
-// also announce changes with Serial Notify PDUs, which count as traffic.
-//
 // Run starts an RTR session over conn, processing PDUs until conn closes or ctx is done.
 // It sends a Reset Query immediately on connect. Run always closes conn before returning.
 // Returns ctx.Err() if ctx is cancelled; ErrDowngrade if the protocol version was
 // downgraded (VersionAuto) and the caller should reconnect immediately;
 // otherwise the connection error. The caller is responsible for reconnection.
+//
+// Run sends a Serial Query when the data gets older than half the Expire Interval
+// (RFC 8210 section 6), and fails with a timeout if no EndOfData arrives in time.
+// The caller may query more often with SendSerial.
 //
 // NB: Run starts one internal goroutine that exits when Run returns.
 func (c *Client) Run(ctx context.Context, conn net.Conn) error {
@@ -114,12 +114,25 @@ func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 		c.mu.Unlock()
 	}()
 
-	// interrupt blocking reads when ctx is cancelled
+	// interrupt blocking reads when ctx is cancelled; refresh aging data
 	go func() {
-		select {
-		case <-ctx.Done():
-			conn.Close()
-		case <-runDone:
+		ticker := time.NewTicker(ExpireMin / 4)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				conn.Close()
+				return
+			case <-runDone:
+				return
+			case <-ticker.C:
+				c.mu.Lock()
+				aging := time.Since(c.lastEOD) > c.expire/2
+				c.mu.Unlock()
+				if aging {
+					c.SendSerial()
+				}
+			}
 		}
 	}()
 
@@ -147,8 +160,6 @@ func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 	for {
 		// NB: a live cache answers our queries well within the Expire Interval;
 		// don't let a silent one block us (and keep the data) forever
-		// NB: counted from the last EndOfData (or the connection start), so that
-		// other PDUs don't extend it
 		c.mu.Lock()
 		since := connStart
 		if c.lastEOD.After(since) {

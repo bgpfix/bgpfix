@@ -290,17 +290,7 @@ func (msg *Msg) Parse(cps caps.Caps) (err error) {
 		err = o.ParseCaps()
 	case UPDATE:
 		u := &msg.Update
-		for retry := true; ; retry = false {
-			err = u.Parse(cps)
-			if err == nil {
-				err = u.ParseAttrs(cps)
-			}
-
-			// maybe an ADD-PATH mismatch? guess and retry once
-			if !retry || !u.guessAddPath(cps, err != nil) {
-				break
-			}
-		}
+		err = u.guessAddPath(cps, u.parseAll(cps))
 	case KEEPALIVE:
 		if len(msg.Data) != 0 {
 			err = ErrLength

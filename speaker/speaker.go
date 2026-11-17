@@ -4,7 +4,6 @@ package speaker
 import (
 	"context"
 	"math"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -28,22 +27,16 @@ type Speaker struct {
 	up   *pipe.Line  // TX line
 	down *pipe.Line  // RX line
 
-	Options Options       // options; do not modify after Attach()
-	opened  atomic.Bool   // true iff OPEN already sent
-	gotOpen atomic.Int64  // UNIX timestamp when remote OPEN accepted
-	estab   chan struct{} // closed when session established
-	estonce sync.Once
+	Options Options     // options; do not modify after Attach()
+	opened  atomic.Bool // true iff OPEN already sent
+	estab   atomic.Bool // true iff session established
 }
-
-// OPEN_TIMEOUT is the max. time to wait for remote OPEN (RFC 4271 suggests 4 minutes)
-const OPEN_TIMEOUT = 240
 
 // NewSpeaker returns a new Speaker. Call Speaker.Attach() next.
 func NewSpeaker(ctx context.Context) *Speaker {
 	s := &Speaker{}
 	s.ctx, s.cancel = context.WithCancelCause(ctx)
 	s.Options = DefaultOptions
-	s.estab = make(chan struct{})
 	return s
 }
 
@@ -75,54 +68,15 @@ func (s *Speaker) Attach(p *pipe.Pipe, dst meta.Dir) error {
 
 // onStart sends our OPEN message, if the speaker is not passive.
 func (s *Speaker) onStart(ev *pipe.Event) bool {
-	go s.openTimer()
 	if !s.Options.Passive {
 		s.sendOpen(nil)
 	}
 	return false // unregister the handler
 }
 
-// openTimer stops the session if not established in time: OPEN_TIMEOUT for the
-// remote OPEN, then the negotiated hold time for the KEEPALIVE (RFC 4271 8.2.2)
-func (s *Speaker) openTimer() {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	start := time.Now().Unix()
-
-	for {
-		var now int64
-		select {
-		case <-s.estab:
-			return
-		case <-s.ctx.Done():
-			return
-		case <-s.pipe.Ctx.Done():
-			return
-		case t := <-ticker.C:
-			now = t.Unix()
-		}
-
-		// remote OPEN received? wait for the negotiated hold time
-		since, limit := start, int64(OPEN_TIMEOUT)
-		if t := s.gotOpen.Load(); t > 0 {
-			if up, down := s.up.Open.Load(), s.down.Open.Load(); up != nil && down != nil {
-				if ht := int64(min(up.HoldTime, down.HoldTime)); ht > 0 {
-					since, limit = t, ht
-				}
-			}
-		}
-
-		if now-since > limit+1 { // NB: +1s, as the timestamps are truncated to seconds
-			s.Warn().Int64("limit", limit).Msg("session not established in time")
-			s.stop(ErrOpenTimeout)
-			return
-		}
-	}
-}
-
 // onEstablished starts periodic KEEPALIVE sender
 func (s *Speaker) onEstablished(ev *pipe.Event) bool {
-	s.estonce.Do(func() { close(s.estab) })
+	s.estab.Store(true)
 
 	// load last OPENs
 	up, down := s.up.Open.Load(), s.down.Open.Load()
@@ -178,7 +132,7 @@ func (s *Speaker) onOpen(m *msg.Msg) bool {
 
 	// validate remote identifier (RFC 6286: must be non-zero)
 	if id := o.Identifier; !id.IsValid() || id.IsUnspecified() ||
-		(opts.RemoteId.IsValid() && id != opts.RemoteId) {
+		(opts.RemoteId.IsValid() && !opts.RemoteId.IsUnspecified() && id != opts.RemoteId) {
 		s.Warn().Stringer("expected", opts.RemoteId).Stringer("got", id).Msg("remote identifier rejected, dropping OPEN")
 		s.stop(ErrRemoteId)
 		return false
@@ -199,11 +153,21 @@ func (s *Speaker) onOpen(m *msg.Msg) bool {
 	}
 
 	// send our OPEN (nop if we did that already)
-	s.gotOpen.Store(time.Now().Unix())
 	s.sendOpen(o)
 
 	// confirm the received OPEN is OK
 	s.sendKeepalive()
+
+	// RFC 4271 8.2.2: expect the peer's KEEPALIVE within the hold time
+	// NB: theirs is >= the negotiated, so never too early
+	if ht > 0 {
+		time.AfterFunc(time.Duration(ht)*time.Second, func() {
+			if !s.estab.Load() && s.ctx.Err() == nil {
+				s.Warn().Int("hold", ht).Msg("session not established in time")
+				s.stop(ErrOpenTimeout)
+			}
+		})
+	}
 
 	return true
 }

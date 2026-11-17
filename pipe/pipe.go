@@ -39,7 +39,8 @@ type Pipe struct {
 	started atomic.Bool    // true iff Start() called
 	stopped atomic.Bool    // true iff Stop() called
 	wgstart sync.WaitGroup // 1 before start, 0 after start
-	estab   atomic.Bool    // true iff EVENT_ESTABLISHED emitted
+	estmu   sync.Mutex     // serializes checkEstablished
+	estab   bool           // true iff EVENT_ESTABLISHED emitted
 
 	evch    chan *Event           // pipe event input
 	evstop  chan struct{}         // closed to stop the event handlers
@@ -136,10 +137,14 @@ func (p *Pipe) checkEstablished(ev *Event) bool {
 		return true // strange, but keep trying
 	}
 
-	// NB: this handler can run concurrently on many event goroutines
-	if !p.estab.CompareAndSwap(false, true) {
+	// NB: this handler can run concurrently on many event goroutines, and the
+	// event senders wait for it to finish, eg. to parse UPDATEs with the new p.Caps
+	p.estmu.Lock()
+	defer p.estmu.Unlock()
+	if p.estab {
 		return false
 	}
+	p.estab = true
 
 	// find out common caps?
 	if p.Options.Caps {
@@ -157,6 +162,13 @@ func (p *Pipe) checkEstablished(ev *Event) bool {
 				common.Set(cc, icap) // use the new intersection value
 			} else {
 				common.Set(cc, rcap) // just reference the received
+			}
+		})
+
+		// keep the pseudo-capabilities, never seen in OPENs
+		p.Caps.Each(func(i int, cc caps.Code, c caps.Cap) {
+			if cc > 0xff {
+				common.Set(cc, c)
 			}
 		})
 

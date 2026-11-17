@@ -51,9 +51,8 @@ func setup(t *testing.T, hold int) (*pipe.Pipe, *Speaker) {
 	return p, spk
 }
 
-// Peer sends a valid OPEN (hold=3) but never a KEEPALIVE: no timer is armed before ESTABLISHED,
-// so the session (and the one-session bgpipe process) hangs forever.
-func TestRegress_NoTimerBeforeEstablished(t *testing.T) {
+// a peer that sends OPEN but no KEEPALIVE is dropped after its hold time
+func TestOpenConfirmTimeout(t *testing.T) {
 	p, _ := setup(t, 3)
 	if err := p.Start(); err != nil {
 		t.Fatal(err)
@@ -71,8 +70,8 @@ func TestRegress_NoTimerBeforeEstablished(t *testing.T) {
 	p.Stop()
 }
 
-// Options.RemoteId and Options.RemoteCaps are documented as enforced, but never checked.
-func TestRegress_RemoteIdIgnored(t *testing.T) {
+// Options.RemoteId is enforced
+func TestRemoteId(t *testing.T) {
 	p, spk := setup(t, 90)
 	spk.Options.RemoteId = netip.MustParseAddr("192.0.2.1")
 	var est = make(chan struct{}, 1)
@@ -91,7 +90,31 @@ func TestRegress_RemoteIdIgnored(t *testing.T) {
 	case <-p.Ctx.Done():
 		t.Logf("ok: rejected: %v", context.Cause(p.Ctx))
 	case <-time.After(3 * time.Second):
-		t.Logf("not established")
+		t.Errorf("not rejected")
+	}
+	p.Stop()
+}
+
+// Options.RemoteId of 0.0.0.0 accepts any identifier
+func TestRemoteIdAny(t *testing.T) {
+	p, spk := setup(t, 90)
+	spk.Options.RemoteId = netip.IPv4Unspecified()
+	var est = make(chan struct{}, 1)
+	p.Options.OnEstablished(func(ev *pipe.Event) bool { est <- struct{}{}; return false })
+	if err := p.Start(); err != nil {
+		t.Fatal(err)
+	}
+	go drain(p.L)
+	go drain(p.R)
+	p.L.WriteMsg(peerOpen(65001, 90, "203.0.113.66"))
+	time.Sleep(50 * time.Millisecond)
+	p.L.WriteMsg(ka())
+	select {
+	case <-est:
+	case <-p.Ctx.Done():
+		t.Errorf("rejected: %v", context.Cause(p.Ctx))
+	case <-time.After(3 * time.Second):
+		t.Errorf("not established")
 	}
 	p.Stop()
 }

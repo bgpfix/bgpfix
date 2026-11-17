@@ -136,24 +136,18 @@ func (u *Update) ParseAttrs(cps caps.Caps) (err error) {
 	// do the attributes suggest 2-byte ASNs? AS4_PATH or AS4_AGGREGATOR present
 	// (RFC 6793), or a 6-byte AGGREGATOR; NB: walk the headers only
 	as2 := false
-	for raw := u.AttrsRaw; len(raw) >= 3 && !as2; {
-		code, alen, hl := attrs.Code(raw[1]), int(raw[2]), 3
-		if attrs.Flags(raw[0])&attrs.ATTR_EXTENDED != 0 {
-			if len(raw) < 4 {
-				break
-			}
-			alen, hl = alen<<8|int(raw[3]), 4
+	for raw := u.AttrsRaw; !as2; {
+		atyp, val, rest, ok := nextAttr(raw)
+		if !ok {
+			break
 		}
-		switch code {
+		switch atyp.Code() {
 		case attrs.ATTR_AS4PATH, attrs.ATTR_AS4AGGREGATOR:
 			as2 = true
 		case attrs.ATTR_AGGREGATOR:
-			as2 = alen == 6
+			as2 = len(val) == 6
 		}
-		if len(raw) < hl+alen {
-			break
-		}
-		raw = raw[hl+alen:]
+		raw = rest
 	}
 
 	// try 4-byte ASNs first?
@@ -187,19 +181,27 @@ func (u *Update) ParseAttrs(cps caps.Caps) (err error) {
 	return u.parseAttrs(cps)
 }
 
-// guessAddPath is called after parsing u: failed tells if that failed.
+// parseAll parses u, then its attributes
+func (u *Update) parseAll(cps caps.Caps) error {
+	if err := u.Parse(cps); err != nil {
+		return err
+	}
+	return u.ParseAttrs(cps)
+}
+
+// guessAddPath is called after parsing u, with err as the result.
 // If it failed, or the first prefix of any NLRI list is /0 (rare in real data, but
 // what a small ADD-PATH Path Id reads as without ADD-PATH), and CAP_ADDPATH_GUESS
 // is in cps, it checks the unicast NLRI in msg.Data for ADD-PATH Path Identifiers.
-// Iff that contradicts msg.HasAddPath(), it sets u.Msg.ParseAddPath to what the data
-// says and returns true: then u should be parsed again.
-func (u *Update) guessAddPath(cps caps.Caps, failed bool) bool {
+// Iff that contradicts msg.HasAddPath(), it parses u again with u.Msg.ParseAddPath
+// set to what the data says, and keeps that iff successful. Returns the final result.
+func (u *Update) guessAddPath(cps caps.Caps, err error) error {
 	if !cps.Has(caps.CAP_ADDPATH_GUESS) {
-		return false
+		return err
 	}
 
 	// NB: this must be O(1) for valid messages, so check the first prefixes only
-	if !failed {
+	if err == nil {
 		var mpr, mpu []nlri.Prefix
 		if mp := u.ReachMP().Prefixes(); mp != nil {
 			mpr = mp.Prefixes
@@ -212,7 +214,7 @@ func (u *Update) guessAddPath(cps caps.Caps, failed bool) bool {
 			suspect = suspect || len(pfx) > 0 && pfx[0].Bits() == 0
 		}
 		if !suspect {
-			return false
+			return err
 		}
 	}
 
@@ -220,16 +222,16 @@ func (u *Update) guessAddPath(cps caps.Caps, failed bool) bool {
 	m := u.Msg
 	buf := m.Data
 	if len(buf) < UPDATE_MINLEN {
-		return false
+		return err
 	}
 	l := int(msb.Uint16(buf))
 	if 2+l+2 > len(buf) {
-		return false
+		return err
 	}
 	wdr, buf := buf[2:2+l], buf[2+l:]
 	l = int(msb.Uint16(buf))
 	if 2+l > len(buf) {
-		return false
+		return err
 	}
 	ats, reach := buf[2:2+l], buf[2+l:]
 
@@ -265,20 +267,14 @@ func (u *Update) guessAddPath(cps caps.Caps, failed bool) bool {
 	// check IPv4 NLRI, then walk the attributes for MP_*
 	check(afi.AS_IPV4_UNICAST, reach)
 	check(afi.AS_IPV4_UNICAST, wdr)
-	for len(ats) >= 3 {
-		code, alen, hl := attrs.Code(ats[1]), int(ats[2]), 3
-		if attrs.Flags(ats[0])&attrs.ATTR_EXTENDED != 0 {
-			if len(ats) < 4 {
-				break
-			}
-			alen, hl = alen<<8|int(ats[3]), 4
-		}
-		if len(ats) < hl+alen {
+	for {
+		atyp, val, rest, ok := nextAttr(ats)
+		if !ok {
 			break
 		}
-		val := ats[hl : hl+alen]
-		ats = ats[hl+alen:]
+		ats = rest
 
+		code := atyp.Code()
 		if (code != attrs.ATTR_MP_REACH && code != attrs.ATTR_MP_UNREACH) || len(val) < 3 {
 			continue
 		}
@@ -295,53 +291,59 @@ func (u *Update) guessAddPath(cps caps.Caps, failed bool) bool {
 		}
 	}
 
-	// NB: rare, so allocate
-	if changed {
-		m.ParseAddPath = &ap
+	if !changed {
+		return err
 	}
-	return changed
+
+	// retry with the guess, roll back if no better; NB: rare, so allocate
+	old := m.ParseAddPath
+	m.ParseAddPath = &ap
+	if u.parseAll(cps) == nil {
+		return nil
+	}
+	m.ParseAddPath = old
+	if err == nil {
+		err = u.parseAll(cps)
+	}
+	return err
+}
+
+// nextAttr splits the first attribute off raw: returns its type, value, and the rest.
+// Returns ok=false if raw is empty or truncated.
+func nextAttr(raw []byte) (atyp attrs.CodeFlags, val, rest []byte, ok bool) {
+	if len(raw) < 3 {
+		return
+	}
+	atyp = attrs.CodeFlags(msb.Uint16(raw[0:2]))
+	alen, hl := int(raw[2]), 3
+	if atyp.HasFlags(attrs.ATTR_EXTENDED) {
+		if len(raw) < 4 {
+			return
+		}
+		alen, hl = int(msb.Uint16(raw[2:4])), 4
+	}
+	if len(raw) < hl+alen {
+		return
+	}
+	return atyp, raw[hl : hl+alen], raw[hl+alen:], true
 }
 
 func (u *Update) parseAttrs(cps caps.Caps) error {
-	var (
-		raw  = u.AttrsRaw    // all attributes
-		atyp attrs.CodeFlags // attribute type
-		alen uint16          // attribute length
-	)
-
 	// NB: Reset keeps Attr objects for re-use
 	ats := &u.Attrs
 	ats.Reset()
 
-	for len(raw) > 0 {
-		if len(raw) < 3 {
+	for raw := u.AttrsRaw; len(raw) > 0; {
+		atyp, buf, rest, ok := nextAttr(raw)
+		if !ok {
 			return ErrAttrs
 		}
+		raw = rest
 
-		// parse attribute type
-		atyp = attrs.CodeFlags(msb.Uint16(raw[0:2]))
 		acode := atyp.Code()
 		if ats.Has(acode) {
 			return fmt.Errorf("%s: %w", acode, ErrAttrDupe)
 		}
-
-		// parse attribute length
-		if !atyp.HasFlags(attrs.ATTR_EXTENDED) {
-			alen = uint16(raw[2])
-			raw = raw[3:]
-		} else if len(raw) < 4 {
-			return ErrParams
-		} else { // extended length
-			alen = msb.Uint16(raw[2:4])
-			raw = raw[4:]
-		}
-		if len(raw) < int(alen) {
-			return ErrAttrs
-		}
-
-		// put attribute value in buf, skip raw to next
-		buf := raw[:alen]
-		raw = raw[alen:]
 
 		// create, overwrite flags, try parsing
 		attr := ats.Use(acode)

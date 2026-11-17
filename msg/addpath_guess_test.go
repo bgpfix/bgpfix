@@ -99,3 +99,25 @@ func TestAddPathGuessShortMP(t *testing.T) {
 		t.Fatalf("panic: %v", err)
 	}
 }
+
+// a guess that breaks a message that parsed fine is rolled back
+func TestAddPathGuessRollback(t *testing.T) {
+	// reach: four 0.0.0.0/0 and 10.0.0.0/8, or Path Id 0 and 10.0.0.0/8
+	// withdrawn: 10.0.0.0/24, invalid with a Path Id
+	data := []byte{0, 4, 24, 10, 0, 0, 0, byte(len(guessAttrs))}
+	data = append(data, guessAttrs...)
+	data = append(data, 0, 0, 0, 0, 8, 10)
+
+	m := NewMsg()
+	m.Type = UPDATE
+	m.Data = data
+	if err := m.Parse(guessCaps()); err != nil {
+		t.Fatal(err)
+	}
+	if m.ParseAddPath != nil {
+		t.Errorf("ParseAddPath = %v, want nil", m.ParseAddPath)
+	}
+	if len(m.Update.Reach) != 5 || len(m.Update.Unreach) != 1 {
+		t.Errorf("reach = %v, unreach = %v", m.Update.Reach, m.Update.Unreach)
+	}
+}

@@ -45,21 +45,19 @@ func doneWithin(f func(), d time.Duration) bool {
 	}
 }
 
-// Stop() before Start(): Start returns ErrStopped without wgstart.Done(), so Wait() hangs forever.
-// bgpipe calls Pipe.Start() (ignoring the error) and then Pipe.Wait().
-func TestRegress_StopBeforeStartWaitHangs(t *testing.T) {
+// Stop() before Start(): Start() fails, and Wait() returns
+func TestStopBeforeStart(t *testing.T) {
 	p := newTestPipe(context.Background())
 	p.Stop()
 	err := p.Start()
 	t.Logf("Start() after Stop() = %v", err)
 	if !doneWithin(p.Wait, 2*time.Second) {
-		t.Errorf("BUG: Pipe.Wait() hangs forever after Stop() raced ahead of Start()")
+		t.Errorf("Pipe.Wait() hangs after Stop() before Start()")
 	}
 }
 
-// Concurrent Start()/Stop(): Stop sees started=true and blocks on wgstart, while Start sees
-// stopped=true and returns ErrStopped without wgstart.Done() -> Stop() hangs forever.
-func TestRegress_StartStopRaceHangs(t *testing.T) {
+// concurrent Start() and Stop() always return
+func TestStartStopRace(t *testing.T) {
 	hangs := 0
 	for i := 0; i < 2000 && hangs == 0; i++ {
 		p := newTestPipe(context.Background())
@@ -69,7 +67,7 @@ func TestRegress_StartStopRaceHangs(t *testing.T) {
 		go func() { defer wg.Done(); p.Stop() }()
 		if !doneWithin(wg.Wait, 2*time.Second) {
 			hangs++
-			t.Errorf("BUG: iteration %d: concurrent Start()/Stop() deadlocked", i)
+			t.Errorf("iteration %d: concurrent Start()/Stop() deadlocked", i)
 		} else {
 			go drainLine(p.L)
 			go drainLine(p.R)
@@ -78,8 +76,8 @@ func TestRegress_StartStopRaceHangs(t *testing.T) {
 	}
 }
 
-// A Handler calling Pipe.Stop() deadlocks forever: Stop() waits for evwg, which includes itself.
-func TestRegress_StopFromHandlerDeadlocks(t *testing.T) {
+// an event handler can call Pipe.Stop()
+func TestStopFromHandler(t *testing.T) {
 	p := newTestPipe(context.Background())
 	p.Options.OnEvent(func(ev *Event) bool {
 		p.Stop()
@@ -92,15 +90,13 @@ func TestRegress_StopFromHandlerDeadlocks(t *testing.T) {
 	go drainLine(p.R)
 	p.Event("custom/STOP_ME")
 	if !doneWithin(p.Wait, 3*time.Second) {
-		t.Errorf("BUG: Pipe.Stop() called from an event handler never returns; Pipe.Wait() hangs forever")
+		t.Errorf("Pipe.Stop() called from an event handler never returns; Pipe.Wait() hangs forever")
 	}
 }
 
-// The event queue (100) fills up with EVENT_PARSE from a peer sending malformed UPDATEs.
-// With GOMAXPROCS=1 there is a single event goroutine; the internal checkEstablished handler
-// calls p.Event(EVENT_ESTABLISHED), which blocks on the full queue -> the event system and
-// every input that emits an event are deadlocked until Stop()/cancel. Nothing ever times out.
-func TestRegress_EventQueueDeadlock(t *testing.T) {
+// a full event queue (eg. EVENT_PARSE from a burst of malformed UPDATEs) must not
+// deadlock handlers that emit events, even with a single event goroutine (GOMAXPROCS=1)
+func TestEventQueueFull(t *testing.T) {
 	old := runtime.GOMAXPROCS(1)
 	defer runtime.GOMAXPROCS(old)
 
@@ -149,14 +145,13 @@ func TestRegress_EventQueueDeadlock(t *testing.T) {
 	t.Logf("after 3s: established=%d evch=%d/%d L.In=%d L.LastAlive=%d R.LastAlive=%d",
 		established.Load(), len(p.evch), cap(p.evch), len(p.L.In), p.L.LastAlive.Load(), p.R.LastAlive.Load())
 	if established.Load() == 0 && len(p.evch) == cap(p.evch) {
-		t.Errorf("BUG: event system deadlocked: queue full, ESTABLISHED never delivered, inputs blocked")
+		t.Errorf("event system deadlocked: queue full, ESTABLISHED never delivered, inputs blocked")
 	}
 	p.Stop()
 }
 
-// The EVENT_ALIVE handler (checkEstablished) can run concurrently on two event goroutines:
-// EVENT_ESTABLISHED is emitted twice, and p.Caps is Clear()ed/SetFrom()'ed concurrently.
-func TestRegress_DuplicateEstablished(t *testing.T) {
+// EVENT_ESTABLISHED is emitted exactly once, although EVENT_ALIVE handlers run concurrently
+func TestEstablishedOnce(t *testing.T) {
 	dups := 0
 	for i := 0; i < 100; i++ {
 		p := newTestPipe(context.Background())
@@ -183,13 +178,12 @@ func TestRegress_DuplicateEstablished(t *testing.T) {
 		p.Stop()
 	}
 	if dups > 0 {
-		t.Errorf("BUG: EVENT_ESTABLISHED emitted more than once in %d/100 sessions", dups)
+		t.Errorf("EVENT_ESTABLISHED emitted more than once in %d/100 sessions", dups)
 	}
 }
 
-// checkEstablished does p.Caps.Clear() then p.Caps.SetFrom(): a concurrent UPDATE parser in the
-// direction that is not waiting for ev.done observes an empty Caps (no AS4 => 2-byte AS_PATH decode).
-func TestRegress_CapsTransientlyEmpty(t *testing.T) {
+// concurrent readers never see p.Caps without AS4 while it is being negotiated
+func TestCapsNeverEmpty(t *testing.T) {
 	var gaps int
 	for i := 0; i < 100; i++ {
 		p := newTestPipe(context.Background())
@@ -222,12 +216,39 @@ func TestRegress_CapsTransientlyEmpty(t *testing.T) {
 		p.Stop()
 	}
 	if gaps > 0 {
-		t.Errorf("BUG: concurrent reader saw p.Caps without AS4 during negotiation in %d/100 sessions", gaps)
+		t.Errorf("concurrent reader saw p.Caps without AS4 during negotiation in %d/100 sessions", gaps)
 	}
 }
 
-// Same as above, but shows real UPDATE mis-parsing in the non-waiting direction.
-func TestRegress_CapsRaceMisparse(t *testing.T) {
+// pseudo-capabilities survive the negotiation
+func TestCapsKeepPseudo(t *testing.T) {
+	p := newTestPipe(context.Background())
+	p.Options.Caps = true
+	p.Caps.Use(caps.CAP_ADDPATH_GUESS)
+	est := make(chan struct{})
+	p.Options.OnEstablished(func(ev *Event) bool { close(est); return false })
+	if err := p.Start(); err != nil {
+		t.Fatal(err)
+	}
+	go drainLine(p.L)
+	go drainLine(p.R)
+	p.L.WriteMsg(regressOpen(1))
+	p.R.WriteMsg(regressOpen(2))
+	p.L.WriteMsg(newKeepalive())
+	p.R.WriteMsg(newKeepalive())
+	select {
+	case <-est:
+	case <-time.After(3 * time.Second):
+		t.Fatal("not established")
+	}
+	if !p.Caps.Has(caps.CAP_ADDPATH_GUESS) {
+		t.Errorf("CAP_ADDPATH_GUESS dropped: %s", p.Caps.String())
+	}
+	p.Stop()
+}
+
+// UPDATEs parsed concurrently with the negotiation use valid caps
+func TestCapsNegotiationParse(t *testing.T) {
 	ka := append(append([]byte{}, msg.BgpMarker...), 0, 19, 4)
 	ats := []byte{0x40, 1, 1, 0, 0x40, 2, 6, 2, 1, 0xfa, 0x56, 0xea, 0x01, 0x40, 3, 4, 10, 0, 0, 1}
 	body := append([]byte{0, 0, 0, byte(len(ats))}, ats...)
@@ -269,7 +290,7 @@ func TestRegress_CapsRaceMisparse(t *testing.T) {
 		time.Sleep(30 * time.Millisecond)
 		if wrong.Load() > 0 {
 			bad++
-			t.Errorf("BUG: session %d: %d UPDATEs mis-parsed during negotiation, eg. AS_PATH=%v", i, wrong.Load(), sample.Load())
+			t.Errorf("session %d: %d UPDATEs mis-parsed during negotiation, eg. AS_PATH=%v", i, wrong.Load(), sample.Load())
 		}
 		p.Stop()
 	}
@@ -285,10 +306,8 @@ func regressOpenRaw(t *testing.T, asn uint32) []byte {
 	return append(b, m.Data...)
 }
 
-// eval.Set() snapshots mx.tags once per message, before callbacks. If the message had no tags
-// map yet (any freshly allocated msg), a tag set by an earlier callback (eg. bgpipe "tag" stage)
-// is invisible to the --if filters of all later callbacks.
-func TestRegress_TagFilterStaleSnapshot(t *testing.T) {
+// callback tag filters see the tags set by earlier callbacks
+func TestTagFilterSeesCallbackTags(t *testing.T) {
 	p := newTestPipe(context.Background())
 	p.Options.OnMsg(func(m *msg.Msg) bool {
 		UseContext(m).SetTag("x", "1")
@@ -315,7 +334,7 @@ func TestRegress_TagFilterStaleSnapshot(t *testing.T) {
 	m := <-out
 	t.Logf("tags on output: %v, filtered callback hits: %d", GetTags(m), hit.Load())
 	if hit.Load() == 0 && GetTags(m)["x"] == "1" {
-		t.Errorf("BUG: tag set by earlier callback not visible to later callback's tag filter")
+		t.Errorf("tag set by earlier callback not visible to later callback's tag filter")
 	}
 	p.Stop()
 }
