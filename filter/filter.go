@@ -136,15 +136,10 @@ func NewFilter(filter string) (*Filter, error) {
 	return f, nil
 }
 
-// MaxDepth limits the nesting of sub-expressions in a filter
-const MaxDepth = 100
-
 func (f *Filter) parse(expstr string, lvl int) (parsed *Expr, left string, err error) {
 	str := strings.TrimSpace(expstr)
 	if len(str) == 0 {
 		return nil, str, ErrEmpty
-	} else if lvl > MaxDepth {
-		return nil, str, ErrDepth
 	}
 
 	parsed = &Expr{String: str}

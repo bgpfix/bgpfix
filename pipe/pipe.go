@@ -42,12 +42,11 @@ type Pipe struct {
 	estmu   sync.Mutex     // serializes checkEstablished
 	estab   bool           // true iff EVENT_ESTABLISHED emitted
 
-	evch    chan *Event           // pipe event input
-	evstop  chan struct{}         // closed to stop the event handlers
-	evwg    sync.WaitGroup        // event handler routine
-	events  map[string][]*Handler // maps events to their handlers
-	evseq   atomic.Uint64         // last event seq number assigned
-	evdefer atomic.Int32          // events waiting asynchronously for evch
+	evch   chan *Event           // pipe event input
+	evstop chan struct{}         // closed to stop the event handlers
+	evwg   sync.WaitGroup        // event handler routine
+	events map[string][]*Handler // maps events to their handlers
+	evseq  atomic.Uint64         // last event seq number assigned
 
 	msgpool *sync.Pool // pool for new messages
 }

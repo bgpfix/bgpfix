@@ -12,5 +12,4 @@ var (
 	ErrValue     = fmt.Errorf("invalid value")
 	ErrOpValue   = fmt.Errorf("operator needs value")
 	ErrLogic     = fmt.Errorf("expecting logical operator")
-	ErrDepth     = fmt.Errorf("too deeply nested")
 )

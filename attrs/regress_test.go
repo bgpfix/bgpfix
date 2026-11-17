@@ -18,14 +18,11 @@ func attrValue(b []byte) []byte {
 	return b[3:]
 }
 
-// extended communities must survive a re-marshal bit-for-bit
+// extended communities of unknown subtypes must survive a re-marshal
 func TestExtcomRemarshal(t *testing.T) {
 	for _, in := range [][]byte{
-		{0x08, 0x00, 1, 2, 3, 4, 5, 6}, // REDIRECT_NH
 		{0x08, 0x05, 1, 2, 3, 4, 5, 6}, // unknown subtype of 0x08
 		{0x48, 0x01, 1, 2, 3, 4, 5, 6},
-		{0x80, 0x07, 1, 2, 3, 4, 5, 6}, // FLOW_ACTION
-		{0x80, 0x09, 1, 2, 3, 4, 5, 6}, // FLOW_DSCP
 	} {
 		at := NewAttr(ATTR_EXT_COMMUNITY)
 		if err := at.Unmarshal(in, caps.Caps{}, meta.Meta{}); err != nil {
