@@ -1,6 +1,7 @@
 package msg
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/bgpfix/bgpfix/afi"
@@ -84,5 +85,17 @@ func TestAddPathNoGuess(t *testing.T) {
 	m.Data = guessUpdate([]byte{0, 0, 0, 1, 24, 192, 0, 2})
 	if err := m.Parse(caps.Caps{}); err == nil {
 		t.Errorf("parsed without guessing: %v", m.Update.Reach)
+	}
+}
+
+// a truncated MP_REACH (AFI+SAFI only) must not panic the guesser
+func TestAddPathGuessShortMP(t *testing.T) {
+	m := NewMsg()
+	m.Type = UPDATE
+	m.Data = guessUpdate(nil, 0x80, 14, 3, 0, 2, 1)
+	if err := m.Parse(guessCaps()); err == nil {
+		t.Fatal("expected a parse error")
+	} else if strings.Contains(err.Error(), "panic") {
+		t.Fatalf("panic: %v", err)
 	}
 }

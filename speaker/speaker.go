@@ -4,6 +4,7 @@ package speaker
 import (
 	"context"
 	"math"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -31,6 +32,7 @@ type Speaker struct {
 	opened  atomic.Bool   // true iff OPEN already sent
 	gotOpen atomic.Int64  // UNIX timestamp when remote OPEN accepted
 	estab   chan struct{} // closed when session established
+	estonce sync.Once
 }
 
 // OPEN_TIMEOUT is the max. time to wait for remote OPEN (RFC 4271 suggests 4 minutes)
@@ -110,7 +112,7 @@ func (s *Speaker) openTimer() {
 			}
 		}
 
-		if now-since > limit {
+		if now-since > limit+1 { // NB: +1s, as the timestamps are truncated to seconds
 			s.Warn().Int64("limit", limit).Msg("session not established in time")
 			s.stop(ErrOpenTimeout)
 			return
@@ -120,7 +122,7 @@ func (s *Speaker) openTimer() {
 
 // onEstablished starts periodic KEEPALIVE sender
 func (s *Speaker) onEstablished(ev *pipe.Event) bool {
-	close(s.estab)
+	s.estonce.Do(func() { close(s.estab) })
 
 	// load last OPENs
 	up, down := s.up.Open.Load(), s.down.Open.Load()

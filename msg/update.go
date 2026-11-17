@@ -194,6 +194,10 @@ func (u *Update) ParseAttrs(cps caps.Caps) (err error) {
 // Iff that contradicts msg.HasAddPath(), it sets u.Msg.ParseAddPath to what the data
 // says and returns true: then u should be parsed again.
 func (u *Update) guessAddPath(cps caps.Caps, failed bool) bool {
+	if !cps.Has(caps.CAP_ADDPATH_GUESS) {
+		return false
+	}
+
 	// NB: this must be O(1) for valid messages, so check the first prefixes only
 	if !failed {
 		var mpr, mpu []nlri.Prefix
@@ -210,9 +214,6 @@ func (u *Update) guessAddPath(cps caps.Caps, failed bool) bool {
 		if !suspect {
 			return false
 		}
-	}
-	if !cps.Has(caps.CAP_ADDPATH_GUESS) {
-		return false
 	}
 
 	// split msg.Data, see Parse
@@ -289,7 +290,7 @@ func (u *Update) guessAddPath(cps caps.Caps, failed bool) bool {
 			}
 		case code == attrs.ATTR_MP_UNREACH: // afi, safi, nlri
 			check(as, val[3:])
-		case len(val) >= 5+int(val[3]): // afi, safi, nh len, nh, reserved, nlri
+		case len(val) >= 4 && len(val) >= 5+int(val[3]): // afi, safi, nh len, nh, reserved, nlri
 			check(as, val[5+int(val[3]):])
 		}
 	}

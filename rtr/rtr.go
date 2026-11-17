@@ -93,6 +93,10 @@ func NewClient(opts *Options) *Client {
 	return c
 }
 
+// NB: Run fails with a timeout if nothing arrives within the Expire Interval (RFC 8210
+// section 6), so the caller must query (SendSerial) more often than that; caches
+// also announce changes with Serial Notify PDUs, which count as traffic.
+//
 // Run starts an RTR session over conn, processing PDUs until conn closes or ctx is done.
 // It sends a Reset Query immediately on connect. Run always closes conn before returning.
 // Returns ctx.Err() if ctx is cancelled; ErrDowngrade if the protocol version was
