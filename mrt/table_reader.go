@@ -47,7 +47,8 @@ type v1peer struct {
 // NB: peer indexes are int, not uint16: v1 peers are synthetic and must not
 // wrap onto each other, which would misattribute routes to the wrong peer
 type tableState struct {
-	peers   []PeerEntry           // owned copy of the last PEER_INDEX_TABLE
+	peers   []PeerEntry           // owned copy of the last PEER_INDEX_TABLE, then v1 peers
+	npeers  int                   // number of peers from the PEER_INDEX_TABLE
 	pending map[int]*tablePending // per-peer pending UPDATE
 	v1index map[v1peer]int        // v1 peer -> synthetic index into peers
 }
@@ -72,6 +73,8 @@ func (br *Reader) emitTable(cb pipe.CallbackFunc) error {
 			return err
 		}
 		ts.peers = append(ts.peers[:0], t.Peers...)
+		ts.npeers = len(ts.peers)
+		clear(ts.v1index) // NB: v1 peers indexed past the old table
 		return nil
 	}
 
@@ -106,8 +109,7 @@ func (br *Reader) emitTable(cb pipe.CallbackFunc) error {
 		idx := int(e.PeerIndex)
 		if mrt.Type == TABLE_DUMP {
 			idx = v1fix
-		}
-		if idx >= len(ts.peers) {
+		} else if idx >= ts.npeers {
 			br.Stats.Garbled++
 			continue // no peer index table?
 		}

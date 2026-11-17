@@ -34,7 +34,8 @@ const (
 	CAP_VERSION                Code = 75
 	CAP_PRE_ROUTE_REFRESH      Code = 128
 
-	CAP_AS_GUESS Code = 0xff + 1 // pseudo-capability: guess ASN size
+	CAP_AS_GUESS      Code = 0xff + 1 // pseudo-capability: guess ASN size
+	CAP_ADDPATH_GUESS Code = 0xff + 2 // pseudo-capability: guess ADD-PATH in NLRI (in msg.Parse)
 )
 
 //go:generate go run github.com/dmarkham/enumer -type=Code -trimprefix CAP_

@@ -193,13 +193,25 @@ func (p *Prefix) Unmarshal(src []byte, ipv6, addpath bool) (n int, err error) {
 		return n, ErrLength
 	}
 
-	// copy what's defined, try to parse
-	var tmp [16]byte
-	n += copy(tmp[:], src[:b])
+	// copy the address, try to parse; NB: Prefix(l) masks the bytes past b,
+	// so copy a fixed size if possible: much faster (no store-forwarding stall)
+	n += b
 	if ipv6 {
+		var tmp [16]byte
+		if len(src) >= 16 {
+			tmp = [16]byte(src)
+		} else {
+			copy(tmp[:], src[:b])
+		}
 		p.Prefix, err = netip.AddrFrom16(tmp).Prefix(l)
 	} else {
-		p.Prefix, err = netip.AddrFrom4([4]byte(tmp[:])).Prefix(l)
+		var tmp [4]byte
+		if len(src) >= 4 {
+			tmp = [4]byte(src)
+		} else {
+			copy(tmp[:], src[:b])
+		}
+		p.Prefix, err = netip.AddrFrom4(tmp).Prefix(l)
 	}
 	return n, err
 }
@@ -235,6 +247,40 @@ func Unmarshal(dst []Prefix, src []byte, as afi.AS, cps caps.Caps, mt meta.Meta)
 	}
 
 	return dst, nil
+}
+
+// Check returns true iff src looks like a valid NLRI field: prefixes of valid
+// lengths, with (addpath) or without ADD-PATH Path Identifiers, consuming src
+// exactly. Used for guessing the encoding, so it is also strict on things that
+// RFC 4271 does not require: the bits past the prefix length must be zero, and
+// without ADD-PATH, src must not start with two zero bytes (rather a Path Id).
+func Check(src []byte, ipv6, addpath bool) bool {
+	maxlen := 32
+	if ipv6 {
+		maxlen = 128
+	}
+	if !addpath && len(src) > 1 && src[0] == 0 && src[1] == 0 {
+		return false
+	}
+
+	for len(src) > 0 {
+		if addpath {
+			if len(src) < 5 {
+				return false
+			}
+			src = src[4:]
+		}
+
+		l := int(src[0])
+		n := 1 + (l+7)/8
+		if l > maxlen || n > len(src) {
+			return false
+		} else if r := l % 8; r != 0 && src[n-1]<<r != 0 {
+			return false
+		}
+		src = src[n:]
+	}
+	return true
 }
 
 // Marshal marshals prefix p to dst

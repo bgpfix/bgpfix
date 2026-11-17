@@ -232,6 +232,7 @@ input:
 			}
 
 			// evaluate callback message filters?
+			eval.PipeTags = mx.tags // NB: previous callbacks may have created the tags
 			for _, f := range cb.Filter {
 				if !eval.Run(f) {
 					continue callbacks // try next callback

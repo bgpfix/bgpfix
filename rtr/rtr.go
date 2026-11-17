@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/netip"
 	"sync"
+	"time"
 
 	"github.com/rs/zerolog"
 )
@@ -50,6 +51,25 @@ type Client struct {
 	verEOFs   byte       // consecutive pre-PDU EOFs on a previously confirmed version
 
 	resetPending bool // a Reset Query was sent; flush stale cache on the next CacheResponse
+
+	expire  time.Duration // Expire Interval from the last EndOfData (or ExpireDefault)
+	lastEOD time.Time     // when the last EndOfData was received
+}
+
+// RFC 8210 section 6: the default and allowed range of the Expire Interval
+const (
+	ExpireDefault = 7200 * time.Second
+	ExpireMin     = 600 * time.Second
+	ExpireMax     = 172800 * time.Second
+)
+
+// Expired returns true iff the data from the last EndOfData is older than its
+// Expire Interval (RFC 8210 section 6): the caller should stop using it.
+// Safe to call concurrently with Run.
+func (c *Client) Expired() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return !c.lastEOD.IsZero() && time.Since(c.lastEOD) > c.expire
 }
 
 // NewClient returns a new Client with the given options.
@@ -58,7 +78,7 @@ type Client struct {
 //   - VersionAuto (255): auto-negotiate v2 -> v1 -> v0 across reconnections (see ErrDowngrade)
 //   - VersionV0/V1/V2: use that version with no fallback
 func NewClient(opts *Options) *Client {
-	c := &Client{}
+	c := &Client{expire: ExpireDefault}
 	if opts != nil {
 		c.Options = *opts
 	} else {
@@ -79,6 +99,10 @@ func NewClient(opts *Options) *Client {
 // downgraded (VersionAuto) and the caller should reconnect immediately;
 // otherwise the connection error. The caller is responsible for reconnection.
 //
+// Run sends a Serial Query when the data gets older than half the Expire Interval
+// (RFC 8210 section 6), and fails with a timeout if no EndOfData arrives in time.
+// The caller may query more often with SendSerial.
+//
 // NB: Run starts one internal goroutine that exits when Run returns.
 func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 	runDone := make(chan struct{})
@@ -90,12 +114,25 @@ func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 		c.mu.Unlock()
 	}()
 
-	// interrupt blocking reads when ctx is cancelled
+	// interrupt blocking reads when ctx is cancelled; refresh aging data
 	go func() {
-		select {
-		case <-ctx.Done():
-			conn.Close()
-		case <-runDone:
+		ticker := time.NewTicker(ExpireMin / 4)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				conn.Close()
+				return
+			case <-runDone:
+				return
+			case <-ticker.C:
+				c.mu.Lock()
+				aging := time.Since(c.lastEOD) > c.expire/2
+				c.mu.Unlock()
+				if aging {
+					c.SendSerial()
+				}
+			}
 		}
 	}()
 
@@ -118,8 +155,20 @@ func (c *Client) Run(ctx context.Context, conn net.Conn) error {
 		return err
 	}
 
+	connStart := time.Now()
 	got := false // any PDU received on this connection?
 	for {
+		// NB: a live cache answers our queries well within the Expire Interval;
+		// don't let a silent one block us (and keep the data) forever
+		c.mu.Lock()
+		since := connStart
+		if c.lastEOD.After(since) {
+			since = c.lastEOD
+		}
+		deadline := since.Add(c.expire)
+		c.mu.Unlock()
+		conn.SetReadDeadline(deadline)
+
 		h, err := readHeader(conn)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -488,6 +537,11 @@ func (c *Client) dispatchEndOfData(h pduHeader, payload []byte) error {
 	c.serial = serial
 	c.sessid = h.Session
 	c.hasSerial = true
+	c.lastEOD = time.Now()
+	c.expire = ExpireDefault // v0 has no intervals
+	if len(payload) >= 16 {  // v1+: refresh, retry, expire intervals
+		c.expire = min(max(time.Duration(msb.Uint32(payload[12:16]))*time.Second, ExpireMin), ExpireMax)
+	}
 	sessid := h.Session
 	c.mu.Unlock()
 

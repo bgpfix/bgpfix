@@ -391,8 +391,10 @@ func parseFlowOps(ft attrs.FlowType, s string) (*attrs.FlowGeneric, error) {
 	return fg, nil
 }
 
-// readFlow sets x.Flow to the match components of rule
-func (x *Exa) readFlow(rule attrs.FlowRule, v6 int) {
+// readFlow sets x.Flow to the match components of rule.
+// Returns false iff any component cannot be expressed: then the whole rule must be skipped,
+// as dropping a component would turn it into a broader rule.
+func (x *Exa) readFlow(rule attrs.FlowRule, v6 int) bool {
 	types := make([]attrs.FlowType, 0, len(rule))
 	for ft := range rule {
 		types = append(types, ft)
@@ -401,7 +403,7 @@ func (x *Exa) readFlow(rule attrs.FlowRule, v6 int) {
 
 	for _, ft := range types {
 		if int(ft) >= len(flowNames) || flowNames[ft][v6] == "" {
-			continue // unknown component type
+			return false // unknown component type
 		}
 		s := flowNames[ft][v6]
 
@@ -429,8 +431,9 @@ func (x *Exa) readFlow(rule attrs.FlowRule, v6 int) {
 				}
 			}
 		default:
-			continue
+			return false // eg. FlowRaw
 		}
 		x.Flow = append(x.Flow, s)
 	}
+	return true
 }

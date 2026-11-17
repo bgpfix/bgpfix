@@ -24,7 +24,7 @@ func (c *Fqdn) Unmarshal(buf []byte, caps Caps) error {
 	if len(buf) < l {
 		return ErrLength
 	}
-	c.Host, buf = buf[:l], buf[l:]
+	c.Host, buf = append([]byte(nil), buf[:l]...), buf[l:] // NB: copy, buf may be overwritten
 
 	// domain name length (1) + domain (variable)
 	if len(buf) < 1 {
@@ -34,7 +34,7 @@ func (c *Fqdn) Unmarshal(buf []byte, caps Caps) error {
 	if len(buf) < l {
 		return ErrLength
 	}
-	c.Domain = buf[:l]
+	c.Domain = append([]byte(nil), buf[:l]...)
 
 	return nil
 }

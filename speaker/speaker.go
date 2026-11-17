@@ -29,6 +29,7 @@ type Speaker struct {
 
 	Options Options     // options; do not modify after Attach()
 	opened  atomic.Bool // true iff OPEN already sent
+	estab   atomic.Bool // true iff session established
 }
 
 // NewSpeaker returns a new Speaker. Call Speaker.Attach() next.
@@ -75,6 +76,8 @@ func (s *Speaker) onStart(ev *pipe.Event) bool {
 
 // onEstablished starts periodic KEEPALIVE sender
 func (s *Speaker) onEstablished(ev *pipe.Event) bool {
+	s.estab.Store(true)
+
 	// load last OPENs
 	up, down := s.up.Open.Load(), s.down.Open.Load()
 	if up == nil || down == nil {
@@ -127,11 +130,44 @@ func (s *Speaker) onOpen(m *msg.Msg) bool {
 		return false
 	}
 
+	// validate remote identifier (RFC 6286: must be non-zero)
+	if id := o.Identifier; !id.IsValid() || id.IsUnspecified() ||
+		(opts.RemoteId.IsValid() && !opts.RemoteId.IsUnspecified() && id != opts.RemoteId) {
+		s.Warn().Stringer("expected", opts.RemoteId).Stringer("got", id).Msg("remote identifier rejected, dropping OPEN")
+		s.stop(ErrRemoteId)
+		return false
+	}
+
+	// validate remote capabilities: must have the non-nil, must not have the nil
+	var badcap caps.Code
+	for cc, c := range opts.RemoteCaps.All() {
+		if (c != nil) != o.Caps.Has(cc) {
+			badcap = cc
+			break
+		}
+	}
+	if badcap != 0 {
+		s.Warn().Stringer("cap", badcap).Msg("remote capabilities rejected, dropping OPEN")
+		s.stop(ErrRemoteCaps)
+		return false
+	}
+
 	// send our OPEN (nop if we did that already)
 	s.sendOpen(o)
 
 	// confirm the received OPEN is OK
 	s.sendKeepalive()
+
+	// RFC 4271 8.2.2: expect the peer's KEEPALIVE within the hold time
+	// NB: theirs is >= the negotiated, so never too early
+	if ht > 0 {
+		time.AfterFunc(time.Duration(ht)*time.Second, func() {
+			if !s.estab.Load() && s.ctx.Err() == nil {
+				s.Warn().Int("hold", ht).Msg("session not established in time")
+				s.stop(ErrOpenTimeout)
+			}
+		})
+	}
 
 	return true
 }
@@ -151,7 +187,8 @@ func (s *Speaker) sendOpen(ro *msg.Open) {
 	opts := &s.Options
 	o.Caps.SetFrom(s.pipe.Caps)
 	o.Caps.SetFrom(opts.LocalCaps)
-	o.Caps.Drop(caps.CAP_AS_GUESS) // pseudo-capability, not for the peer
+	o.Caps.Drop(caps.CAP_AS_GUESS) // pseudo-capabilities, not for the peer
+	o.Caps.Drop(caps.CAP_ADDPATH_GUESS)
 
 	o.Identifier = opts.LocalId
 	if !o.Identifier.IsValid() && ro != nil {

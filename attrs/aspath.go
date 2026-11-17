@@ -260,6 +260,32 @@ func (a *Aspath) Append(hop []uint32) {
 	}
 }
 
+// AppendFrom appends the first n hops from src (all if n < 0),
+// preserving AS_SETs (each non-empty AS_SET counts as 1 hop, as in Len).
+func (a *Aspath) AppendFrom(src *Aspath, n int) {
+	for i := range src.Segments {
+		if n == 0 {
+			return
+		}
+
+		seg := &src.Segments[i]
+		switch {
+		case seg.IsSet && len(seg.List) > 0:
+			a.Segments = append(a.Segments, AspathSegment{IsSet: true, List: slices.Clone(seg.List)})
+			n--
+		case !seg.IsSet:
+			list := seg.List
+			if n >= 0 && len(list) > n {
+				list = list[:n]
+			}
+			for _, asn := range list {
+				a.Append([]uint32{asn})
+			}
+			n -= len(list)
+		}
+	}
+}
+
 // Set sets the AS_PATH to be a single segment with given hops
 func (a *Aspath) Set(hops []uint32) {
 	a.Segments = append(a.Segments[:0], AspathSegment{

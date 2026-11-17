@@ -87,8 +87,11 @@ var ExtcomNewFuncs = map[ExtcomType]ExtcomNewFunc{
 	EXTCOM_FLOW_REDIRECT_AS4: NewExtcomASN,
 	EXTCOM_FLOW_REDIRECT_NH:  NewExtcomFlowRedirectNH,
 	EXTCOM_FLOW_DSCP:         NewExtcomFlowDSCP,
+}
 
-	// generic type NewExtcomrs
+// ExtcomTypeFuncs maps extended community types (any subtype) to their new func,
+// used when ExtcomNewFuncs has no exact match
+var ExtcomTypeFuncs = map[ExtcomType]ExtcomNewFunc{
 	EXTCOM_AS2: NewExtcomASN,
 	EXTCOM_AS4: NewExtcomASN,
 	EXTCOM_IP4: NewExtcomAddr,
@@ -108,7 +111,7 @@ func NewExtcomValue(et ExtcomType) ExtcomValue {
 	var ev ExtcomValue
 	if newfunc, ok := ExtcomNewFuncs[et.Value()]; ok {
 		ev = newfunc(et)
-	} else if newfunc, ok := ExtcomNewFuncs[et.Type()]; ok {
+	} else if newfunc, ok := ExtcomTypeFuncs[et.Type()]; ok {
 		ev = newfunc(et)
 	} else {
 		ev = NewExtcomRaw(et)

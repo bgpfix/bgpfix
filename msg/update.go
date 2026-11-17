@@ -9,6 +9,7 @@ import (
 	"github.com/bgpfix/bgpfix/attrs"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/json"
+	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/nlri"
 )
 
@@ -119,65 +120,230 @@ func (u *Update) Parse(cps caps.Caps) error {
 
 // ParseAttrs parses all attributes from AttrsRaw into Attrs.
 // On error, Attrs is left empty.
-func (u *Update) ParseAttrs(cps caps.Caps) error {
-	err := u.parseAttrs(cps)
-
-	// failed with 4-byte ASNs from session caps, but allowed to guess?
-	// NB: record the guess in ParseAS4, so that writers know the real encoding
-	if err != nil && u.Msg.ParseAS4 == 0 && cps.Has(caps.CAP_AS4) && cps.Has(caps.CAP_AS_GUESS) {
-		u.Msg.ParseAS4 = -1
-		if u.parseAttrs(cps) == nil {
-			return nil
+func (u *Update) ParseAttrs(cps caps.Caps) (err error) {
+	defer func() {
+		if err != nil {
+			u.Attrs.Reset()
 		}
-		u.Msg.ParseAS4 = 0
+	}()
+
+	// allowed to guess the ASN size? if not, just parse per session caps
+	// NB: record the guess in ParseAS4, so that writers know the real encoding
+	if u.Msg.ParseAS4 != 0 || !cps.Has(caps.CAP_AS4) || !cps.Has(caps.CAP_AS_GUESS) {
+		return u.parseAttrs(cps)
 	}
 
-	if err != nil {
-		u.Attrs.Reset()
+	// do the attributes suggest 2-byte ASNs? AS4_PATH or AS4_AGGREGATOR present
+	// (RFC 6793), or a 6-byte AGGREGATOR; NB: walk the headers only
+	as2 := false
+	for raw := u.AttrsRaw; !as2; {
+		atyp, val, rest, ok := nextAttr(raw)
+		if !ok {
+			break
+		}
+		switch atyp.Code() {
+		case attrs.ATTR_AS4PATH, attrs.ATTR_AS4AGGREGATOR:
+			as2 = true
+		case attrs.ATTR_AGGREGATOR:
+			as2 = len(val) == 6
+		}
+		raw = rest
+	}
+
+	// try 4-byte ASNs first?
+	// NB: some 2-byte AS_PATHs also parse as valid 4-byte ones (eg. a sequence of n ASNs
+	// followed by a set of n-1 ASNs), so 4-byte success alone does not prove anything:
+	// also require no ASNs in the unallocated space between 2^20 and the private range
+	if !as2 && u.parseAttrs(cps) == nil {
+		ap, _ := u.Attrs.Get(attrs.ATTR_ASPATH).(*attrs.Aspath)
+		plausible := true
+		for i := 0; ap != nil && i < len(ap.Segments) && plausible; i++ {
+			for _, asn := range ap.Segments[i].List {
+				if asn >= 1<<20 && asn < 4200000000 {
+					plausible = false
+					break
+				}
+			}
+		}
+		if plausible {
+			return nil // 4-byte, looks good
+		}
+	}
+
+	// try 2-byte ASNs
+	u.Msg.ParseAS4 = -1
+	if u.parseAttrs(cps) == nil {
+		return nil
+	}
+
+	// fall back to 4-byte
+	u.Msg.ParseAS4 = 0
+	return u.parseAttrs(cps)
+}
+
+// parseAll parses u, then its attributes
+func (u *Update) parseAll(cps caps.Caps) error {
+	if err := u.Parse(cps); err != nil {
+		return err
+	}
+	return u.ParseAttrs(cps)
+}
+
+// guessAddPath is called after parsing u, with err as the result.
+// If it failed, or the first prefix of any NLRI list is /0 (rare in real data, but
+// what a small ADD-PATH Path Id reads as without ADD-PATH), and CAP_ADDPATH_GUESS
+// is in cps, it checks the unicast NLRI in msg.Data for ADD-PATH Path Identifiers.
+// Iff that contradicts msg.HasAddPath(), it parses u again with u.Msg.ParseAddPath
+// set to what the data says, and keeps that iff successful. Returns the final result.
+func (u *Update) guessAddPath(cps caps.Caps, err error) error {
+	if !cps.Has(caps.CAP_ADDPATH_GUESS) {
+		return err
+	}
+
+	// NB: this must be O(1) for valid messages, so check the first prefixes only
+	if err == nil {
+		var mpr, mpu []nlri.Prefix
+		if mp := u.ReachMP().Prefixes(); mp != nil {
+			mpr = mp.Prefixes
+		}
+		if mp := u.UnreachMP().Prefixes(); mp != nil {
+			mpu = mp.Prefixes
+		}
+		suspect := false
+		for _, pfx := range [4][]nlri.Prefix{u.Reach, u.Unreach, mpr, mpu} {
+			suspect = suspect || len(pfx) > 0 && pfx[0].Bits() == 0
+		}
+		if !suspect {
+			return err
+		}
+	}
+
+	// split msg.Data, see Parse
+	m := u.Msg
+	buf := m.Data
+	if len(buf) < UPDATE_MINLEN {
+		return err
+	}
+	l := int(msb.Uint16(buf))
+	if 2+l+2 > len(buf) {
+		return err
+	}
+	wdr, buf := buf[2:2+l], buf[2+l:]
+	l = int(msb.Uint16(buf))
+	if 2+l > len(buf) {
+		return err
+	}
+	ats, reach := buf[2:2+l], buf[2+l:]
+
+	// the new ParseAddPath, for all address families in the message
+	var (
+		ap      meta.AddPath
+		changed bool
+		seen    [2]bool // IPv4/IPv6 unicast already checked?
+	)
+
+	// check unicast NLRI in src for address family as
+	check := func(as afi.AS, src []byte) {
+		i := 0
+		if as == afi.AS_IPV6_UNICAST {
+			i = 1
+		}
+		if len(src) == 0 || seen[i] {
+			return
+		}
+		seen[i] = true
+
+		// trust the message, unless the data clearly says otherwise
+		has := m.HasAddPath(as, cps)
+		if !nlri.Check(src, i == 1, has) && nlri.Check(src, i == 1, !has) {
+			has = !has
+			changed = true
+		}
+		if has {
+			ap.AS = append(ap.AS, as)
+		}
+	}
+
+	// check IPv4 NLRI, then walk the attributes for MP_*
+	check(afi.AS_IPV4_UNICAST, reach)
+	check(afi.AS_IPV4_UNICAST, wdr)
+	for {
+		atyp, val, rest, ok := nextAttr(ats)
+		if !ok {
+			break
+		}
+		ats = rest
+
+		code := atyp.Code()
+		if (code != attrs.ATTR_MP_REACH && code != attrs.ATTR_MP_UNREACH) || len(val) < 3 {
+			continue
+		}
+		as := afi.NewASBytes(val[0:3])
+		switch {
+		case as != afi.AS_IPV4_UNICAST && as != afi.AS_IPV6_UNICAST:
+			if m.HasAddPath(as, cps) { // not checked, keep as-is
+				ap.AS = append(ap.AS, as)
+			}
+		case code == attrs.ATTR_MP_UNREACH: // afi, safi, nlri
+			check(as, val[3:])
+		case len(val) >= 4 && len(val) >= 5+int(val[3]): // afi, safi, nh len, nh, reserved, nlri
+			check(as, val[5+int(val[3]):])
+		}
+	}
+
+	if !changed {
+		return err
+	}
+
+	// retry with the guess, roll back if no better; NB: rare, so allocate
+	old := m.ParseAddPath
+	m.ParseAddPath = &ap
+	if u.parseAll(cps) == nil {
+		return nil
+	}
+	m.ParseAddPath = old
+	if err == nil {
+		err = u.parseAll(cps)
 	}
 	return err
 }
 
-func (u *Update) parseAttrs(cps caps.Caps) error {
-	var (
-		raw  = u.AttrsRaw    // all attributes
-		atyp attrs.CodeFlags // attribute type
-		alen uint16          // attribute length
-	)
+// nextAttr splits the first attribute off raw: returns its type, value, and the rest.
+// Returns ok=false if raw is empty or truncated.
+func nextAttr(raw []byte) (atyp attrs.CodeFlags, val, rest []byte, ok bool) {
+	if len(raw) < 3 {
+		return
+	}
+	atyp = attrs.CodeFlags(msb.Uint16(raw[0:2]))
+	alen, hl := int(raw[2]), 3
+	if atyp.HasFlags(attrs.ATTR_EXTENDED) {
+		if len(raw) < 4 {
+			return
+		}
+		alen, hl = int(msb.Uint16(raw[2:4])), 4
+	}
+	if len(raw) < hl+alen {
+		return
+	}
+	return atyp, raw[hl : hl+alen], raw[hl+alen:], true
+}
 
+func (u *Update) parseAttrs(cps caps.Caps) error {
 	// NB: Reset keeps Attr objects for re-use
 	ats := &u.Attrs
 	ats.Reset()
 
-	for len(raw) > 0 {
-		if len(raw) < 3 {
+	for raw := u.AttrsRaw; len(raw) > 0; {
+		atyp, buf, rest, ok := nextAttr(raw)
+		if !ok {
 			return ErrAttrs
 		}
+		raw = rest
 
-		// parse attribute type
-		atyp = attrs.CodeFlags(msb.Uint16(raw[0:2]))
 		acode := atyp.Code()
 		if ats.Has(acode) {
 			return fmt.Errorf("%s: %w", acode, ErrAttrDupe)
 		}
-
-		// parse attribute length
-		if !atyp.HasFlags(attrs.ATTR_EXTENDED) {
-			alen = uint16(raw[2])
-			raw = raw[3:]
-		} else if len(raw) < 4 {
-			return ErrParams
-		} else { // extended length
-			alen = msb.Uint16(raw[2:4])
-			raw = raw[4:]
-		}
-		if len(raw) < int(alen) {
-			return ErrAttrs
-		}
-
-		// put attribute value in buf, skip raw to next
-		buf := raw[:alen]
-		raw = raw[alen:]
 
 		// create, overwrite flags, try parsing
 		attr := ats.Use(acode)
@@ -501,19 +667,10 @@ func (u *Update) AsPath() (aspath *attrs.Aspath) {
 		default: // AS4_PATH is missing the leading part of AS_PATH
 			aspath = attrs.NewAspath(ap.CodeFlags).(*attrs.Aspath)
 
-			// start with the missing part of AS_PATH
-			diff := apl - ap4l
-			for i, hop := range ap.Hops() {
-				if i >= diff {
-					break
-				}
-				aspath.Append(hop)
-			}
-
-			// append the AS4_PATH
-			for _, hop := range ap4.Hops() {
-				aspath.Append(hop)
-			}
+			// start with the missing part of AS_PATH, then append the AS4_PATH
+			// NB: preserve AS_SETs, even with 1 member (affects the origin)
+			aspath.AppendFrom(ap, apl-ap4l)
+			aspath.AppendFrom(ap4, -1)
 		}
 	}
 

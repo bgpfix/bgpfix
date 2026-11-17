@@ -16,8 +16,8 @@ type MP struct {
 	Data  []byte  // NLRI or unreachable
 	Value MPValue // interpreted NH / Data (may be nil)
 
-	nhbuf   []byte // owned scratch buffer backing NH after Marshal
-	databuf []byte // owned scratch buffer backing Data after Marshal
+	nhbuf   []byte // owned buffer backing NH after Marshal, or Unmarshal without Value
+	databuf []byte // owned buffer backing Data after Marshal, or Unmarshal without Value
 }
 
 // MP attribute Value
@@ -72,7 +72,7 @@ func (mp *MP) Reset() {
 		mp.Value.Reset()
 	}
 
-	// nhbuf/databuf are always ours (only Marshal writes them) - keep them
+	// nhbuf/databuf are always ours - keep them
 	if cap(mp.databuf) > 1024*1024 {
 		mp.databuf = nil // NB: don't keep a huge buffer alive forever
 	}
@@ -136,6 +136,14 @@ func (mp *MP) Unmarshal(buf []byte, cps caps.Caps, mt meta.Meta) error {
 		return mp.Value.Unmarshal(cps, mt)
 	}
 
+	// NB: no Value to re-marshal NH and Data from, so copy them: they reference
+	// the message buffer, which can be overwritten by Msg.Marshal after an Edit()
+	if mp.Code() == ATTR_MP_REACH {
+		mp.nhbuf = append(mp.nhbuf[:0], mp.NH...)
+		mp.NH = mp.nhbuf
+	}
+	mp.databuf = append(mp.databuf[:0], mp.Data...)
+	mp.Data = mp.databuf
 	return nil
 }
 

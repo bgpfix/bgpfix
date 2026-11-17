@@ -26,6 +26,7 @@ type Expr struct {
 	Filter *Filter // root filter, must be non-nil
 	String string  // raw expression string
 	Types  bool    // allow message types other than UPDATE?
+	Tags   bool    // depends on message tags? (mutable by callbacks, never cached)
 
 	Not  bool  // negate the final result of this expression?
 	And  bool  // apply logical AND with the next expression? (if false, apply OR)
@@ -198,6 +199,7 @@ func (f *Filter) parse(expstr string, lvl int) (parsed *Expr, left string, err e
 			exp.Attr = ATTR_EXPR
 			for e := nexp; e != nil; e = e.Next {
 				exp.Types = exp.Types || e.Types // NB: only if a term can handle non-UPDATE
+				exp.Tags = exp.Tags || e.Tags
 			}
 			exp.Val = nexp
 			exp.Filter = f // ready for use
@@ -403,6 +405,7 @@ func (e *Expr) parseAttr(attr string) bool {
 	switch attr {
 	case "tag", "tags":
 		e.Attr = ATTR_TAG
+		e.Tags = true
 
 	case "type":
 		e.Attr = ATTR_TYPE

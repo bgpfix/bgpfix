@@ -39,6 +39,8 @@ type Pipe struct {
 	started atomic.Bool    // true iff Start() called
 	stopped atomic.Bool    // true iff Stop() called
 	wgstart sync.WaitGroup // 1 before start, 0 after start
+	estmu   sync.Mutex     // serializes checkEstablished
+	estab   bool           // true iff EVENT_ESTABLISHED emitted
 
 	evch   chan *Event           // pipe event input
 	evstop chan struct{}         // closed to stop the event handlers
@@ -134,6 +136,15 @@ func (p *Pipe) checkEstablished(ev *Event) bool {
 		return true // strange, but keep trying
 	}
 
+	// NB: this handler can run concurrently on many event goroutines, and the
+	// event senders wait for it to finish, eg. to parse UPDATEs with the new p.Caps
+	p.estmu.Lock()
+	defer p.estmu.Unlock()
+	if p.estab {
+		return false
+	}
+	p.estab = true
+
 	// find out common caps?
 	if p.Options.Caps {
 		// collect common caps into common
@@ -153,9 +164,15 @@ func (p *Pipe) checkEstablished(ev *Event) bool {
 			}
 		})
 
-		// overwrite p.Caps
-		p.Caps.Clear()
-		p.Caps.SetFrom(common)
+		// keep the pseudo-capabilities, never seen in OPENs
+		p.Caps.Each(func(i int, cc caps.Code, c caps.Cap) {
+			if cc > 0xff {
+				common.Set(cc, c)
+			}
+		})
+
+		// overwrite p.Caps; NB: concurrent parsers must never see it empty
+		p.Caps.Replace(common)
 		p.Info().Bytes("caps", p.Caps.ToJSON(nil)).Msg("negotiated session capabilities")
 	}
 
@@ -170,12 +187,18 @@ func (p *Pipe) checkEstablished(ev *Event) bool {
 func (p *Pipe) Start() error {
 	if p.started.Swap(true) {
 		return ErrStarted // already started
-	} else if p.stopped.Load() {
-		return ErrStopped // already stopped
+	}
+	defer p.wgstart.Done()
+
+	// already stopped?
+	if p.stopped.Load() {
+		p.Cancel(ErrStopped) // unblock Wait()
+		return ErrStopped
 	}
 
 	// apply options
 	if err := p.attach(); err != nil {
+		p.Cancel(err) // unblock Wait()
 		return err
 	}
 
@@ -204,7 +227,6 @@ func (p *Pipe) Start() error {
 
 	// publish the start event!
 	go p.Event(EVENT_START)
-	p.wgstart.Done()
 	return nil
 }
 
@@ -212,6 +234,8 @@ func (p *Pipe) Start() error {
 // Pipe must not be used again past this point.
 // Closes all inputs, which should eventually close all outputs,
 // possibly after this function returns.
+// Event handlers may still be running on return: use Wait() for that.
+// Stop() is safe to call from an event handler or callback.
 func (p *Pipe) Stop() {
 	if p.stopped.Swap(true) || !p.started.Load() {
 		return // already stopped, or not started yet
@@ -220,11 +244,8 @@ func (p *Pipe) Stop() {
 	// make sure Start() has finished
 	p.wgstart.Wait()
 
-	// publish the event (ignore the global context); NB: try sync first,
-	// as the async send may lose the race with close(p.evstop) below
-	if ev := (&Event{Type: EVENT_STOP}); !p.sendEvent(ev, nil, true) {
-		go p.sendEvent(ev, nil, false)
-	}
+	// publish the event; NB: ignore the global context, it may be done already
+	p.sendEvent(&Event{Type: EVENT_STOP, done: make(chan struct{})}, nil)
 
 	// close all inputs (if not done already)
 	p.L.Close()
@@ -247,9 +268,8 @@ func (p *Pipe) Stop() {
 	p.L.Wait()
 	p.R.Wait()
 
-	// stop the event handlers and wait for them to finish
+	// stop the event handlers; NB: don't wait, we may be running in one
 	close(p.evstop)
-	p.evwg.Wait()
 }
 
 // Wait blocks until the pipe starts and stops completely.
