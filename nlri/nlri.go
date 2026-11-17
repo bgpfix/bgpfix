@@ -309,11 +309,11 @@ func (p *Prefix) Marshal(dst []byte, addpath bool) []byte {
 
 // Marshal marshals prefixes in src to dst
 func Marshal(dst []byte, src []Prefix, as afi.AS, cps caps.Caps, mt meta.Meta) []byte {
-	// NB: only the message direction is taken from mt here
-	var (
-		ipv6    = as.IsIPv6()
-		addpath = cps.AddPathEnabled(as, mt.Dir)
-	)
+	// NB: mt.ParseAddPath overrides cps, as in Unmarshal
+	ipv6, addpath := as.IsIPv6(), cps.AddPathEnabled(as, mt.Dir)
+	if mt.ParseAddPath != nil {
+		addpath = mt.ParseAddPath.Has(as)
+	}
 	for _, p := range src {
 		if p.Addr().Is6() == ipv6 {
 			dst = p.Marshal(dst, addpath)

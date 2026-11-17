@@ -237,11 +237,11 @@ func TestBGP4_AddPath(t *testing.T) {
 	require.Equal(t, netip.MustParsePrefix("1.2.3.0/24"), p.Prefix)
 	require.Equal(t, nlri.PathId(7), p.Add)
 
-	// parser options are internal: they must not survive a JSON round-trip
+	// after a JSON round-trip, the Path Ids tell the ADD-PATH encoding
 	m2 := msg.NewMsg()
 	require.NoError(t, m2.FromJSON(m.GetJSON()))
 	require.Equal(t, int8(0), m2.ParseAS4)
-	require.Nil(t, m2.ParseAddPath)
+	require.True(t, m2.ParseAddPath.Has(afi.AS_IPV4_UNICAST))
 }
 
 // an unparsed IPv6 UPDATE, with ADD-PATH for IPv6 only, must be written as ADDPATH

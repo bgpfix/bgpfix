@@ -121,3 +121,22 @@ func TestAddPathGuessRollback(t *testing.T) {
 		t.Errorf("reach = %v, unreach = %v", m.Update.Reach, m.Update.Unreach)
 	}
 }
+
+// Path Ids in JSON survive marshaling to wire format and parsing a copy
+func TestAddPathFromJSON(t *testing.T) {
+	m := NewMsg()
+	err := m.FromJSON([]byte(`["R",1,"2022-01-19T16:45:01.344","UPDATE",{"reach":["#28#67.211.53.0/24"],"attrs":{"ORIGIN":{"flags":"T","value":"IGP"},"ASPATH":{"flags":"T","value":[57695]},"NEXTHOP":{"flags":"T","value":"192.0.2.1"}}}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Marshal(caps.Caps{}); err != nil {
+		t.Fatal(err)
+	}
+	c := m.CopyTo(NewMsg())
+	if err := c.Parse(caps.Caps{}); err != nil {
+		t.Fatal(err)
+	}
+	if r := c.Update.Reach; len(r) != 1 || r[0].Add != nlri.PathId(28) || r[0].Prefix.String() != "67.211.53.0/24" {
+		t.Errorf("reach = %v", r)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"net/netip"
+	"slices"
 
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/attrs"
@@ -450,7 +451,7 @@ func (u *Update) ToJSON(dst []byte) []byte {
 
 // FromJSON reads u JSON representation from src
 func (u *Update) FromJSON(src []byte) error {
-	return json.ObjectEach(src, func(key string, val []byte, typ json.Type) (err error) {
+	err := json.ObjectEach(src, func(key string, val []byte, typ json.Type) (err error) {
 		switch key {
 		case "reach":
 			u.Reach, err = nlri.FromJSON(val, u.Reach[:0])
@@ -465,6 +466,26 @@ func (u *Update) FromJSON(src []byte) error {
 		}
 		return err
 	})
+	if err != nil {
+		return err
+	}
+
+	// Path Ids in JSON mean ADD-PATH for their address family, whatever the session caps
+	var ap meta.AddPath
+	hasId := func(p nlri.Prefix) bool { return p.Add != nil }
+	if slices.ContainsFunc(u.Reach, hasId) || slices.ContainsFunc(u.Unreach, hasId) {
+		ap.AS = append(ap.AS, afi.AS_IPV4_UNICAST)
+	}
+	for _, ac := range []attrs.Code{attrs.ATTR_MP_REACH, attrs.ATTR_MP_UNREACH} {
+		mp, _ := u.Attrs.Get(ac).(*attrs.MP)
+		if p := mp.Prefixes(); p != nil && slices.ContainsFunc(p.Prefixes, hasId) && !ap.Has(mp.AS) {
+			ap.AS = append(ap.AS, mp.AS)
+		}
+	}
+	if len(ap.AS) > 0 {
+		u.Msg.ParseAddPath = &ap
+	}
+	return nil
 }
 
 // ReachMP returns raw MP-BGP attribute ATTR_MP_REACH, or nil

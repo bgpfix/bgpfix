@@ -356,13 +356,13 @@ func (msg *Msg) Marshal(cps caps.Caps) error {
 		}
 		err = u.Marshal(cps)
 
-		// NB: ParseAS4 and ADD-PATH must describe msg.Data, which now follows cps
+		// NB: ParseAS4 must describe msg.Data, which now follows cps
+		// (ParseAddPath is kept: the message keeps its ADD-PATH encoding)
 		if cps.Has(caps.CAP_AS4) {
 			msg.ParseAS4 = 1
 		} else {
 			msg.ParseAS4 = -1
 		}
-		msg.ParseAddPath = nil
 	case KEEPALIVE:
 		if msg.buf == nil {
 			msg.buf = make([]byte, 0)
