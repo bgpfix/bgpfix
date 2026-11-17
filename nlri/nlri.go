@@ -193,13 +193,25 @@ func (p *Prefix) Unmarshal(src []byte, ipv6, addpath bool) (n int, err error) {
 		return n, ErrLength
 	}
 
-	// copy what's defined, try to parse
-	var tmp [16]byte
-	n += copy(tmp[:], src[:b])
+	// copy the address, try to parse; NB: Prefix(l) masks the bytes past b,
+	// so copy a fixed size if possible: much faster (no store-forwarding stall)
+	n += b
 	if ipv6 {
+		var tmp [16]byte
+		if len(src) >= 16 {
+			tmp = [16]byte(src)
+		} else {
+			copy(tmp[:], src[:b])
+		}
 		p.Prefix, err = netip.AddrFrom16(tmp).Prefix(l)
 	} else {
-		p.Prefix, err = netip.AddrFrom4([4]byte(tmp[:])).Prefix(l)
+		var tmp [4]byte
+		if len(src) >= 4 {
+			tmp = [4]byte(src)
+		} else {
+			copy(tmp[:], src[:b])
+		}
+		p.Prefix, err = netip.AddrFrom4(tmp).Prefix(l)
 	}
 	return n, err
 }
