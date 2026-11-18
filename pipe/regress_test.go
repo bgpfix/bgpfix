@@ -310,7 +310,7 @@ func regressOpenRaw(t *testing.T, asn uint32) []byte {
 func TestTagFilterSeesCallbackTags(t *testing.T) {
 	p := newTestPipe(context.Background())
 	p.Options.OnMsg(func(m *msg.Msg) bool {
-		UseContext(m).SetTag("x", "1")
+		(&m.Tags).Set("x", "1")
 		return true
 	}, meta.DIR_R)
 	f, err := filter.NewFilter(`tag[x] == 1`)
@@ -332,8 +332,8 @@ func TestTagFilterSeesCallbackTags(t *testing.T) {
 	go drainLine(p.L)
 	p.R.WriteMsg(newKeepalive())
 	m := <-out
-	t.Logf("tags on output: %v, filtered callback hits: %d", GetTags(m), hit.Load())
-	if hit.Load() == 0 && GetTags(m)["x"] == "1" {
+	t.Logf("tags on output: %v, filtered callback hits: %d", m.Tags, hit.Load())
+	if hit.Load() == 0 && m.Tags.Get("x") == "1" {
 		t.Errorf("tag set by earlier callback not visible to later callback's tag filter")
 	}
 	p.Stop()

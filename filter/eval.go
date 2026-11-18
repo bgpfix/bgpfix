@@ -14,7 +14,6 @@ type Eval struct {
 
 	PipeKV   *xsync.Map[string, any] // pipe key-value store (can be nil)
 	PipeCaps caps.Caps               // pipe capabilities (can be nil)
-	PipeTags map[string]string       // pipe message tags (can be nil)
 
 	cached    int            // msg.Version for which the cache is valid
 	cache     map[string]Res // cached results of evaluated expressions
@@ -38,24 +37,22 @@ func (ev *Eval) SetMsg(m *msg.Msg) *Eval {
 	ev.ClearCache()
 	ev.PipeKV = nil
 	ev.PipeCaps.Reset()
-	ev.PipeTags = nil
 	return ev
 }
 
 // SetPipe sets the optional, read-only Pipe context, in a way that
 // avoids a cyclic import vs. the pipe package.
-func (ev *Eval) SetPipe(kv *xsync.Map[string, any], caps caps.Caps, tags map[string]string) *Eval {
+func (ev *Eval) SetPipe(kv *xsync.Map[string, any], caps caps.Caps) *Eval {
 	clear(ev.cache) // NB: results may depend on the pipe context
 	ev.PipeKV = kv
 	ev.PipeCaps = caps
-	ev.PipeTags = tags
 	return ev
 }
 
 // Set sets the Msg and Pipe context together, for convenience.
-func (ev *Eval) Set(m *msg.Msg, kv *xsync.Map[string, any], caps caps.Caps, tags map[string]string) *Eval {
+func (ev *Eval) Set(m *msg.Msg, kv *xsync.Map[string, any], caps caps.Caps) *Eval {
 	ev.SetMsg(m)
-	ev.SetPipe(kv, caps, tags)
+	ev.SetPipe(kv, caps)
 	return ev
 }
 

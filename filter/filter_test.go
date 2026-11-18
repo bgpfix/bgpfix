@@ -536,11 +536,9 @@ func TestEvalCommunity(t *testing.T) {
 func TestEvalTag(t *testing.T) {
 	m := newUpdate()
 	ev := NewEval(false)
+	(&m.Tags).Set("region", "eu-west")
+	(&m.Tags).Set("source", "ris-live")
 	ev.SetMsg(m)
-	ev.PipeTags = map[string]string{
-		"source": "ris-live",
-		"region": "eu-west",
-	}
 
 	f1, _ := NewFilter(`tag[source] == ris-live`)
 	assert.True(t, ev.Run(f1))
@@ -557,13 +555,14 @@ func TestEvalTag(t *testing.T) {
 	// tags work on non-UPDATE types
 	ka := msg.NewMsg()
 	ka.Switch(msg.KEEPALIVE)
+	(&ka.Tags).Set("source", "test")
 	ev.SetMsg(ka)
-	ev.PipeTags = map[string]string{"source": "test"}
 	f5, _ := NewFilter(`tag[source] == test`)
 	assert.True(t, ev.Run(f5))
 
 	// no tags
-	ev.PipeTags = nil
+	ka.Tags.Reset()
+	ev.SetMsg(ka)
 	assert.False(t, ev.Run(f4))
 }
 
@@ -966,4 +965,35 @@ func TestEvalGroupNonUpdateConsistent(t *testing.T) {
 	for _, f := range []string{`aspath ~ 1`, `!aspath ~ 1`, `(aspath ~ 1)`, `!(aspath ~ 1)`} {
 		assert.False(t, evalFilter(t, ka, f), f)
 	}
+}
+
+func TestEvalBogon(t *testing.T) {
+	m := newUpdate()
+	addReach(m, "8.8.8.0/24")
+	setAsPath(m, 3356, 15169)
+	assert.False(t, evalFilter(t, m, "bogon_asn"))
+	assert.False(t, evalFilter(t, m, "bogon_prefix"))
+
+	for _, asn := range []uint32{0, 23456, 64496, 65001, 131071, 4200000000} {
+		m := newUpdate()
+		addReach(m, "8.8.8.0/24")
+		setAsPath(m, 3356, asn, 15169)
+		assert.True(t, evalFilter(t, m, "bogon_asn"), "AS%d", asn)
+	}
+	m = newUpdate()
+	setAsPath(m, 3356, 131072)
+	assert.False(t, evalFilter(t, m, "bogon_asn"))
+
+	for _, p := range []string{"10.1.0.0/16", "192.168.1.0/24", "2001:db8::/48", "fc00::/7"} {
+		m := newUpdate()
+		addReach(m, "8.8.8.0/24", p)
+		assert.True(t, evalFilter(t, m, "bogon_prefix"), p)
+	}
+	m = newUpdate()
+	addReach(m, "0.0.0.0/0", "11.0.0.0/8") // covering a bogon block is not a bogon
+	assert.False(t, evalFilter(t, m, "bogon_prefix"))
+	assert.True(t, evalFilter(t, m, "!bogon_prefix"))
+
+	_, err := NewFilter("bogon_asn == 1")
+	assert.Error(t, err)
 }

@@ -3,6 +3,8 @@ package bmp
 import (
 	"fmt"
 	"io"
+	"net/netip"
+	"strconv"
 	"time"
 
 	"github.com/bgpfix/bgpfix/msg"
@@ -262,45 +264,32 @@ func (br *Reader) setMeta(m *msg.Msg, bmp *Bmp, obmp *OpenBmp, ps *peerState) {
 		return
 	}
 
-	// NB: format the peer tags once per peer, not per message
-	if ps == nil {
-		ps = new(peerState)
+	t, p := (&m.Tags), &bmp.Peer
+	t.PeerIP, t.PeerAS = p.Address, p.AS
+	if p.ID != 0 {
+		t.PeerID = netip.AddrFrom4([4]byte{byte(p.ID >> 24), byte(p.ID >> 16), byte(p.ID >> 8), byte(p.ID)})
 	}
-	if ps.ip == "" || ps.as != bmp.Peer.AS || ps.id != bmp.Peer.ID {
-		ps.setTags(&bmp.Peer)
+	if rib := p.Rib(); rib != "in-pre" {
+		t.Set("bmp/rib", rib) // NB: the default (pre-policy Adj-RIB-In) is not tagged
 	}
-
-	tags := pipe.UseTags(m)
-	tags["PEER_IP"] = ps.ip
-	tags["PEER_AS"] = ps.asn
-	if ps.bgpid != "" {
-		tags["PEER_ID"] = ps.bgpid
-	}
-	if rib := bmp.Peer.Rib(); rib != "in-pre" {
-		tags["BMP_RIB"] = rib // NB: the default (pre-policy Adj-RIB-In) is not tagged
-	}
-	if ps.rd != "" {
-		tags["PEER_RD"] = ps.rd
-	}
-	switch bmp.Peer.Type {
+	switch p.Type {
 	case PEER_TYPE_RD:
-		tags["PEER_TYPE"] = "rd"
+		t.Set("bmp/type", "rd")
 	case PEER_TYPE_LOCAL:
-		tags["PEER_TYPE"] = "local"
+		t.Set("bmp/type", "local")
 	}
-	if br.Router != "" {
-		tags["ROUTER"] = br.Router
+	if p.RD != 0 || p.Type == PEER_TYPE_RD || p.Type == PEER_TYPE_LOCAL { // NB: FromMsg needs bmp/rd for bmp/type
+		t.Set("bmp/rd", strconv.FormatUint(p.RD, 16))
 	}
+	t.Router = br.Router
 
 	// Add OpenBMP metadata if available
 	if br.OpenBMP && obmp != nil {
-		if obmp.CollectorName != "" {
-			tags["COLLECTOR"] = obmp.CollectorName
-		}
+		t.Collector = obmp.CollectorName
 		if obmp.RouterName != "" {
-			tags["ROUTER"] = obmp.RouterName
+			t.Router = obmp.RouterName
 		} else if obmp.RouterIP.IsValid() && !obmp.RouterIP.IsUnspecified() {
-			tags["ROUTER"] = obmp.RouterIP.String()
+			t.Router = obmp.RouterIP.String()
 		}
 	}
 }

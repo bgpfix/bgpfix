@@ -61,6 +61,7 @@ func NewPipe(ctx context.Context) *Pipe {
 
 	p.Caps.Init() // NB: makes it thread-safe
 	p.KV = xsync.NewMap[string, any]()
+	p.msgpool = new(sync.Pool) // NB: Options.MsgPool can override it in Start()
 
 	p.R = &Line{
 		Pipe: p,
@@ -105,8 +106,6 @@ func (p *Pipe) attach() error {
 
 	if opts.MsgPool != nil {
 		p.msgpool = opts.MsgPool
-	} else {
-		p.msgpool = new(sync.Pool)
 	}
 
 	// attach Inputs to Lines
@@ -310,7 +309,7 @@ func (p *Pipe) PutMsg(m *msg.Msg) {
 
 	// do not re-use?
 	mx := UseContext(m)
-	if mx.Action.Has(ACTION_BORROW) {
+	if mx.Action.Has(ACTION_REF) {
 		return
 	}
 

@@ -11,7 +11,6 @@ import (
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
-	"github.com/bgpfix/bgpfix/pipe"
 )
 
 // from https://www.iana.org/assignments/mrt/mrt.xhtml
@@ -109,37 +108,22 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg, cps caps.Caps) error {
 		}
 	}
 
-	// m has Context with tags?
-	if tags := pipe.GetTags(m); len(tags) > 0 {
-		if s := tags["PEER_AS"]; len(s) > 0 {
-			v, err := strconv.ParseUint(s, 10, 32)
-			if err == nil {
-				b4.PeerAS = uint32(v)
-			}
+	// copy BGP4MP metadata from tags
+	if t := &m.Tags; true {
+		if t.PeerAS != 0 {
+			b4.PeerAS = t.PeerAS
 		}
-		if s := tags["PEER_IP"]; len(s) > 0 {
-			v, err := netip.ParseAddr(s)
-			if err == nil {
-				b4.PeerIP = v
-			}
+		if t.LocalAS != 0 {
+			b4.LocalAS = t.LocalAS
 		}
-		if s := tags["LOCAL_AS"]; len(s) > 0 {
-			v, err := strconv.ParseUint(s, 10, 32)
-			if err == nil {
-				b4.LocalAS = uint32(v)
-			}
+		if t.PeerIP.IsValid() {
+			b4.PeerIP = t.PeerIP
 		}
-		if s := tags["LOCAL_IP"]; len(s) > 0 {
-			v, err := netip.ParseAddr(s)
-			if err == nil {
-				b4.LocalIP = v
-			}
+		if t.LocalIP.IsValid() {
+			b4.LocalIP = t.LocalIP
 		}
-		if s := tags["INTERFACE"]; len(s) > 0 {
-			v, err := strconv.ParseUint(s, 10, 16)
-			if err == nil {
-				b4.Interface = uint16(v)
-			}
+		if v, err := strconv.ParseUint(t.Get("mrt/interface"), 10, 16); err == nil {
+			b4.Interface = uint16(v)
 		}
 	}
 
@@ -176,21 +160,16 @@ func (b4 *Bgp4) ToMsg(m *msg.Msg, notags bool) error {
 
 	// copy BGP4MP metadata?
 	if !notags {
-		tags := pipe.UseContext(m).UseTags()
-		if b4.PeerAS != 0 {
-			tags["PEER_AS"] = strconv.FormatUint(uint64(b4.PeerAS), 10)
+		t := (&m.Tags)
+		t.PeerAS, t.LocalAS = b4.PeerAS, b4.LocalAS
+		if b4.PeerIP.IsValid() && !b4.PeerIP.IsUnspecified() {
+			t.PeerIP = b4.PeerIP
 		}
-		if !b4.PeerIP.IsUnspecified() {
-			tags["PEER_IP"] = b4.PeerIP.String()
-		}
-		if b4.LocalAS != 0 {
-			tags["LOCAL_AS"] = strconv.FormatUint(uint64(b4.LocalAS), 10)
-		}
-		if !b4.LocalIP.IsUnspecified() {
-			tags["LOCAL_IP"] = b4.LocalIP.String()
+		if b4.LocalIP.IsValid() && !b4.LocalIP.IsUnspecified() {
+			t.LocalIP = b4.LocalIP
 		}
 		if b4.Interface != 0 {
-			tags["INTERFACE"] = strconv.FormatUint(uint64(b4.Interface), 10)
+			t.Set("mrt/interface", strconv.FormatUint(uint64(b4.Interface), 10))
 		}
 	}
 

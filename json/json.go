@@ -154,7 +154,14 @@ func Utf8(dst, src []byte) []byte {
 
 // appendEscaped appends src to JSON string in dst, escaping bytes >= 0x80 unless utf is true
 func appendEscaped(dst, src []byte, utf bool) []byte {
-	for _, c := range src {
+	// fast path: nothing to escape (the usual case)
+	i := 0
+	for i < len(src) && src[i] >= 0x20 && src[i] <= 0x7e && src[i] != '"' && src[i] != '\\' {
+		i++
+	}
+	dst = append(dst, src[:i]...)
+
+	for _, c := range src[i:] {
 		switch c {
 		case '"', '\\':
 			dst = append(dst, '\\', c)

@@ -164,7 +164,7 @@ func (et *ExtcomType) FromJSON(src []byte) error {
 	return nil
 }
 
-func (a *Extcom) Unmarshal(buf []byte, cps caps.Caps, _ meta.Meta) error {
+func (a *Extcom) Unmarshal(buf []byte, cps caps.Caps, _ *meta.Meta) error {
 	exp := len(buf) / 8
 	if len(a.Type) == 0 && cap(a.Type) < exp {
 		a.Type = make([]ExtcomType, 0, exp)
@@ -192,7 +192,7 @@ func (a *Extcom) Unmarshal(buf []byte, cps caps.Caps, _ meta.Meta) error {
 	return nil
 }
 
-func (a *Extcom) Marshal(dst []byte, cps caps.Caps, _ meta.Meta) []byte {
+func (a *Extcom) Marshal(dst []byte, cps caps.Caps, _ *meta.Meta) []byte {
 	tl := 8 * len(a.Type)
 	dst = a.CodeFlags.MarshalLen(dst, tl)
 	for i := range a.Type {

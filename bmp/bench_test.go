@@ -90,7 +90,7 @@ func BenchmarkFromMsg(b *testing.B) {
 		bm.FromBytes(rm)
 		m.FromBytes(bm.BgpData)
 		m.CopyData()
-		pipe.UseTags(m)["PEER_IP"] = bm.Peer.Address.String()
+		(&m.Tags).Set("PEER_IP", bm.Peer.Address.String())
 		ms = append(ms, m)
 	}
 	var cps caps.Caps

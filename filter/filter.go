@@ -51,29 +51,31 @@ const (
 )
 
 const (
-	ATTR_EXPR        Attr = iota // sub-expression in value (nested)
-	ATTR_TAG                     // message tag (from pipe context)
-	ATTR_TYPE                    // BGP message type
-	ATTR_AF                      // address family / subsequent address family
-	ATTR_REACH                   // reachable prefixes
-	ATTR_UNREACH                 // unreachable prefixes
-	ATTR_PREFIX                  // prefix, either reachable or unreachable
-	ATTR_ASPATH                  // AS_PATH attribute
-	ATTR_ASPATH_LEN              // AS_PATH length
-	ATTR_ASPATH_HOPS             // AS_PATH unique hop count (ignore prepending)
-	ATTR_NEXTHOP                 // NEXT_HOP attribute
-	ATTR_ORIGIN                  // ORIGIN attribute (IGP/EGP/INCOMPLETE)
-	ATTR_MED                     // MULTI_EXIT_DISC attribute
-	ATTR_LOCALPREF               // LOCAL_PREF attribute
-	ATTR_COMM                    // COMMUNITY attribute
-	ATTR_COMM_EXT                // EXTENDED_COMMUNITY attribute
-	ATTR_COMM_LARGE              // LARGE_COMMUNITY attribute
-	ATTR_OTC                     // OTC attribute (Only To Customer, RFC 9234)
-	ATTR_DIR                     // message direction (L/R)
-	ATTR_SEQ                     // message sequence number
-	ATTR_TIME                    // message timestamp
-	ATTR_JSON                    // generic JSON path extractor
-	ATTR_JATTR                   // attribute-specific JSON extractor
+	ATTR_EXPR         Attr = iota // sub-expression in value (nested)
+	ATTR_TAG                      // message tag (from pipe context)
+	ATTR_TYPE                     // BGP message type
+	ATTR_AF                       // address family / subsequent address family
+	ATTR_REACH                    // reachable prefixes
+	ATTR_UNREACH                  // unreachable prefixes
+	ATTR_PREFIX                   // prefix, either reachable or unreachable
+	ATTR_ASPATH                   // AS_PATH attribute
+	ATTR_ASPATH_LEN               // AS_PATH length
+	ATTR_ASPATH_HOPS              // AS_PATH unique hop count (ignore prepending)
+	ATTR_NEXTHOP                  // NEXT_HOP attribute
+	ATTR_ORIGIN                   // ORIGIN attribute (IGP/EGP/INCOMPLETE)
+	ATTR_MED                      // MULTI_EXIT_DISC attribute
+	ATTR_LOCALPREF                // LOCAL_PREF attribute
+	ATTR_COMM                     // COMMUNITY attribute
+	ATTR_COMM_EXT                 // EXTENDED_COMMUNITY attribute
+	ATTR_COMM_LARGE               // LARGE_COMMUNITY attribute
+	ATTR_OTC                      // OTC attribute (Only To Customer, RFC 9234)
+	ATTR_DIR                      // message direction (L/R)
+	ATTR_SEQ                      // message sequence number
+	ATTR_TIME                     // message timestamp
+	ATTR_JSON                     // generic JSON path extractor
+	ATTR_JATTR                    // attribute-specific JSON extractor
+	ATTR_BOGON_ASN                // a bogon ASN in AS_PATH
+	ATTR_BOGON_PREFIX             // a bogon prefix announced
 )
 
 const (
@@ -430,6 +432,11 @@ func (e *Expr) parseAttr(attr string) bool {
 		e.Op = OP_EQ
 		e.Val = msg.REFRESH
 
+	case "bogon_asn":
+		e.Attr = ATTR_BOGON_ASN
+	case "bogon_prefix":
+		e.Attr = ATTR_BOGON_PREFIX
+
 	case "reach":
 		e.Attr = ATTR_REACH
 	case "unreach":
@@ -540,6 +547,8 @@ func (e *Expr) parseCheck() error {
 		return e.timeParse()
 	case ATTR_JSON, ATTR_JATTR:
 		return e.jsonParse()
+	case ATTR_BOGON_ASN, ATTR_BOGON_PREFIX:
+		return e.bogonParse()
 	default:
 		return fmt.Errorf("unsupported attribute")
 	}
@@ -583,6 +592,10 @@ func (e *Expr) eval(ev *Eval) (res Res) {
 		res = e.timeEval(ev)
 	case ATTR_JSON, ATTR_JATTR:
 		res = e.jsonEval(ev)
+	case ATTR_BOGON_ASN:
+		res = e.bogonAsnEval(ev)
+	case ATTR_BOGON_PREFIX:
+		res = e.bogonPrefixEval(ev)
 	default:
 		panic("not implemented")
 	}

@@ -1,10 +1,13 @@
 package msg
 
 import (
+	"bytes"
+	"net/netip"
 	"strings"
 	"testing"
 
 	"github.com/bgpfix/bgpfix/afi"
+	"github.com/bgpfix/bgpfix/attrs"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/nlri"
 )
@@ -119,5 +122,88 @@ func TestAddPathGuessRollback(t *testing.T) {
 	}
 	if len(m.Update.Reach) != 5 || len(m.Update.Unreach) != 1 {
 		t.Errorf("reach = %v, unreach = %v", m.Update.Reach, m.Update.Unreach)
+	}
+}
+
+// Path Ids in JSON survive marshaling to wire format and parsing a copy
+func TestAddPathFromJSON(t *testing.T) {
+	m := NewMsg()
+	err := m.FromJSON([]byte(`["R",1,"2022-01-19T16:45:01.344","UPDATE",{"reach":["#28#67.211.53.0/24"],"attrs":{"ORIGIN":{"flags":"T","value":"IGP"},"ASPATH":{"flags":"T","value":[57695]},"NEXTHOP":{"flags":"T","value":"192.0.2.1"}}}]`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Marshal(caps.Caps{}); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	m.WriteTo(&buf)
+	c := NewMsg()
+	c.ParseAddPath = m.ParseAddPath
+	if _, err := c.FromBytes(buf.Bytes()); err != nil {
+		t.Fatal(err)
+	} else if err := c.Parse(caps.Caps{}); err != nil {
+		t.Fatal(err)
+	}
+	if r := c.Update.Reach; len(r) != 1 || r[0].Add != nlri.PathId(28) || r[0].Prefix.String() != "67.211.53.0/24" {
+		t.Errorf("reach = %v", r)
+	}
+}
+
+// Withdraw turns an UPDATE into a pure withdrawal of all its prefixes
+func TestUpdateWithdraw(t *testing.T) {
+	m := NewMsg().Switch(UPDATE)
+	u := &m.Update
+	u.Attrs.Use(attrs.ATTR_ORIGIN)
+	u.AddReach(nlri.FromPrefix(netip.MustParsePrefix("192.0.2.0/24")), nlri.FromPrefix(netip.MustParsePrefix("2001:db8::/32")))
+	u.ReachMP().Value.(*attrs.MPPrefixes).NextHop = netip.MustParseAddr("2001:db8::1")
+	u.AddUnreach(nlri.FromPrefix(netip.MustParsePrefix("198.51.100.0/24")))
+	u.Withdraw()
+	if err := m.Marshal(caps.Caps{}); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	m.WriteTo(&buf)
+	c := NewMsg()
+	if _, err := c.FromBytes(buf.Bytes()); err != nil {
+		t.Fatal(err)
+	} else if err := c.Parse(caps.Caps{}); err != nil {
+		t.Fatal(err)
+	}
+	if r := c.Update.AllReach(); len(r) != 0 {
+		t.Errorf("reach = %v", r)
+	}
+	if w := c.Update.AllUnreach(); len(w) != 3 {
+		t.Errorf("unreach = %v", w)
+	}
+	if n := c.Update.Attrs.Len(); n != 1 {
+		t.Errorf("%d attributes, want only MP_UNREACH", n)
+	}
+}
+
+// Withdraw of a Flowspec announcement withdraws the same rule
+func TestUpdateWithdrawFlowspec(t *testing.T) {
+	m := NewMsg()
+	m.Type = UPDATE
+	m.Data = []byte{0, 0, 0, 19,
+		0x40, 1, 1, 0, // ORIGIN
+		0x40, 2, 0, // AS_PATH
+		0x80, 14, 9, 0, 1, 133, 0, 0, 3, 1, 8, 10} // MP_REACH IPv4 Flowspec: dst 10.0.0.0/8
+	if err := m.Parse(caps.Caps{}); err != nil {
+		t.Fatal(err)
+	}
+	m.Update.Withdraw()
+	if err := m.Marshal(caps.Caps{}); err != nil {
+		t.Fatal(err)
+	}
+
+	c := NewMsg()
+	c.Type, c.Data = UPDATE, m.Data
+	if err := c.Parse(caps.Caps{}); err != nil {
+		t.Fatal(err)
+	}
+	un := c.Update.UnreachMP()
+	if c.Update.ReachMP() != nil || un == nil || un.AS != afi.AS_IPV4_FLOWSPEC || !bytes.Equal(un.Data, []byte{3, 1, 8, 10}) {
+		t.Errorf("got %s", c.GetJSON())
 	}
 }

@@ -29,7 +29,7 @@ type Msg struct {
 
 	// metadata
 
-	meta.Meta // Dir, Seq, Time + parser options
+	meta.Meta // Dir, Seq, Time, parser options, tags
 
 	// raw contents
 
@@ -44,17 +44,8 @@ type Msg struct {
 
 	// for optional use beyond this pkg, eg. to store pipe.Context
 
-	Version int   // contents version number, incremented on each change
-	Value   Value // attached value, NOTE: this is *NOT* affected by Reset()
-}
-
-// Value represents an optional, arbitrary value attached to a message
-type Value interface {
-	// ToJSON appends JSON representation of the value to dst
-	ToJSON(dst []byte) []byte
-
-	// FromJSON reads from JSON representation in src
-	FromJSON(src []byte) error
+	Version int // contents version number, incremented on each change
+	Value   any // attached value, NOTE: this is *NOT* affected by Reset()
 }
 
 // BGP message type
@@ -343,13 +334,13 @@ func (msg *Msg) Marshal(cps caps.Caps) error {
 		}
 		err = u.Marshal(cps)
 
-		// NB: ParseAS4 and ADD-PATH must describe msg.Data, which now follows cps
+		// NB: ParseAS4 must describe msg.Data, which now follows cps
+		// (ParseAddPath is kept: the message keeps its ADD-PATH encoding)
 		if cps.Has(caps.CAP_AS4) {
 			msg.ParseAS4 = 1
 		} else {
 			msg.ParseAS4 = -1
 		}
-		msg.ParseAddPath = nil
 	case KEEPALIVE:
 		if msg.buf == nil {
 			msg.buf = make([]byte, 0)
@@ -454,13 +445,9 @@ func (msg *Msg) GetJSON() []byte {
 	}
 	up_till := len(dst)
 
-	// [5] value
+	// [5] tags
 	dst = append(dst, ',')
-	if msg.Value != nil {
-		dst = msg.Value.ToJSON(dst)
-	} else {
-		dst = append(dst, json.Null...)
-	}
+	dst = msg.Tags.ToJSON(dst)
 
 	// done!
 	msg.json = append(dst, "]\n"...)
@@ -469,7 +456,7 @@ func (msg *Msg) GetJSON() []byte {
 }
 
 // DropJSON drops the cached JSON and bumps msg.Version (eg. after changing
-// tags in msg.Value), without touching the wire representation (unlike Edit)
+// tags), without touching the wire representation (unlike Edit)
 func (msg *Msg) DropJSON() {
 	msg.json = msg.json[:0]
 	msg.Version++
@@ -555,9 +542,9 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 				return ErrValue
 			}
 
-		case 5: // value
-			if msg.Value != nil && len(val) > 0 {
-				err = msg.Value.FromJSON(val)
+		case 5: // tags
+			if typ == json.OBJECT {
+				err = msg.Tags.FromJSON(val)
 			}
 		}
 		return err

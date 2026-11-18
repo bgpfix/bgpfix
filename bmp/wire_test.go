@@ -15,7 +15,6 @@ import (
 
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/msg"
-	"github.com/bgpfix/bgpfix/pipe"
 	"github.com/stretchr/testify/require"
 )
 
@@ -1683,9 +1682,9 @@ func TestBmp_FromMsg_WithTags(t *testing.T) {
 	require.NoError(t, m.Marshal(caps.Caps{}))
 
 	// Add peer tags
-	tags := pipe.UseTags(m)
-	tags["PEER_IP"] = "192.0.2.1"
-	tags["PEER_AS"] = "65001"
+	tags := (&m.Tags)
+	tags.Set("PEER_IP", "192.0.2.1")
+	tags.Set("PEER_AS", "65001")
 
 	// Convert to BMP
 	bm := NewBmp()
@@ -1713,9 +1712,9 @@ func TestBmp_FromMsg_IPv6Peer(t *testing.T) {
 	require.NoError(t, m.Marshal(caps.Caps{}))
 
 	// Add IPv6 peer tags
-	tags := pipe.UseTags(m)
-	tags["PEER_IP"] = "2001:db8::1"
-	tags["PEER_AS"] = "4200000001"
+	tags := (&m.Tags)
+	tags.Set("PEER_IP", "2001:db8::1")
+	tags.Set("PEER_AS", "4200000001")
 
 	// Convert to BMP
 	bm := NewBmp()
@@ -1793,9 +1792,9 @@ func TestOpenBmp_FromBmp_WithTags(t *testing.T) {
 	require.NoError(t, m.Marshal(caps.Caps{}))
 
 	// Add collector/router tags
-	tags := pipe.UseTags(m)
-	tags["COLLECTOR"] = "route-views.collector"
-	tags["ROUTER"] = "10.0.0.1"
+	tags := (&m.Tags)
+	tags.Set("COLLECTOR", "route-views.collector")
+	tags.Set("ROUTER", "10.0.0.1")
 
 	// Convert to BMP
 	bm := NewBmp()
@@ -1827,8 +1826,8 @@ func TestOpenBmp_FromBmp_RouterName(t *testing.T) {
 	require.NoError(t, m.Marshal(caps.Caps{}))
 
 	// Add router name tag
-	tags := pipe.UseTags(m)
-	tags["ROUTER"] = "router1.example.com"
+	tags := (&m.Tags)
+	tags.Set("ROUTER", "router1.example.com")
 
 	// Convert to BMP
 	bm := NewBmp()

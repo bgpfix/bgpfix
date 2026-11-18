@@ -217,7 +217,7 @@ func (p *Prefix) Unmarshal(src []byte, ipv6, addpath bool) (n int, err error) {
 }
 
 // Unmarshal unmarshals IP prefixes from src into dst
-func Unmarshal(dst []Prefix, src []byte, as afi.AS, cps caps.Caps, mt meta.Meta) ([]Prefix, error) {
+func Unmarshal(dst []Prefix, src []byte, as afi.AS, cps caps.Caps, mt *meta.Meta) ([]Prefix, error) {
 	var (
 		ipv6    = as.IsIPv6()
 		dir     = mt.Dir
@@ -308,12 +308,12 @@ func (p *Prefix) Marshal(dst []byte, addpath bool) []byte {
 }
 
 // Marshal marshals prefixes in src to dst
-func Marshal(dst []byte, src []Prefix, as afi.AS, cps caps.Caps, mt meta.Meta) []byte {
-	// NB: only the message direction is taken from mt here
-	var (
-		ipv6    = as.IsIPv6()
-		addpath = cps.AddPathEnabled(as, mt.Dir)
-	)
+func Marshal(dst []byte, src []Prefix, as afi.AS, cps caps.Caps, mt *meta.Meta) []byte {
+	// NB: mt.ParseAddPath overrides cps, as in Unmarshal
+	ipv6, addpath := as.IsIPv6(), cps.AddPathEnabled(as, mt.Dir)
+	if mt.ParseAddPath != nil {
+		addpath = mt.ParseAddPath.Has(as)
+	}
 	for _, p := range src {
 		if p.Addr().Is6() == ipv6 {
 			dst = p.Marshal(dst, addpath)

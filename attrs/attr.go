@@ -26,11 +26,11 @@ type Attr interface {
 
 	// Unmarshal parses wire representation from src, given session capabilities
 	// in cps and message metadata in mt (zero value means no metadata)
-	Unmarshal(src []byte, cps caps.Caps, mt meta.Meta) error
+	Unmarshal(src []byte, cps caps.Caps, mt *meta.Meta) error
 
 	// Marshal appends wire representation to dst: type(16), length(8/16), and value,
 	// given session capabilities in cps and message metadata in mt
-	Marshal(dst []byte, cps caps.Caps, mt meta.Meta) []byte
+	Marshal(dst []byte, cps caps.Caps, mt *meta.Meta) []byte
 
 	// ToJSON appends JSON representation of the value to dst
 	ToJSON(dst []byte) []byte
@@ -170,17 +170,15 @@ func (cf CodeFlags) HasFlags(af Flags) bool {
 	return Flags(cf>>8)&af != 0
 }
 
-// MarshalLen appends to dst attribute flags, code, and length
-// FIXME: switch to always extended and write real length after (defer retfunc?)
+// MarshalLen appends to dst attribute flags, code, and length.
+// Uses the extended length if needed, or if already set (so re-marshaling is lossless).
 func (cf CodeFlags) MarshalLen(dst []byte, length int) []byte {
 	flags := cf.Flags()
 	if length > 0xff {
 		flags |= ATTR_EXTENDED
-	} else {
-		flags &= ^ATTR_EXTENDED
 	}
 	dst = append(dst, byte(flags), byte(cf.Code()))
-	if length > 0xff {
+	if flags&ATTR_EXTENDED != 0 {
 		dst = msb.AppendUint16(dst, uint16(length))
 	} else {
 		dst = append(dst, byte(length))
