@@ -632,11 +632,8 @@ func (u *Update) HasUnreach() bool {
 // announced prefixes are moved to withdrawn, and other attributes are dropped
 // (RFC 4271 section 4.3). Marks the message as edited.
 func (u *Update) Withdraw() {
-	reach := slices.Clone(u.Reach)
+	reach := slices.Clone(u.AllReach()) // NB: clone, the dropped MP_REACH may be re-used
 	u.Reach = nil
-	if mp := u.ReachMP().Prefixes(); mp != nil {
-		reach = append(reach, mp.Prefixes...)
-	}
 	u.Attrs.Drop(attrs.ATTR_MP_REACH)
 	u.Msg.Edit() // NB: before AddUnreach, to invalidate the cached AllReach()
 	u.AddUnreach(reach...)
