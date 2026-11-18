@@ -20,7 +20,7 @@ func TestTake(t *testing.T) {
 			return true // sent again: pass
 		}
 		(&m.Tags).Set("held", "yes")
-		mx.Take()
+		Take(m)
 		held <- m
 		return false
 	}, meta.DIR_R)

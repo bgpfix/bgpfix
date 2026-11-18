@@ -30,10 +30,11 @@ func GetContext(m *msg.Msg) *Context {
 	return mx
 }
 
-// Take takes the message from the pipe: when the callback returns, the pipe forgets
-// it, and you own it. Eg. hold it and send it later with Input.WriteMsg, which
-// processes it as new, or drop it with Pipe.PutMsg. Call only from a callback.
-func (mx *Context) Take() {
+// Take takes m from the pipe: when the callback returns, the pipe forgets m, and
+// you own it. Eg. hold it and send it later with Input.WriteMsg, which processes
+// it as new, or drop it with Pipe.PutMsg. Call only from the callback of m.
+func Take(m *msg.Msg) {
+	mx := UseContext(m)
 	mx.Action |= ACTION_TAKE
 	mx.Input.taken = true
 }
