@@ -111,7 +111,7 @@ func TestWriter(t *testing.T) {
 	_, err := m.FromBytes(addpathUpdate)
 	require.NoError(t, err)
 	m.ParseAddPath = meta.AddPathOn
-	m.UseTags().Set("PEER_IP", "10.0.0.1")
+	(&m.Tags).Set("PEER_IP", "10.0.0.1")
 
 	b := NewBmp()
 	require.NoError(t, b.FromMsg(m, cps))

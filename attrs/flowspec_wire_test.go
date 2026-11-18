@@ -185,7 +185,7 @@ func TestMPFlowspec_RuleLength(t *testing.T) {
 			fs.Rules = []FlowRule{rule}
 
 			// Marshal
-			fs.Marshal(cps, meta.Meta{})
+			fs.Marshal(cps, &meta.Meta{})
 
 			// Check the length header
 			require.True(t, len(mp.Data) >= len(tt.wantHead))
@@ -215,12 +215,12 @@ func TestFlowspec_EmptyRule(t *testing.T) {
 		{}, // empty - should be skipped
 	}
 
-	fs.Marshal(cps, meta.Meta{})
+	fs.Marshal(cps, &meta.Meta{})
 
 	// Parse back
 	fs2 := NewMPFlowspec(mp).(*MPFlowspec)
 	mp.Value = fs2
-	err := fs2.Unmarshal(cps, meta.Meta{})
+	err := fs2.Unmarshal(cps, &meta.Meta{})
 	require.NoError(t, err)
 	require.Len(t, fs2.Rules, 1) // only non-empty rule
 }
@@ -390,8 +390,8 @@ func TestMPFlowspec_JSON_Roundtrip(t *testing.T) {
 	require.Len(t, fs2.Rules, 1)
 
 	// Wire round-trip
-	fs.Marshal(cps, meta.Meta{})
-	fs2.Marshal(cps, meta.Meta{})
+	fs.Marshal(cps, &meta.Meta{})
+	fs2.Marshal(cps, &meta.Meta{})
 	require.True(t, bytes.Equal(mp.Data, mp2.Data))
 }
 
@@ -427,7 +427,7 @@ func TestFlowspec_TruncatedPrefix(t *testing.T) {
 	for _, af := range []byte{1, 2} {
 		mp := NewMP(CodeFlags(ATTR_MP_REACH)).(*MP)
 		buf := []byte{0, af, 133, 0, 0, 1, 1} // nh len=0, reserved, rule len=1, type=DST_PREFIX
-		require.Error(t, mp.Unmarshal(buf, caps.Caps{}, meta.Meta{}))
+		require.Error(t, mp.Unmarshal(buf, caps.Caps{}, &meta.Meta{}))
 	}
 }
 

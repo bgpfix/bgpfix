@@ -298,7 +298,7 @@ func (ap *Aspath) IsValid() bool {
 	return ap != nil && len(ap.Segments) > 0 && len(ap.Segments[0].List) > 0
 }
 
-func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, mt meta.Meta) error {
+func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, mt *meta.Meta) error {
 	// support an actually common case: empty AS_PATH
 	if len(raw) == 0 {
 		return nil
@@ -369,7 +369,7 @@ func (a *Aspath) Unmarshal(raw []byte, cps caps.Caps, mt meta.Meta) error {
 	}
 }
 
-func (a *Aspath) Marshal(dst []byte, cps caps.Caps, _ meta.Meta) []byte {
+func (a *Aspath) Marshal(dst []byte, cps caps.Caps, _ *meta.Meta) []byte {
 	// asn length, NB: not affected by meta - it pertains to parsing only
 	asnlen := 2
 	if a.Code() == ATTR_AS4PATH || cps.Has(caps.CAP_AS4) {

@@ -74,7 +74,7 @@ func TestExtcom_DropMarshal(t *testing.T) {
 	require.Equal(t, 1, ec.Len())
 
 	// attribute header + exactly one 8-byte value
-	out := ec.Marshal(nil, caps.Caps{}, meta.Meta{})
+	out := ec.Marshal(nil, caps.Caps{}, &meta.Meta{})
 	require.Len(t, out, 3+8)
 	require.EqualValues(t, 8, out[2])
 }
@@ -93,6 +93,6 @@ func TestAttrs_JSONRangeAndFamily(t *testing.T) {
 
 	// 2-byte ASN fields get AS_TRANS, not a truncated ASN
 	ag.ASN = 4200000000
-	out := ag.Marshal(nil, caps.Caps{}, meta.Meta{})
+	out := ag.Marshal(nil, caps.Caps{}, &meta.Meta{})
 	require.Equal(t, []byte{0x5b, 0xa0}, out[3:5])
 }

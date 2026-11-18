@@ -536,8 +536,8 @@ func TestEvalCommunity(t *testing.T) {
 func TestEvalTag(t *testing.T) {
 	m := newUpdate()
 	ev := NewEval(false)
-	m.UseTags().Set("region", "eu-west")
-	m.UseTags().Set("source", "ris-live")
+	(&m.Tags).Set("region", "eu-west")
+	(&m.Tags).Set("source", "ris-live")
 	ev.SetMsg(m)
 
 	f1, _ := NewFilter(`tag[source] == ris-live`)
@@ -555,7 +555,7 @@ func TestEvalTag(t *testing.T) {
 	// tags work on non-UPDATE types
 	ka := msg.NewMsg()
 	ka.Switch(msg.KEEPALIVE)
-	ka.UseTags().Set("source", "test")
+	(&ka.Tags).Set("source", "test")
 	ev.SetMsg(ka)
 	f5, _ := NewFilter(`tag[source] == test`)
 	assert.True(t, ev.Run(f5))

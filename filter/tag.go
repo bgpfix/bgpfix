@@ -36,7 +36,7 @@ func (e *Expr) tagParse() error {
 }
 
 func (e *Expr) tagEval(ev *Eval) Res {
-	tags := ev.Msg.Tags
+	tags := &ev.Msg.Tags
 
 	// check_val checks specific tag value
 	check_val := func(val string) bool {

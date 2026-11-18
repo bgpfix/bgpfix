@@ -19,7 +19,7 @@ func TestTake(t *testing.T) {
 		if mx.Input == again {
 			return true // sent again: pass
 		}
-		m.UseTags().Set("held", "yes")
+		(&m.Tags).Set("held", "yes")
 		mx.Take()
 		held <- m
 		return false

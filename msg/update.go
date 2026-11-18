@@ -97,7 +97,7 @@ func (u *Update) Parse(cps caps.Caps) error {
 	// announced routes
 	if len(buf) > 0 {
 		var err error
-		u.Reach, err = nlri.Unmarshal(u.Reach, buf, afi.AS_IPV4_UNICAST, cps, u.Msg.Meta)
+		u.Reach, err = nlri.Unmarshal(u.Reach, buf, afi.AS_IPV4_UNICAST, cps, &u.Msg.Meta)
 		if err != nil {
 			return err
 		}
@@ -106,7 +106,7 @@ func (u *Update) Parse(cps caps.Caps) error {
 	// withdrawn routes
 	if len(withdrawn) > 0 {
 		var err error
-		u.Unreach, err = nlri.Unmarshal(u.Unreach, withdrawn, afi.AS_IPV4_UNICAST, cps, u.Msg.Meta)
+		u.Unreach, err = nlri.Unmarshal(u.Unreach, withdrawn, afi.AS_IPV4_UNICAST, cps, &u.Msg.Meta)
 		if err != nil {
 			return err
 		}
@@ -229,7 +229,7 @@ func (u *Update) parseAttrs(cps caps.Caps) error {
 		// create, overwrite flags, try parsing
 		attr := ats.Use(acode)
 		attr.SetFlags(atyp.Flags())
-		if err := attr.Unmarshal(buf, cps, u.Msg.Meta); err != nil {
+		if err := attr.Unmarshal(buf, cps, &u.Msg.Meta); err != nil {
 			return fmt.Errorf("%s: %w", acode, err)
 		}
 	}
@@ -245,7 +245,7 @@ func (u *Update) MarshalAttrs(cps caps.Caps) error {
 	// marshal one-by-one
 	raw := u.attrsBuf[:0]
 	u.Attrs.Each(func(i int, ac attrs.Code, at attrs.Attr) {
-		raw = at.Marshal(raw, cps, u.Msg.Meta)
+		raw = at.Marshal(raw, cps, &u.Msg.Meta)
 	})
 	u.attrsBuf = raw
 	u.AttrsRaw = raw
@@ -259,7 +259,7 @@ func (u *Update) Marshal(cps caps.Caps) error {
 
 	// withdrawn routes
 	buf = append(buf, 0, 0) // length (tbd [1])
-	buf = nlri.Marshal(buf, u.Unreach, afi.AS_IPV4_UNICAST, cps, u.Msg.Meta)
+	buf = nlri.Marshal(buf, u.Unreach, afi.AS_IPV4_UNICAST, cps, &u.Msg.Meta)
 	if l := len(buf) - 2; l > math.MaxUint16 {
 		return fmt.Errorf("Marshal: too long Withdrawn Routes: %w (%d)", ErrLength, l)
 	} else if l > 0 {
@@ -274,7 +274,7 @@ func (u *Update) Marshal(cps caps.Caps) error {
 	buf = append(buf, u.AttrsRaw...)
 
 	// announced routes
-	buf = nlri.Marshal(buf, u.Reach, afi.AS_IPV4_UNICAST, cps, msg.Meta)
+	buf = nlri.Marshal(buf, u.Reach, afi.AS_IPV4_UNICAST, cps, &msg.Meta)
 
 	// done
 	msg.Type = UPDATE

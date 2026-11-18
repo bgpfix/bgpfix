@@ -264,7 +264,7 @@ func (br *Reader) setMeta(m *msg.Msg, bmp *Bmp, obmp *OpenBmp, ps *peerState) {
 		return
 	}
 
-	t, p := m.UseTags(), &bmp.Peer
+	t, p := (&m.Tags), &bmp.Peer
 	t.PeerIP, t.PeerAS = p.Address, p.AS
 	if p.ID != 0 {
 		t.PeerID = netip.AddrFrom4([4]byte{byte(p.ID >> 24), byte(p.ID >> 16), byte(p.ID >> 8), byte(p.ID)})

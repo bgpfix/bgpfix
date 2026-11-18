@@ -114,20 +114,49 @@ func (t *Tags) Each(cb func(key, val string)) {
 	}
 }
 
-// ToJSON appends the tags as a JSON object to dst
+// ToJSON appends the tags as a JSON object to dst, without allocations
 func (t *Tags) ToJSON(dst []byte) []byte {
 	dst = append(dst, '{')
-	first := len(dst)
-	t.Each(func(key, val string) {
-		if len(dst) > first {
+	n := len(dst)
+	key := func(k string) {
+		if len(dst) > n {
 			dst = append(dst, ',')
 		}
 		dst = append(dst, '"')
-		dst = json.Ascii(dst, json.B(key))
+		dst = json.Ascii(dst, json.B(k))
 		dst = append(dst, `":"`...)
-		dst = json.Ascii(dst, json.B(val))
-		dst = append(dst, '"')
-	})
+	}
+	str := func(k, v string) {
+		if v != "" {
+			key(k)
+			dst = append(json.Ascii(dst, json.B(v)), '"')
+		}
+	}
+	addr := func(k string, a netip.Addr) {
+		if a.IsValid() {
+			key(k)
+			dst = append(a.AppendTo(dst), '"')
+		}
+	}
+	asn := func(k string, v uint32) {
+		if v != 0 {
+			key(k)
+			dst = append(strconv.AppendUint(dst, uint64(v), 10), '"')
+		}
+	}
+
+	// NB: in the order of Each
+	str("COLLECTOR", t.Collector)
+	asn("LOCAL_AS", t.LocalAS)
+	addr("LOCAL_IP", t.LocalIP)
+	asn("PEER_AS", t.PeerAS)
+	addr("PEER_ID", t.PeerID)
+	addr("PEER_IP", t.PeerIP)
+	str("ROUTER", t.Router)
+	str("SRC", t.Src)
+	for _, o := range t.Other {
+		str(o.Key, o.Val)
+	}
 	return append(dst, '}')
 }
 

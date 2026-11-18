@@ -332,7 +332,7 @@ func (o *OpenBmp) FromBmp(bm *Bmp, m *msg.Msg) error {
 	o.Data = bm.Bytes()
 
 	// Extract collector/router from message tags
-	if t := m.Tags; t != nil {
+	if t := &m.Tags; true {
 		o.CollectorName = t.Collector
 		if router := t.Router; router != "" {
 			if addr, err := netip.ParseAddr(router); err == nil {

@@ -44,3 +44,17 @@ func TestTagsFromJSONNoAlias(t *testing.T) {
 		t.Errorf("got %s", js)
 	}
 }
+
+func BenchmarkTagsToJSON(b *testing.B) {
+	var tags Tags
+	tags.Set("PEER_IP", "192.0.2.1")
+	tags.Set("PEER_AS", "65001")
+	tags.Set("LOCAL_IP", "2001:db8::1")
+	tags.Set("LOCAL_AS", "6447")
+	tags.Set("rov/status", "VALID")
+	buf := make([]byte, 0, 1024)
+	b.ReportAllocs()
+	for b.Loop() {
+		buf = tags.ToJSON(buf[:0])
+	}
+}

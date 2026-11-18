@@ -310,7 +310,7 @@ func regressOpenRaw(t *testing.T, asn uint32) []byte {
 func TestTagFilterSeesCallbackTags(t *testing.T) {
 	p := newTestPipe(context.Background())
 	p.Options.OnMsg(func(m *msg.Msg) bool {
-		m.UseTags().Set("x", "1")
+		(&m.Tags).Set("x", "1")
 		return true
 	}, meta.DIR_R)
 	f, err := filter.NewFilter(`tag[x] == 1`)

@@ -130,7 +130,7 @@ func (x *Exa) writeAttrs(u *msg.Update) error {
 			return err
 		}
 		ec := u.Attrs.Use(attrs.ATTR_EXT_COMMUNITY).(*attrs.Extcom)
-		if err := ec.Unmarshal(binary.BigEndian.AppendUint64(nil, v), caps.Caps{}, meta.Meta{}); err != nil {
+		if err := ec.Unmarshal(binary.BigEndian.AppendUint64(nil, v), caps.Caps{}, &meta.Meta{}); err != nil {
 			return ErrInvalidCommunity
 		}
 	}

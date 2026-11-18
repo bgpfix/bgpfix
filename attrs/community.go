@@ -32,7 +32,7 @@ func (a *Community) Len() int {
 	}
 }
 
-func (a *Community) Unmarshal(buf []byte, cps caps.Caps, _ meta.Meta) error {
+func (a *Community) Unmarshal(buf []byte, cps caps.Caps, _ *meta.Meta) error {
 	exp := len(buf) / 4
 	if len(a.ASN) == 0 && cap(a.ASN) < exp {
 		a.ASN = make([]uint16, 0, exp)
@@ -54,7 +54,7 @@ func (a *Community) Add(asn uint16, value uint16) {
 	a.Value = append(a.Value, value)
 }
 
-func (a *Community) Marshal(dst []byte, cps caps.Caps, _ meta.Meta) []byte {
+func (a *Community) Marshal(dst []byte, cps caps.Caps, _ *meta.Meta) []byte {
 	tl := 4 * len(a.ASN)
 	dst = a.CodeFlags.MarshalLen(dst, tl)
 	for i := range a.ASN {

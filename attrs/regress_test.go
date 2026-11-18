@@ -25,10 +25,10 @@ func TestExtcomRemarshal(t *testing.T) {
 		{0x48, 0x01, 1, 2, 3, 4, 5, 6},
 	} {
 		at := NewAttr(ATTR_EXT_COMMUNITY)
-		if err := at.Unmarshal(in, caps.Caps{}, meta.Meta{}); err != nil {
+		if err := at.Unmarshal(in, caps.Caps{}, &meta.Meta{}); err != nil {
 			t.Fatal(err)
 		}
-		if out := attrValue(at.Marshal(nil, caps.Caps{}, meta.Meta{})); !bytes.Equal(in, out) {
+		if out := attrValue(at.Marshal(nil, caps.Caps{}, &meta.Meta{})); !bytes.Equal(in, out) {
 			t.Errorf("in=%x out=%x json=%s", in, out, at.ToJSON(nil))
 		}
 	}
@@ -49,7 +49,7 @@ func TestFlowspecMalformed(t *testing.T) {
 			0x01, 0x08, 10}, // DST 10.0.0.0/8
 	} {
 		at := NewAttr(ATTR_MP_REACH)
-		if err := at.Unmarshal(val, caps.Caps{}, meta.Meta{}); err == nil {
+		if err := at.Unmarshal(val, caps.Caps{}, &meta.Meta{}); err == nil {
 			t.Errorf("%s: accepted: %s", name, at.ToJSON(nil))
 		}
 	}
@@ -59,11 +59,11 @@ func TestFlowspecMalformed(t *testing.T) {
 func TestExtendedFlagKept(t *testing.T) {
 	in := []byte{0x50, 0x02, 0x00, 0x04, 0x02, 0x01, 0xfd, 0xe8} // AS_PATH 65000, extended length
 	at := NewAttr(ATTR_ASPATH)
-	if err := at.Unmarshal(in[4:], caps.Caps{}, meta.Meta{}); err != nil {
+	if err := at.Unmarshal(in[4:], caps.Caps{}, &meta.Meta{}); err != nil {
 		t.Fatal(err)
 	}
 	at.SetFlags(Flags(in[0]))
-	if out := at.Marshal(nil, caps.Caps{}, meta.Meta{}); !bytes.Equal(in, out) {
+	if out := at.Marshal(nil, caps.Caps{}, &meta.Meta{}); !bytes.Equal(in, out) {
 		t.Errorf("in=%x out=%x", in, out)
 	}
 }

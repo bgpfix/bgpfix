@@ -1682,7 +1682,7 @@ func TestBmp_FromMsg_WithTags(t *testing.T) {
 	require.NoError(t, m.Marshal(caps.Caps{}))
 
 	// Add peer tags
-	tags := m.UseTags()
+	tags := (&m.Tags)
 	tags.Set("PEER_IP", "192.0.2.1")
 	tags.Set("PEER_AS", "65001")
 
@@ -1712,7 +1712,7 @@ func TestBmp_FromMsg_IPv6Peer(t *testing.T) {
 	require.NoError(t, m.Marshal(caps.Caps{}))
 
 	// Add IPv6 peer tags
-	tags := m.UseTags()
+	tags := (&m.Tags)
 	tags.Set("PEER_IP", "2001:db8::1")
 	tags.Set("PEER_AS", "4200000001")
 
@@ -1792,7 +1792,7 @@ func TestOpenBmp_FromBmp_WithTags(t *testing.T) {
 	require.NoError(t, m.Marshal(caps.Caps{}))
 
 	// Add collector/router tags
-	tags := m.UseTags()
+	tags := (&m.Tags)
 	tags.Set("COLLECTOR", "route-views.collector")
 	tags.Set("ROUTER", "10.0.0.1")
 
@@ -1826,7 +1826,7 @@ func TestOpenBmp_FromBmp_RouterName(t *testing.T) {
 	require.NoError(t, m.Marshal(caps.Caps{}))
 
 	// Add router name tag
-	tags := m.UseTags()
+	tags := (&m.Tags)
 	tags.Set("ROUTER", "router1.example.com")
 
 	// Convert to BMP

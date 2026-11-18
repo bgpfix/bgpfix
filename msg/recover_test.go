@@ -11,7 +11,7 @@ import (
 
 type panicAttr struct{ attrs.Attr }
 
-func (panicAttr) Unmarshal([]byte, caps.Caps, meta.Meta) error { panic("boom") }
+func (panicAttr) Unmarshal([]byte, caps.Caps, *meta.Meta) error { panic("boom") }
 
 // a parser panic must become an error
 func TestParse_Recover(t *testing.T) {

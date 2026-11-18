@@ -152,7 +152,7 @@ func (op FlowOp) Len() int {
 	return 1 << (lcode >> 4)
 }
 
-func (a *MPFlowspec) Unmarshal(cps caps.Caps, _ meta.Meta) error {
+func (a *MPFlowspec) Unmarshal(cps caps.Caps, _ *meta.Meta) error {
 	// best-effort NH parser
 	if len(a.NH) > 0 {
 		a.NextHop, a.LinkLocal, _ = ParseNH(a.NH)
@@ -211,7 +211,7 @@ func (a *MPFlowspec) Unmarshal(cps caps.Caps, _ meta.Meta) error {
 	return nil
 }
 
-func (a *MPFlowspec) Marshal(cps caps.Caps, _ meta.Meta) {
+func (a *MPFlowspec) Marshal(cps caps.Caps, _ *meta.Meta) {
 	// NB: write into nhbuf/databuf, not a.NH/a.Data directly - those may
 	// still reference a borrowed buffer from a prior Unmarshal
 

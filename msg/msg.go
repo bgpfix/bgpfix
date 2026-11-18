@@ -29,7 +29,7 @@ type Msg struct {
 
 	// metadata
 
-	meta.Meta // Dir, Seq, Time + parser options
+	meta.Meta // Dir, Seq, Time, parser options, tags
 
 	// raw contents
 
@@ -544,7 +544,7 @@ func (msg *Msg) FromJSON(src []byte) (reterr error) {
 
 		case 5: // tags
 			if typ == json.OBJECT {
-				err = msg.UseTags().FromJSON(val)
+				err = msg.Tags.FromJSON(val)
 			}
 		}
 		return err

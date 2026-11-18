@@ -266,7 +266,7 @@ func (b *Bmp) FromMsg(m *msg.Msg, cps caps.Caps) error {
 	}
 
 	// Extract peer info from message tags
-	if t := m.Tags; t != nil {
+	if t := &m.Tags; true {
 		if t.PeerIP.IsValid() {
 			b.Peer.Address = t.PeerIP
 			if t.PeerIP.Is6() {

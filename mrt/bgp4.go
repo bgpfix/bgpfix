@@ -109,7 +109,7 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg, cps caps.Caps) error {
 	}
 
 	// copy BGP4MP metadata from tags
-	if t := m.Tags; t != nil {
+	if t := &m.Tags; true {
 		if t.PeerAS != 0 {
 			b4.PeerAS = t.PeerAS
 		}
@@ -160,7 +160,7 @@ func (b4 *Bgp4) ToMsg(m *msg.Msg, notags bool) error {
 
 	// copy BGP4MP metadata?
 	if !notags {
-		t := m.UseTags()
+		t := (&m.Tags)
 		t.PeerAS, t.LocalAS = b4.PeerAS, b4.LocalAS
 		if b4.PeerIP.IsValid() && !b4.PeerIP.IsUnspecified() {
 			t.PeerIP = b4.PeerIP
