@@ -117,13 +117,13 @@ func (t *Tags) ToJSON(dst []byte) []byte {
 			dst = append(dst, ',')
 		}
 		dst = append(dst, '"')
-		dst = json.Ascii(dst, json.B(k))
+		dst = json.Utf8(dst, json.B(k))
 		dst = append(dst, `":"`...)
 	}
 	str := func(k, v string) {
 		if v != "" {
 			key(k)
-			dst = append(json.Ascii(dst, json.B(v)), '"')
+			dst = append(json.Utf8(dst, json.B(v)), '"')
 		}
 	}
 	addr := func(k string, a netip.Addr) {
@@ -157,8 +157,18 @@ func (t *Tags) ToJSON(dst []byte) []byte {
 // FromJSON sets the tags in a JSON object src
 func (t *Tags) FromJSON(src []byte) error {
 	return json.ObjectEach(src, func(key string, val []byte, typ json.Type) error {
-		// NB: key and val alias src, which the reader re-uses: copy them
-		t.Set(strings.Clone(key), string(val))
+		// NB: key and val alias src, which the reader re-uses: UnStr copies them
+		k, err := json.UnStr(json.B(key))
+		if err != nil {
+			return err
+		}
+		v := string(val)
+		if typ == json.STRING {
+			if v, err = json.UnStr(val); err != nil {
+				return err
+			}
+		}
+		t.Set(k, v)
 		return nil
 	})
 }

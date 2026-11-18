@@ -68,3 +68,23 @@ func TestTagsInvalid(t *testing.T) {
 		t.Errorf("got %s", tags.ToJSON(nil))
 	}
 }
+
+// free-form values survive JSON round trips unchanged
+func TestTagsJSONRoundTrip(t *testing.T) {
+	for _, v := range []string{`a"b`, "x\ny", `c\d`, "zażółć", "tab\there"} {
+		var a, b Tags
+		a.Set("k", v)
+		a.Set(`we"ird`, v)
+		js := a.ToJSON(nil)
+		for range 3 { // NB: no extra escaping per cycle
+			b.Reset()
+			if err := b.FromJSON(js); err != nil {
+				t.Fatal(err)
+			}
+			js = b.ToJSON(nil)
+		}
+		if b.Get("k") != v || b.Get(`we"ird`) != v {
+			t.Errorf("%q: got %q via %s", v, b.Get("k"), js)
+		}
+	}
+}
