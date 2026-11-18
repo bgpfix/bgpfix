@@ -24,7 +24,7 @@ const (
 	// Accept the message/event immediately (skip other calls, proceed to output)
 	ACTION_ACCEPT
 
-	// The message was taken by a callback, see Context.Take()
+	// The message was taken by a callback, see Take()
 	ACTION_TAKE
 
 	// Mask is logical OR of all defined actions

@@ -35,7 +35,7 @@ type Input struct {
 	ibuf  []byte          // input buffer
 	cbs   [16][]*Callback // callbacks for given message type
 	done  chan struct{}   // closed when the input is done processing
-	taken bool            // the message just taken by a callback (see Context.Take)
+	taken bool            // the message just taken by a callback (see Take)
 }
 
 // attach attaches this Input to the given Pipe-Line.
