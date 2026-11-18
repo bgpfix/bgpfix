@@ -1,10 +1,13 @@
 package msg
 
 import (
+	"bytes"
+	"net/netip"
 	"strings"
 	"testing"
 
 	"github.com/bgpfix/bgpfix/afi"
+	"github.com/bgpfix/bgpfix/attrs"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/nlri"
 )
@@ -119,5 +122,37 @@ func TestAddPathGuessRollback(t *testing.T) {
 	}
 	if len(m.Update.Reach) != 5 || len(m.Update.Unreach) != 1 {
 		t.Errorf("reach = %v, unreach = %v", m.Update.Reach, m.Update.Unreach)
+	}
+}
+
+// Withdraw turns an UPDATE into a pure withdrawal of all its prefixes
+func TestUpdateWithdraw(t *testing.T) {
+	m := NewMsg().Switch(UPDATE)
+	u := &m.Update
+	u.Attrs.Use(attrs.ATTR_ORIGIN)
+	u.AddReach(nlri.FromPrefix(netip.MustParsePrefix("192.0.2.0/24")), nlri.FromPrefix(netip.MustParsePrefix("2001:db8::/32")))
+	u.ReachMP().Value.(*attrs.MPPrefixes).NextHop = netip.MustParseAddr("2001:db8::1")
+	u.AddUnreach(nlri.FromPrefix(netip.MustParsePrefix("198.51.100.0/24")))
+	u.Withdraw()
+	if err := m.Marshal(caps.Caps{}); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	m.WriteTo(&buf)
+	c := NewMsg()
+	if _, err := c.FromBytes(buf.Bytes()); err != nil {
+		t.Fatal(err)
+	} else if err := c.Parse(caps.Caps{}); err != nil {
+		t.Fatal(err)
+	}
+	if r := c.Update.AllReach(); len(r) != 0 {
+		t.Errorf("reach = %v", r)
+	}
+	if w := c.Update.AllUnreach(); len(w) != 3 {
+		t.Errorf("unreach = %v", w)
+	}
+	if n := c.Update.Attrs.Len(); n != 1 {
+		t.Errorf("%d attributes, want only MP_UNREACH", n)
 	}
 }

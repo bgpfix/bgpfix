@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"net/netip"
+	"slices"
 
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/attrs"
@@ -605,6 +606,21 @@ func (u *Update) AllUnreach() []nlri.Prefix {
 // HasUnreach returns true iff u withdraws unreachable NLRI (for any address family).
 func (u *Update) HasUnreach() bool {
 	return len(u.AllUnreach()) > 0
+}
+
+// Withdraw turns u into a withdrawal of all its prefixes (RFC 7606 "treat-as-withdraw"):
+// announced prefixes are moved to withdrawn, and other attributes are dropped
+// (RFC 4271 section 4.3). Marks the message as edited.
+func (u *Update) Withdraw() {
+	reach := slices.Clone(u.Reach)
+	u.Reach = nil
+	if mp := u.ReachMP().Prefixes(); mp != nil {
+		reach = append(reach, mp.Prefixes...)
+	}
+	u.Attrs.Drop(attrs.ATTR_MP_REACH)
+	u.Msg.Edit() // NB: before AddUnreach, to invalidate the cached AllReach()
+	u.AddUnreach(reach...)
+	u.Attrs.Filter(attrs.ATTR_MP_UNREACH)
 }
 
 // AddUnreach adds all unreachable prefixes to u.
