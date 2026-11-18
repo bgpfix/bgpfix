@@ -270,6 +270,9 @@ func (msg *Msg) CopyTo(dst *Msg) *Msg {
 	dst.Type = msg.Type
 	if msg.Data != nil {
 		dst.buf = append(dst.buf[:0], msg.Data...)
+		if dst.buf == nil {
+			dst.buf = []byte{} // NB: empty, not nil (eg. KEEPALIVE)
+		}
 		dst.Data = dst.buf
 	}
 	return dst

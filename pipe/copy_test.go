@@ -18,7 +18,7 @@ func TestCopyMsg(t *testing.T) {
 	UseContext(m).SetTag("PEER_IP", "192.0.2.1")
 
 	c := p.CopyMsg(m)
-	if c == nil || c == m || c.Type != m.Type || c.Seq != 7 || len(c.Data) != len(m.Data) {
+	if c == nil || c == m || c.Type != m.Type || c.Seq != 7 || c.Data == nil || c.Parse(p.Caps) != nil {
 		t.Fatalf("bad copy: %v", c)
 	}
 	if GetTags(c)["PEER_IP"] != "192.0.2.1" {
