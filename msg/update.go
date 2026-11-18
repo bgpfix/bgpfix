@@ -628,6 +628,21 @@ func (u *Update) HasUnreach() bool {
 	return len(u.AllUnreach()) > 0
 }
 
+// Withdraw turns u into a withdrawal of all its prefixes (RFC 7606 "treat-as-withdraw"):
+// announced prefixes are moved to withdrawn, and other attributes are dropped
+// (RFC 4271 section 4.3). Marks the message as edited.
+func (u *Update) Withdraw() {
+	reach := slices.Clone(u.Reach)
+	u.Reach = nil
+	if mp := u.ReachMP().Prefixes(); mp != nil {
+		reach = append(reach, mp.Prefixes...)
+	}
+	u.Attrs.Drop(attrs.ATTR_MP_REACH)
+	u.Msg.Edit() // NB: before AddUnreach, to invalidate the cached AllReach()
+	u.AddUnreach(reach...)
+	u.Attrs.Filter(attrs.ATTR_MP_UNREACH)
+}
+
 // AddUnreach adds all unreachable prefixes to u.
 // NB: it will purge non-IPv6 MP_UNREACH attribute if needed (IPv4 unicast prefixes are kept)
 func (u *Update) AddUnreach(prefixes ...nlri.Prefix) {
