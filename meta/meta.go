@@ -23,6 +23,16 @@ type Meta struct {
 	// per-message parser options, overriding session capabilities
 	ParseAS4     int8     // 4-byte ASN encoding (CAP_AS4): 0 = no data, -1 = off, 1 = on
 	ParseAddPath *AddPath // ADD-PATH encoding (CAP_ADDPATH): nil = no data
+
+	Tags *Tags // message tags, see UseTags (nil = no tags)
+}
+
+// UseTags returns mt.Tags, creating them if needed
+func (mt *Meta) UseTags() *Tags {
+	if mt.Tags == nil {
+		mt.Tags = new(Tags)
+	}
+	return mt.Tags
 }
 
 // AddPath tells which address families carry ADD-PATH Path Identifiers (RFC 7911).
@@ -45,6 +55,10 @@ func (ap *AddPath) Has(as afi.AS) bool {
 // Reset resets the metadata to its zero value.
 func (mt *Meta) Reset() {
 	if mt != nil {
-		*mt = Meta{}
+		tags := mt.Tags // NB: keep the memory
+		*mt = Meta{Tags: tags}
+		if tags != nil {
+			tags.Reset()
+		}
 	}
 }

@@ -230,7 +230,7 @@ func TestTableReader_V2_Aggregation(t *testing.T) {
 	for _, m := range msgs {
 		require.Equal(t, msg.UPDATE, m.Type)
 		u := &m.Update
-		tags := pipe.GetTags(m)
+		tags := m.Tags
 
 		switch tags.Get("PEER_AS") {
 		case "65001":
@@ -351,7 +351,7 @@ func TestTableReader_V1_ManyPeers(t *testing.T) {
 	// every emitted message must carry the peer it actually came from
 	seen := make(map[string]bool, len(msgs))
 	for _, m := range msgs {
-		ip := pipe.GetTags(m).Get("PEER_IP")
+		ip := m.Tags.Get("PEER_IP")
 		require.False(t, seen[ip], "peer %s emitted twice: index wrapped", ip)
 		seen[ip] = true
 	}
@@ -384,7 +384,7 @@ func TestTableReader_V1(t *testing.T) {
 	require.Len(t, msgs, 1)
 
 	m := msgs[0]
-	require.Equal(t, "65001", pipe.GetTags(m).Get("PEER_AS"))
+	require.Equal(t, "65001", m.Tags.Get("PEER_AS"))
 	require.Len(t, m.Update.Reach, 1)
 	require.Equal(t, "10.0.0.0/8", m.Update.Reach[0].String())
 

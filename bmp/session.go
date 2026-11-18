@@ -2,7 +2,6 @@ package bmp
 
 import (
 	"net/netip"
-	"strconv"
 	"strings"
 
 	"github.com/bgpfix/bgpfix/afi"
@@ -49,23 +48,6 @@ type peerState struct {
 	up         bool          // seen Peer Up?
 	addpathIn  *meta.AddPath // ADD-PATH on routes received from the peer (Adj-RIB-In)
 	addpathOut *meta.AddPath // ADD-PATH on routes sent to the peer (Adj-RIB-Out)
-
-	as, id             uint32 // peer AS and BGP ID behind the tag values below
-	ip, asn, bgpid, rd string // tag values
-}
-
-// setTags formats the tag values of p
-func (ps *peerState) setTags(p *Peer) {
-	ps.as, ps.id = p.AS, p.ID
-	ps.ip = p.Address.String()
-	ps.asn = strconv.FormatUint(uint64(p.AS), 10)
-	ps.bgpid, ps.rd = "", ""
-	if p.ID != 0 {
-		ps.bgpid = netip.AddrFrom4([4]byte{byte(p.ID >> 24), byte(p.ID >> 16), byte(p.ID >> 8), byte(p.ID)}).String()
-	}
-	if p.RD != 0 || p.Type == PEER_TYPE_RD || p.Type == PEER_TYPE_LOCAL { // NB: FromMsg needs PEER_RD for PEER_TYPE
-		ps.rd = strconv.FormatUint(p.RD, 16)
-	}
 }
 
 // peer returns the state of p, creating it if needed and create is true.

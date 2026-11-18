@@ -36,10 +36,7 @@ func (e *Expr) tagParse() error {
 }
 
 func (e *Expr) tagEval(ev *Eval) Res {
-	tags := ev.PipeTags
-	if len(tags) == 0 {
-		return RES_ABSENT
-	}
+	tags := ev.Msg.Tags
 
 	// check_val checks specific tag value
 	check_val := func(val string) bool {
@@ -65,10 +62,11 @@ func (e *Expr) tagEval(ev *Eval) Res {
 	}
 
 	// look for any tag match
-	for _, t := range tags {
-		if check_val(t.Val) {
-			return RES_TRUE
+	res := RES_ABSENT
+	tags.Each(func(_, val string) {
+		if res != RES_TRUE {
+			res = resBool(check_val(val))
 		}
-	}
-	return RES_FALSE
+	})
+	return res
 }

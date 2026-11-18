@@ -172,7 +172,7 @@ input:
 	for m := range in.In {
 		// prepare tools
 		mx := in.prepare(m)
-		eval.Set(m, p.KV, p.Caps, mx.Tags)
+		eval.Set(m, p.KV, p.Caps)
 
 		// double-check context
 		if ctx.Err() != nil {
@@ -239,7 +239,6 @@ input:
 			}
 
 			// evaluate callback message filters?
-			eval.PipeTags = mx.Tags // NB: previous callbacks may have created the tags
 			for _, f := range cb.Filter {
 				if !eval.Run(f) {
 					continue callbacks // try next callback

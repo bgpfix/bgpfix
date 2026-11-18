@@ -79,7 +79,7 @@ func TestReader_AddPath(t *testing.T) {
 		var routers, reach []string
 		_, err := br.WriteFunc(stream, func(m *msg.Msg) bool {
 			aps = append(aps, m.ParseAddPath)
-			routers = append(routers, pipe.GetTags(m).Get("ROUTER"))
+			routers = append(routers, m.Tags.Get("ROUTER"))
 			require.NoError(t, m.Parse(caps.Caps{}))
 			for _, p := range m.Update.AllReach() {
 				reach = append(reach, p.String())
@@ -111,7 +111,7 @@ func TestWriter(t *testing.T) {
 	_, err := m.FromBytes(addpathUpdate)
 	require.NoError(t, err)
 	m.ParseAddPath = meta.AddPathOn
-	pipe.UseContext(m).Tags.Set("PEER_IP", "10.0.0.1")
+	m.UseTags().Set("PEER_IP", "10.0.0.1")
 
 	b := NewBmp()
 	require.NoError(t, b.FromMsg(m, cps))

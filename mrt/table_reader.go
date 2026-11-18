@@ -5,7 +5,6 @@ import (
 	"maps"
 	"net/netip"
 	"slices"
-	"strconv"
 
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/attrs"
@@ -217,9 +216,8 @@ func (br *Reader) newPending(ats, nh []byte, pe *PeerEntry) (*tablePending, erro
 
 	// tag with peer metadata
 	if !br.NoTags {
-		tags := &pipe.UseContext(m).Tags
-		tags.Set("PEER_AS", strconv.FormatUint(uint64(pe.AS), 10))
-		tags.Set("PEER_IP", pe.IP.String())
+		t := m.UseTags()
+		t.PeerAS, t.PeerIP = pe.AS, pe.IP
 	}
 
 	return &tablePending{

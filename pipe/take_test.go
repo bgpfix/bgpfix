@@ -19,7 +19,7 @@ func TestTake(t *testing.T) {
 		if mx.Input == again {
 			return true // sent again: pass
 		}
-		mx.Tags.Set("held", "yes")
+		m.UseTags().Set("held", "yes")
 		mx.Take()
 		held <- m
 		return false
@@ -48,7 +48,7 @@ func TestTake(t *testing.T) {
 	for i := range n {
 		select {
 		case m := <-p.R.Out:
-			if m.Type != msg.KEEPALIVE || GetTags(m).Get("held") != "yes" {
+			if m.Type != msg.KEEPALIVE || m.Tags.Get("held") != "yes" {
 				t.Fatalf("message %d: %s", i, m)
 			}
 			p.PutMsg(m)

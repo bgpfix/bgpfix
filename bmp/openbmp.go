@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/bgpfix/bgpfix/msg"
-	"github.com/bgpfix/bgpfix/pipe"
 )
 
 // OpenBMP header constants
@@ -333,9 +332,9 @@ func (o *OpenBmp) FromBmp(bm *Bmp, m *msg.Msg) error {
 	o.Data = bm.Bytes()
 
 	// Extract collector/router from message tags
-	if tags := pipe.GetTags(m); len(tags) > 0 {
-		o.CollectorName = tags.Get("COLLECTOR")
-		if router := tags.Get("ROUTER"); router != "" {
+	if t := m.Tags; t != nil {
+		o.CollectorName = t.Collector
+		if router := t.Router; router != "" {
 			if addr, err := netip.ParseAddr(router); err == nil {
 				o.RouterIP = addr
 			} else {

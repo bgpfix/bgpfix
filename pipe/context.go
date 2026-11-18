@@ -1,10 +1,6 @@
 package pipe
 
 import (
-	"strings"
-
-	"github.com/bgpfix/bgpfix/json"
-	"github.com/bgpfix/bgpfix/meta"
 	"github.com/bgpfix/bgpfix/msg"
 )
 
@@ -14,11 +10,7 @@ type Context struct {
 	Input    *Input      // input processing the message (message source)
 	Callback *Callback   // currently running callback
 	cbs      []*Callback // all callbacks scheduled to run
-
-	// exported to JSON
-
-	Action Action    // requested message actions
-	Tags   meta.Tags // message tags
+	Action   Action      // requested message actions
 }
 
 // UseContext returns message Context inside m, creating one if needed.
@@ -36,14 +28,6 @@ func UseContext(m *msg.Msg) *Context {
 func GetContext(m *msg.Msg) *Context {
 	mx, _ := m.Value.(*Context)
 	return mx
-}
-
-// GetTags returns the tags of m, if any
-func GetTags(m *msg.Msg) meta.Tags {
-	if mx, ok := m.Value.(*Context); ok {
-		return mx.Tags
-	}
-	return nil
 }
 
 // Take takes the message from the pipe: when the callback returns, the pipe forgets
@@ -65,49 +49,4 @@ func (mx *Context) Reset() {
 	mx.Callback = nil
 	mx.Action = 0
 	mx.cbs = nil // NB: do not [:0] and re-use
-	mx.Tags = mx.Tags[:0]
-}
-
-// ToJSON marshals Context to JSON
-func (mx *Context) ToJSON(dst []byte) []byte {
-	dst = append(dst, '{')
-	first := len(dst)
-
-	if mx.Action != 0 {
-		dst = append(dst, `"ACTION":`...)
-		dst = mx.Action.ToJSON(dst)
-	}
-
-	for _, t := range mx.Tags {
-		key, val := t.Key, t.Val
-		if key == "ACTION" {
-			continue
-		}
-		if len(dst) == first {
-			dst = append(dst, `"`...)
-		} else {
-			dst = append(dst, `,"`...)
-		}
-		dst = json.Ascii(dst, json.B(key))
-		dst = append(dst, `":"`...)
-		dst = json.Ascii(dst, json.B(val))
-		dst = append(dst, '"')
-	}
-
-	return append(dst, '}')
-}
-
-// FromJSON unmarshals Context from JSON
-func (mx *Context) FromJSON(src []byte) error {
-	return json.ObjectEach(src, func(key string, val []byte, typ json.Type) error {
-		if key == "ACTION" {
-			return nil // NB: export-only, a feed must not choose how its messages are processed
-		} else if len(val) == 0 {
-			return nil // ignore empty values
-		} else {
-			// NB: key aliases src (see json.ObjectEach), which the reader re-uses: copy it
-			mx.Tags.Set(strings.Clone(key), string(val))
-			return nil
-		}
-	})
 }
