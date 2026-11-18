@@ -294,7 +294,7 @@ input:
 			t = clampNow(t)
 			oldt := l.LastOpen.Load()
 			if t > oldt && l.LastOpen.CompareAndSwap(oldt, t) {
-				mx.Action.Add(ACTION_KEEP)
+				mx.Action.Add(ACTION_REF)
 				l.Open.Store(&m.Open)
 				p.Event(EVENT_OPEN, m.Dir, t)
 			}

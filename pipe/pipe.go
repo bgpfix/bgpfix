@@ -309,7 +309,7 @@ func (p *Pipe) PutMsg(m *msg.Msg) {
 
 	// do not re-use?
 	mx := UseContext(m)
-	if mx.Action.Has(ACTION_KEEP) {
+	if mx.Action.Has(ACTION_REF) {
 		return
 	}
 

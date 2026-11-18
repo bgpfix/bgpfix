@@ -14,9 +14,9 @@ type Action byte
 const ACTION_OK Action = 0
 
 const (
-	// Keep the message memory: never re-use it, eg. because a reference to it,
-	// or to some value inside it, is kept. Once set, never remove it.
-	ACTION_KEEP Action = 1 << iota
+	// A reference to the message, or to a value inside it, is kept:
+	// never re-use its memory. Once set, never remove it.
+	ACTION_REF Action = 1 << iota
 
 	// Drop the message/event immediately (skip other calls, drop from output).
 	ACTION_DROP
@@ -64,7 +64,7 @@ func (ac *Action) Drop() {
 var actionNames = []struct {
 	a    Action
 	name string
-}{{ACTION_KEEP, "KEEP"}, {ACTION_DROP, "DROP"}, {ACTION_ACCEPT, "ACCEPT"}, {ACTION_TAKE, "TAKE"}}
+}{{ACTION_REF, "REF"}, {ACTION_DROP, "DROP"}, {ACTION_ACCEPT, "ACCEPT"}, {ACTION_TAKE, "TAKE"}}
 
 // ToJSON appends JSON representation to dst
 func (ac Action) ToJSON(dst []byte) []byte {
