@@ -40,9 +40,6 @@ func (t *Tags) Reset() {
 
 // Get returns the value of tag key, or "" if not set
 func (t *Tags) Get(key string) string {
-	if t == nil {
-		return ""
-	}
 	switch key {
 	case "PEER_IP":
 		return addrString(t.PeerIP)
@@ -101,9 +98,6 @@ func (t *Tags) Set(key, val string) {
 
 // Each calls cb for each tag with a value: the well-known ones first, then the others
 func (t *Tags) Each(cb func(key, val string)) {
-	if t == nil {
-		return
-	}
 	for _, key := range [...]string{"COLLECTOR", "LOCAL_AS", "LOCAL_IP", "PEER_AS", "PEER_ID", "PEER_IP", "ROUTER", "SRC"} {
 		if val := t.Get(key); val != "" {
 			cb(key, val)

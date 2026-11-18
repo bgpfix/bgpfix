@@ -13,7 +13,7 @@ func TestTags(t *testing.T) {
 	if tags.PeerIP.String() != "192.0.2.1" || tags.PeerAS != 65001 || tags.LocalAS != 0 {
 		t.Errorf("fields: %+v", tags)
 	}
-	if tags.Get("PEER_AS") != "65001" || tags.Get("a") != "1" || tags.Get("b") != "" || (*Tags)(nil).Get("a") != "" {
+	if tags.Get("PEER_AS") != "65001" || tags.Get("a") != "1" || tags.Get("b") != "" {
 		t.Errorf("Get failed")
 	}
 	js := string(tags.ToJSON(nil))
