@@ -32,9 +32,10 @@ type Input struct {
 	LimitRate     *rate.Limiter    // optional input rate limit (nil = no limit)
 	LimitSkip     bool             // if true, drop messages over the LimitRate (instead delay)
 
-	ibuf []byte          // input buffer
-	cbs  [16][]*Callback // callbacks for given message type
-	done chan struct{}   // closed when the input is done processing
+	ibuf  []byte          // input buffer
+	cbs   [16][]*Callback // callbacks for given message type
+	done  chan struct{}   // closed when the input is done processing
+	taken bool            // the message just taken by a callback (see Context.Take)
 }
 
 // attach attaches this Input to the given Pipe-Line.
@@ -118,6 +119,12 @@ func (in *Input) attach(p *Pipe, l *Line) error {
 // The message type must already be set.
 func (in *Input) prepare(m *msg.Msg) *Context {
 	mx := UseContext(m)
+
+	// taken from another input? start fresh here
+	if mx.Action.Has(ACTION_TAKE) {
+		mx.Action &^= ACTION_TAKE | ACTION_DROP | ACTION_ACCEPT
+		mx.Input, mx.Callback, mx.cbs = nil, nil, nil
+	}
 
 	// already mine?
 	if mx.Input == in {
@@ -255,10 +262,15 @@ input:
 
 			// run the callback, block until done
 			mx.Callback = cb
-			if !cb.Func(m) {
-				mx.Action.Drop()
+			keep := cb.Func(m)
+			if in.taken {
+				in.taken = false
+				continue input // NB: not ours anymore, don't touch it
 			}
 			mx.Callback = nil
+			if !keep {
+				mx.Action.Drop()
+			}
 
 			// what's next?
 			if ctx.Err() != nil {
@@ -283,7 +295,7 @@ input:
 			t = clampNow(t)
 			oldt := l.LastOpen.Load()
 			if t > oldt && l.LastOpen.CompareAndSwap(oldt, t) {
-				mx.Action.Add(ACTION_BORROW)
+				mx.Action.Add(ACTION_KEEP)
 				l.Open.Store(&m.Open)
 				p.Event(EVENT_OPEN, m.Dir, t)
 			}

@@ -145,7 +145,7 @@ func (p *Pipe) attachEvent() error {
 
 // Event announces a new event type et to the pipe, with optional arguments.
 // The first meta.Dir argument is used as ev.Dir.
-// The first *msg.Msg is used as ev.Msg and borrowed (add ACTION_BORROW).
+// The first *msg.Msg is used as ev.Msg (as text).
 // All error arguments are joined together into a single ev.Error.
 // The remaining arguments are used as ev.Val.
 func (p *Pipe) Event(et string, args ...any) *Event {

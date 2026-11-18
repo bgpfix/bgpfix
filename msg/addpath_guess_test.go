@@ -1,6 +1,7 @@
 package msg
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
@@ -132,8 +133,13 @@ func TestAddPathFromJSON(t *testing.T) {
 	if err := m.Marshal(caps.Caps{}); err != nil {
 		t.Fatal(err)
 	}
-	c := m.CopyTo(NewMsg())
-	if err := c.Parse(caps.Caps{}); err != nil {
+	var buf bytes.Buffer
+	m.WriteTo(&buf)
+	c := NewMsg()
+	c.ParseAddPath = m.ParseAddPath
+	if _, err := c.FromBytes(buf.Bytes()); err != nil {
+		t.Fatal(err)
+	} else if err := c.Parse(caps.Caps{}); err != nil {
 		t.Fatal(err)
 	}
 	if r := c.Update.Reach; len(r) != 1 || r[0].Add != nlri.PathId(28) || r[0].Prefix.String() != "67.211.53.0/24" {

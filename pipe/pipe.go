@@ -3,7 +3,6 @@ package pipe
 
 import (
 	"context"
-	"maps"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -310,7 +309,7 @@ func (p *Pipe) PutMsg(m *msg.Msg) {
 
 	// do not re-use?
 	mx := UseContext(m)
-	if mx.Action.Has(ACTION_BORROW) {
+	if mx.Action.Has(ACTION_KEEP) {
 		return
 	}
 
@@ -318,20 +317,6 @@ func (p *Pipe) PutMsg(m *msg.Msg) {
 	mx.Reset()
 	m.Reset()
 	p.msgpool.Put(m)
-}
-
-// CopyMsg returns a new message from the pool, with the contents, metadata and tags of m.
-// Use it to hold a message for later, eg. to send it again with Input.WriteMsg.
-// The copy is not parsed. Returns nil if m can't be marshaled.
-func (p *Pipe) CopyMsg(m *msg.Msg) *msg.Msg {
-	if m.Marshal(p.Caps) != nil {
-		return nil
-	}
-	c := m.CopyTo(p.GetMsg())
-	if tags := GetTags(m); len(tags) > 0 {
-		maps.Copy(UseTags(c), tags)
-	}
-	return c
 }
 
 // ParseMsg parses given message m (if needed), in the context of this Pipe.

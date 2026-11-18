@@ -70,6 +70,14 @@ func DropTags(m *msg.Msg) bool {
 	}
 }
 
+// Take takes the message from the pipe: when the callback returns, the pipe forgets
+// it, and you own it. Eg. hold it and send it later with Input.WriteMsg, which
+// processes it as new, or drop it with Pipe.PutMsg. Call only from a callback.
+func (mx *Context) Take() {
+	mx.Action |= ACTION_TAKE
+	mx.Input.taken = true
+}
+
 // Reset resets pc to empty state
 func (mx *Context) Reset() {
 	if mx == nil {
