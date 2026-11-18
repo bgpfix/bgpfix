@@ -180,3 +180,30 @@ func TestUpdateWithdraw(t *testing.T) {
 		t.Errorf("%d attributes, want only MP_UNREACH", n)
 	}
 }
+
+// Withdraw of a Flowspec announcement withdraws the same rule
+func TestUpdateWithdrawFlowspec(t *testing.T) {
+	m := NewMsg()
+	m.Type = UPDATE
+	m.Data = []byte{0, 0, 0, 19,
+		0x40, 1, 1, 0, // ORIGIN
+		0x40, 2, 0, // AS_PATH
+		0x80, 14, 9, 0, 1, 133, 0, 0, 3, 1, 8, 10} // MP_REACH IPv4 Flowspec: dst 10.0.0.0/8
+	if err := m.Parse(caps.Caps{}); err != nil {
+		t.Fatal(err)
+	}
+	m.Update.Withdraw()
+	if err := m.Marshal(caps.Caps{}); err != nil {
+		t.Fatal(err)
+	}
+
+	c := NewMsg()
+	c.Type, c.Data = UPDATE, m.Data
+	if err := c.Parse(caps.Caps{}); err != nil {
+		t.Fatal(err)
+	}
+	un := c.Update.UnreachMP()
+	if c.Update.ReachMP() != nil || un == nil || un.AS != afi.AS_IPV4_FLOWSPEC || !bytes.Equal(un.Data, []byte{3, 1, 8, 10}) {
+		t.Errorf("got %s", c.GetJSON())
+	}
+}

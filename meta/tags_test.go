@@ -58,3 +58,13 @@ func BenchmarkTagsToJSON(b *testing.B) {
 		buf = tags.ToJSON(buf[:0])
 	}
 }
+
+// invalid well-known values are dropped, zones too
+func TestTagsInvalid(t *testing.T) {
+	var tags Tags
+	tags.Set("PEER_AS", "4294967296")
+	tags.Set("PEER_IP", `fe80::1%bad"zone`)
+	if tags.PeerAS != 0 || tags.PeerIP.Zone() != "" || string(tags.ToJSON(nil)) != `{"PEER_IP":"fe80::1"}` {
+		t.Errorf("got %s", tags.ToJSON(nil))
+	}
+}

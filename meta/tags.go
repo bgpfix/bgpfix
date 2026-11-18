@@ -71,13 +71,13 @@ func (t *Tags) Get(key string) string {
 func (t *Tags) Set(key, val string) {
 	switch key {
 	case "PEER_IP":
-		t.PeerIP, _ = netip.ParseAddr(val)
+		t.PeerIP = parseAddr(val)
 	case "PEER_AS":
 		t.PeerAS = parseAS(val)
 	case "PEER_ID":
-		t.PeerID, _ = netip.ParseAddr(val)
+		t.PeerID = parseAddr(val)
 	case "LOCAL_IP":
-		t.LocalIP, _ = netip.ParseAddr(val)
+		t.LocalIP = parseAddr(val)
 	case "LOCAL_AS":
 		t.LocalAS = parseAS(val)
 	case "COLLECTOR":
@@ -184,6 +184,15 @@ func asString(as uint32) string {
 }
 
 func parseAS(s string) uint32 {
-	v, _ := strconv.ParseUint(s, 10, 32)
+	v, err := strconv.ParseUint(s, 10, 32)
+	if err != nil {
+		return 0
+	}
 	return uint32(v)
+}
+
+// parseAddr parses s, dropping the IPv6 zone (meaningless here, and unsafe in JSON)
+func parseAddr(s string) netip.Addr {
+	a, _ := netip.ParseAddr(s)
+	return a.WithZone("")
 }

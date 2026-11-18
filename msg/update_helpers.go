@@ -6,6 +6,7 @@ import (
 
 	"github.com/bgpfix/bgpfix/afi"
 	"github.com/bgpfix/bgpfix/attrs"
+	"github.com/bgpfix/bgpfix/caps"
 	"github.com/bgpfix/bgpfix/nlri"
 )
 
@@ -153,6 +154,15 @@ func (u *Update) HasUnreach() bool {
 // announced prefixes are moved to withdrawn, and other attributes are dropped
 // (RFC 4271 section 4.3). Marks the message as edited.
 func (u *Update) Withdraw() {
+	// other address families (eg. Flowspec): the same NLRI, as MP_UNREACH
+	if mp := u.ReachMP(); mp != nil && mp.Prefixes() == nil && u.UnreachMP() == nil {
+		if mp.Value != nil {
+			mp.Value.Marshal(caps.Caps{}, &u.Msg.Meta)
+		}
+		un := u.Attrs.Use(attrs.ATTR_MP_UNREACH).(*attrs.MP)
+		un.AS, un.Data = mp.AS, slices.Clone(mp.Data)
+	}
+
 	reach := slices.Clone(u.AllReach()) // NB: clone, the dropped MP_REACH may be re-used
 	u.Reach = nil
 	u.Attrs.Drop(attrs.ATTR_MP_REACH)
