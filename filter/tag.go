@@ -57,7 +57,7 @@ func (e *Expr) tagEval(ev *Eval) Res {
 
 	// specific tag key?
 	if e.Idx != nil {
-		val := tags[e.Idx.(string)]
+		val := tags.Get(e.Idx.(string))
 		if val == "" {
 			return RES_ABSENT
 		}
@@ -65,8 +65,8 @@ func (e *Expr) tagEval(ev *Eval) Res {
 	}
 
 	// look for any tag match
-	for _, val := range tags {
-		if check_val(val) {
+	for _, t := range tags {
+		if check_val(t.Val) {
 			return RES_TRUE
 		}
 	}

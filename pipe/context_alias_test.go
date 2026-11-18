@@ -17,16 +17,16 @@ func TestContextFromJSONNoAlias(t *testing.T) {
 
 	want := map[string]string{"PEER_AS": "65000", "COLLECTOR": "rrc00", "rov/192.0.2.0/24": "VALID"}
 	for k, v := range want {
-		if got := mx.GetTag(k); got != v {
+		if got := mx.Tags.Get(k); got != v {
 			t.Errorf("tag %q: got %q, want %q", k, got, v)
 		}
 	}
-	if got := len(mx.GetTags()); got != len(want) {
-		t.Errorf("%d tags, want %d: %v", got, len(want), mx.GetTags())
+	if got := len(mx.Tags); got != len(want) {
+		t.Errorf("%d tags, want %d: %v", got, len(want), mx.Tags)
 	}
-	for k := range mx.GetTags() {
-		if _, ok := want[k]; !ok {
-			t.Errorf("unexpected tag key %q", k)
+	for _, tag := range mx.Tags {
+		if _, ok := want[tag.Key]; !ok {
+			t.Errorf("unexpected tag key %q", tag.Key)
 		}
 	}
 }
@@ -37,7 +37,7 @@ func TestContextFromJSONIgnoresAction(t *testing.T) {
 	if err := mx.FromJSON([]byte(`{"ACTION":"DROP","A":"1"}`)); err != nil {
 		t.Fatal(err)
 	}
-	if mx.Action != 0 || len(mx.GetTags()) != 1 || mx.GetTag("A") != "1" {
-		t.Errorf("action=%v tags=%v", mx.Action, mx.GetTags())
+	if mx.Action != 0 || len(mx.Tags) != 1 || mx.Tags.Get("A") != "1" {
+		t.Errorf("action=%v tags=%v", mx.Action, mx.Tags)
 	}
 }

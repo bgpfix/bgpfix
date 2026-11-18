@@ -334,8 +334,8 @@ func (o *OpenBmp) FromBmp(bm *Bmp, m *msg.Msg) error {
 
 	// Extract collector/router from message tags
 	if tags := pipe.GetTags(m); len(tags) > 0 {
-		o.CollectorName = tags["COLLECTOR"]
-		if router := tags["ROUTER"]; router != "" {
+		o.CollectorName = tags.Get("COLLECTOR")
+		if router := tags.Get("ROUTER"); router != "" {
 			if addr, err := netip.ParseAddr(router); err == nil {
 				o.RouterIP = addr
 			} else {

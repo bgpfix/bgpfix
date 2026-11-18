@@ -537,10 +537,7 @@ func TestEvalTag(t *testing.T) {
 	m := newUpdate()
 	ev := NewEval(false)
 	ev.SetMsg(m)
-	ev.PipeTags = map[string]string{
-		"source": "ris-live",
-		"region": "eu-west",
-	}
+	ev.PipeTags = meta.Tags{{Key: "region", Val: "eu-west"}, {Key: "source", Val: "ris-live"}}
 
 	f1, _ := NewFilter(`tag[source] == ris-live`)
 	assert.True(t, ev.Run(f1))
@@ -558,7 +555,7 @@ func TestEvalTag(t *testing.T) {
 	ka := msg.NewMsg()
 	ka.Switch(msg.KEEPALIVE)
 	ev.SetMsg(ka)
-	ev.PipeTags = map[string]string{"source": "test"}
+	ev.PipeTags = meta.Tags{{Key: "source", Val: "test"}}
 	f5, _ := NewFilter(`tag[source] == test`)
 	assert.True(t, ev.Run(f5))
 

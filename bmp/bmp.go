@@ -269,7 +269,7 @@ func (b *Bmp) FromMsg(m *msg.Msg, cps caps.Caps) error {
 
 	// Extract peer info from message tags
 	if tags := pipe.GetTags(m); len(tags) > 0 {
-		if s := tags["PEER_IP"]; len(s) > 0 {
+		if s := tags.Get("PEER_IP"); len(s) > 0 {
 			if addr, err := netip.ParseAddr(s); err == nil {
 				b.Peer.Address = addr
 				if addr.Is6() {
@@ -277,30 +277,30 @@ func (b *Bmp) FromMsg(m *msg.Msg, cps caps.Caps) error {
 				}
 			}
 		}
-		if s := tags["PEER_AS"]; len(s) > 0 {
+		if s := tags.Get("PEER_AS"); len(s) > 0 {
 			if v, err := strconv.ParseUint(s, 10, 32); err == nil {
 				b.Peer.AS = uint32(v)
 			}
 		}
-		if s := tags["PEER_ID"]; len(s) > 0 {
+		if s := tags.Get("PEER_ID"); len(s) > 0 {
 			if addr, err := netip.ParseAddr(s); err == nil && addr.Is4() {
 				b.Peer.ID = msb.Uint32(addr.AsSlice())
 			}
 		}
-		if s := tags["PEER_RD"]; len(s) > 0 {
+		if s := tags.Get("PEER_RD"); len(s) > 0 {
 			if v, err := strconv.ParseUint(s, 16, 64); err == nil {
 				b.Peer.RD = v // NB: opaque part of the peer key, also on global peers
 			}
 
 			// NB: RD and local instance peers have a distinguisher (RFC 7854/4.2)
-			switch tags["PEER_TYPE"] {
+			switch tags.Get("PEER_TYPE") {
 			case "rd":
 				b.Peer.Type = PEER_TYPE_RD
 			case "local":
 				b.Peer.Type = PEER_TYPE_LOCAL
 			}
 		}
-		b.Peer.SetRib(tags["BMP_RIB"])
+		b.Peer.SetRib(tags.Get("BMP_RIB"))
 	}
 
 	return nil

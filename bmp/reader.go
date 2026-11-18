@@ -270,37 +270,37 @@ func (br *Reader) setMeta(m *msg.Msg, bmp *Bmp, obmp *OpenBmp, ps *peerState) {
 		ps.setTags(&bmp.Peer)
 	}
 
-	tags := pipe.UseTags(m)
-	tags["PEER_IP"] = ps.ip
-	tags["PEER_AS"] = ps.asn
+	tags := &pipe.UseContext(m).Tags
+	tags.Set("PEER_IP", ps.ip)
+	tags.Set("PEER_AS", ps.asn)
 	if ps.bgpid != "" {
-		tags["PEER_ID"] = ps.bgpid
+		tags.Set("PEER_ID", ps.bgpid)
 	}
 	if rib := bmp.Peer.Rib(); rib != "in-pre" {
-		tags["BMP_RIB"] = rib // NB: the default (pre-policy Adj-RIB-In) is not tagged
+		tags.Set("BMP_RIB", rib) // NB: the default (pre-policy Adj-RIB-In) is not tagged
 	}
 	if ps.rd != "" {
-		tags["PEER_RD"] = ps.rd
+		tags.Set("PEER_RD", ps.rd)
 	}
 	switch bmp.Peer.Type {
 	case PEER_TYPE_RD:
-		tags["PEER_TYPE"] = "rd"
+		tags.Set("PEER_TYPE", "rd")
 	case PEER_TYPE_LOCAL:
-		tags["PEER_TYPE"] = "local"
+		tags.Set("PEER_TYPE", "local")
 	}
 	if br.Router != "" {
-		tags["ROUTER"] = br.Router
+		tags.Set("ROUTER", br.Router)
 	}
 
 	// Add OpenBMP metadata if available
 	if br.OpenBMP && obmp != nil {
 		if obmp.CollectorName != "" {
-			tags["COLLECTOR"] = obmp.CollectorName
+			tags.Set("COLLECTOR", obmp.CollectorName)
 		}
 		if obmp.RouterName != "" {
-			tags["ROUTER"] = obmp.RouterName
+			tags.Set("ROUTER", obmp.RouterName)
 		} else if obmp.RouterIP.IsValid() && !obmp.RouterIP.IsUnspecified() {
-			tags["ROUTER"] = obmp.RouterIP.String()
+			tags.Set("ROUTER", obmp.RouterIP.String())
 		}
 	}
 }

@@ -111,31 +111,31 @@ func (b4 *Bgp4) FromMsg(m *msg.Msg, cps caps.Caps) error {
 
 	// m has Context with tags?
 	if tags := pipe.GetTags(m); len(tags) > 0 {
-		if s := tags["PEER_AS"]; len(s) > 0 {
+		if s := tags.Get("PEER_AS"); len(s) > 0 {
 			v, err := strconv.ParseUint(s, 10, 32)
 			if err == nil {
 				b4.PeerAS = uint32(v)
 			}
 		}
-		if s := tags["PEER_IP"]; len(s) > 0 {
+		if s := tags.Get("PEER_IP"); len(s) > 0 {
 			v, err := netip.ParseAddr(s)
 			if err == nil {
 				b4.PeerIP = v
 			}
 		}
-		if s := tags["LOCAL_AS"]; len(s) > 0 {
+		if s := tags.Get("LOCAL_AS"); len(s) > 0 {
 			v, err := strconv.ParseUint(s, 10, 32)
 			if err == nil {
 				b4.LocalAS = uint32(v)
 			}
 		}
-		if s := tags["LOCAL_IP"]; len(s) > 0 {
+		if s := tags.Get("LOCAL_IP"); len(s) > 0 {
 			v, err := netip.ParseAddr(s)
 			if err == nil {
 				b4.LocalIP = v
 			}
 		}
-		if s := tags["INTERFACE"]; len(s) > 0 {
+		if s := tags.Get("INTERFACE"); len(s) > 0 {
 			v, err := strconv.ParseUint(s, 10, 16)
 			if err == nil {
 				b4.Interface = uint16(v)
@@ -176,21 +176,21 @@ func (b4 *Bgp4) ToMsg(m *msg.Msg, notags bool) error {
 
 	// copy BGP4MP metadata?
 	if !notags {
-		tags := pipe.UseContext(m).UseTags()
+		tags := &pipe.UseContext(m).Tags
 		if b4.PeerAS != 0 {
-			tags["PEER_AS"] = strconv.FormatUint(uint64(b4.PeerAS), 10)
+			tags.Set("PEER_AS", strconv.FormatUint(uint64(b4.PeerAS), 10))
 		}
 		if !b4.PeerIP.IsUnspecified() {
-			tags["PEER_IP"] = b4.PeerIP.String()
+			tags.Set("PEER_IP", b4.PeerIP.String())
 		}
 		if b4.LocalAS != 0 {
-			tags["LOCAL_AS"] = strconv.FormatUint(uint64(b4.LocalAS), 10)
+			tags.Set("LOCAL_AS", strconv.FormatUint(uint64(b4.LocalAS), 10))
 		}
 		if !b4.LocalIP.IsUnspecified() {
-			tags["LOCAL_IP"] = b4.LocalIP.String()
+			tags.Set("LOCAL_IP", b4.LocalIP.String())
 		}
 		if b4.Interface != 0 {
-			tags["INTERFACE"] = strconv.FormatUint(uint64(b4.Interface), 10)
+			tags.Set("INTERFACE", strconv.FormatUint(uint64(b4.Interface), 10))
 		}
 	}
 

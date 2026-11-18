@@ -217,9 +217,9 @@ func (br *Reader) newPending(ats, nh []byte, pe *PeerEntry) (*tablePending, erro
 
 	// tag with peer metadata
 	if !br.NoTags {
-		tags := pipe.UseContext(m).UseTags()
-		tags["PEER_AS"] = strconv.FormatUint(uint64(pe.AS), 10)
-		tags["PEER_IP"] = pe.IP.String()
+		tags := &pipe.UseContext(m).Tags
+		tags.Set("PEER_AS", strconv.FormatUint(uint64(pe.AS), 10))
+		tags.Set("PEER_IP", pe.IP.String())
 	}
 
 	return &tablePending{

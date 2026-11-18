@@ -232,9 +232,9 @@ func TestTableReader_V2_Aggregation(t *testing.T) {
 		u := &m.Update
 		tags := pipe.GetTags(m)
 
-		switch tags["PEER_AS"] {
+		switch tags.Get("PEER_AS") {
 		case "65001":
-			require.Equal(t, "192.0.2.2", tags["PEER_IP"])
+			require.Equal(t, "192.0.2.2", tags.Get("PEER_IP"))
 			require.Len(t, u.Reach, 3)
 			require.Equal(t, "10.0.0.0/8", u.Reach[0].String())
 			require.Equal(t, "10.128.0.0/9", u.Reach[1].String())
@@ -250,7 +250,7 @@ func TestTableReader_V2_Aggregation(t *testing.T) {
 			ap := u.Attrs.Get(attrs.ATTR_ASPATH).(*attrs.Aspath)
 			require.Equal(t, []uint32{65000, 65099}, ap.Segments[0].List)
 		default:
-			t.Fatalf("unexpected PEER_AS: %q", tags["PEER_AS"])
+			t.Fatalf("unexpected PEER_AS: %q", tags.Get("PEER_AS"))
 		}
 	}
 }
@@ -351,7 +351,7 @@ func TestTableReader_V1_ManyPeers(t *testing.T) {
 	// every emitted message must carry the peer it actually came from
 	seen := make(map[string]bool, len(msgs))
 	for _, m := range msgs {
-		ip := pipe.GetTags(m)["PEER_IP"]
+		ip := pipe.GetTags(m).Get("PEER_IP")
 		require.False(t, seen[ip], "peer %s emitted twice: index wrapped", ip)
 		seen[ip] = true
 	}
@@ -384,7 +384,7 @@ func TestTableReader_V1(t *testing.T) {
 	require.Len(t, msgs, 1)
 
 	m := msgs[0]
-	require.Equal(t, "65001", pipe.GetTags(m)["PEER_AS"])
+	require.Equal(t, "65001", pipe.GetTags(m).Get("PEER_AS"))
 	require.Len(t, m.Update.Reach, 1)
 	require.Equal(t, "10.0.0.0/8", m.Update.Reach[0].String())
 
