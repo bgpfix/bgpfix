@@ -3,18 +3,20 @@ package msg
 import (
 	"testing"
 
+	"github.com/bgpfix/bgpfix/attrs"
 	"github.com/bgpfix/bgpfix/caps"
 	"github.com/stretchr/testify/require"
 )
 
 // asPathUpdate returns an UPDATE for 1.1.1.0/24 with given raw AS_PATH and AS4_PATH values
-func asPathUpdate(aspath, as4path []byte) []byte {
+func asPathUpdate(aspath, as4path []byte, extra ...byte) []byte {
 	ats := []byte{0x40, 1, 1, 0} // ORIGIN IGP
 	ats = append(ats, 0x40, 2, byte(len(aspath)))
 	ats = append(ats, aspath...)
 	ats = append(ats, 0x40, 3, 4, 192, 0, 2, 1) // NEXT_HOP
 	ats = append(ats, 0xc0, 17, byte(len(as4path)))
 	ats = append(ats, as4path...)
+	ats = append(ats, extra...)
 
 	data := []byte{0, 0, 0, byte(len(ats))}
 	data = append(data, ats...)
@@ -60,4 +62,48 @@ func TestAsPath_AS4PathIgnoredAfterJSON(t *testing.T) {
 	m2 := NewMsg()
 	require.NoError(t, m2.FromJSON(m.GetJSON()))
 	require.Equal(t, uint32(666), m2.Update.AsPath().Origin())
+}
+
+// AsPath must return a proper AS_PATH, never the AS4_PATH object, even if the latter is complete
+func TestAsPath_AS4PathFullSetBack(t *testing.T) {
+	data := asPathUpdate(
+		[]byte{2, 2, 0xfd, 0xe9, 0x5b, 0xa0},             // [65001 23456]
+		[]byte{2, 2, 0, 0, 0xfd, 0xe9, 0, 3, 0x0d, 0x40}, // [65001 200000]
+	)
+
+	m := NewMsg()
+	m.Type = UPDATE
+	m.Data = data
+	require.NoError(t, m.Parse(caps.Caps{}))
+
+	asp := m.Update.AsPath()
+	require.Equal(t, "[65001,200000]", asp.String())
+	require.Equal(t, attrs.ATTR_ASPATH, asp.Code())
+	m.Update.Attrs.Set(attrs.ATTR_ASPATH, asp)
+
+	// the message must remain re-usable for 2-byte AS_PATHs
+	m.Reset()
+	m.Type = UPDATE
+	m.Data = data
+	require.NoError(t, m.Parse(caps.Caps{}))
+	require.Equal(t, "[65001,200000]", m.Update.AsPath().String())
+}
+
+// AS4_PATH must be ignored if AGGREGATOR is not AS_TRANS, and AS4_AGGREGATOR is present (RFC 6793 4.2.3)
+func TestAsPath_AS4PathIgnoredOnLegacyAggregator(t *testing.T) {
+	aspath := []byte{2, 2, 0xfd, 0xe9, 0xfd, 0xea}                // [65001 65002]
+	as4path := []byte{2, 1, 0, 3, 0x0d, 0x40}                     // [200000]
+	as4agg := []byte{0xc0, 18, 8, 0, 3, 0x0d, 0x41, 192, 0, 2, 2} // AS4_AGGREGATOR 200001
+
+	m := NewMsg()
+	m.Type = UPDATE
+	m.Data = asPathUpdate(aspath, as4path, append([]byte{0xc0, 7, 6, 0xfd, 0xea, 192, 0, 2, 2}, as4agg...)...) // AGGREGATOR 65002
+	require.NoError(t, m.Parse(caps.Caps{}))
+	require.Equal(t, "[65001,65002]", m.Update.AsPath().String())
+
+	m = NewMsg()
+	m.Type = UPDATE
+	m.Data = asPathUpdate(aspath, as4path, append([]byte{0xc0, 7, 6, 0x5b, 0xa0, 192, 0, 2, 2}, as4agg...)...) // AGGREGATOR AS_TRANS
+	require.NoError(t, m.Parse(caps.Caps{}))
+	require.Equal(t, "[65001,200000]", m.Update.AsPath().String())
 }
