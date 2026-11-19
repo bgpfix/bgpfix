@@ -222,17 +222,13 @@ func (u *Update) AsPath() (aspath *attrs.Aspath) {
 	// need to process the AS4_PATH attribute?
 	// NB: only for 2-byte AS_PATH, otherwise AS4_PATH must be ignored (RFC 6793 4.1),
 	// or a peer could spoof the path seen by eg. ROV/ASPA vs. what the router uses
-	if ap4, ok := u.Attrs.Get(attrs.ATTR_AS4PATH).(*attrs.Aspath); ok && ap.As2 {
-		switch apl, ap4l := ap.Len(), ap4.Len(); {
-		case apl < ap4l: // AS4_PATH is invalid
-			aspath = ap
-		case apl == ap4l: // AS4_PATH is good as-is
-			aspath = ap4
-		default: // AS4_PATH is missing the leading part of AS_PATH
-			aspath = attrs.NewAspath(ap.CodeFlags).(*attrs.Aspath)
-
-			// start with the missing part of AS_PATH, then append the AS4_PATH
+	ap4, ok := u.Attrs.Get(attrs.ATTR_AS4PATH).(*attrs.Aspath)
+	if ok && ap.As2 && !u.as2Aggregator() {
+		if apl, ap4l := ap.Len(), ap4.Len(); apl >= ap4l { // else AS4_PATH is invalid
+			// start with the missing part of AS_PATH (if any), then append the AS4_PATH
+			// NB: always a new AS_PATH object, never ap4 (callers may Set it as ATTR_ASPATH)
 			// NB: preserve AS_SETs, even with 1 member (affects the origin)
+			aspath = attrs.NewAspath(ap.CodeFlags).(*attrs.Aspath)
 			aspath.AppendFrom(ap, apl-ap4l)
 			aspath.AppendFrom(ap4, -1)
 		}
@@ -240,6 +236,13 @@ func (u *Update) AsPath() (aspath *attrs.Aspath) {
 
 	u.cache["aspath"] = aspath
 	return aspath
+}
+
+// as2Aggregator returns true iff u has both AGGREGATOR and AS4_AGGREGATOR,
+// and the former is not AS_TRANS: then the AS4_* attributes must be ignored (RFC 6793 4.2.3)
+func (u *Update) as2Aggregator() bool {
+	agg, ok := u.Attrs.Get(attrs.ATTR_AGGREGATOR).(*attrs.Aggregator)
+	return ok && agg.ASN != attrs.AS_TRANS && u.Attrs.Has(attrs.ATTR_AS4AGGREGATOR)
 }
 
 // NextHop returns NEXT_HOP address, if possible.

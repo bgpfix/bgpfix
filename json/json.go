@@ -2,6 +2,7 @@
 package json
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -149,10 +150,10 @@ func Ascii(dst, src []byte) []byte {
 
 // Utf8 appends UTF-8 text from src to JSON string in dst, or falls back to Ascii if src is not valid UTF-8
 func Utf8(dst, src []byte) []byte {
-	return appendEscaped(dst, src, utf8.Valid(src))
+	return appendEscaped(dst, src, true)
 }
 
-// appendEscaped appends src to JSON string in dst, escaping bytes >= 0x80 unless utf is true
+// appendEscaped appends src to JSON string in dst, escaping bytes >= 0x80 unless utf is true and src is valid UTF-8
 func appendEscaped(dst, src []byte, utf bool) []byte {
 	// fast path: nothing to escape (the usual case)
 	i := 0
@@ -160,6 +161,9 @@ func appendEscaped(dst, src []byte, utf bool) []byte {
 		i++
 	}
 	dst = append(dst, src[:i]...)
+	if utf && i < len(src) && !utf8.Valid(src[i:]) {
+		utf = false // NB: src[:i] is ASCII
+	}
 
 	for _, c := range src[i:] {
 		switch c {
@@ -181,6 +185,14 @@ func appendEscaped(dst, src []byte, utf bool) []byte {
 		}
 	}
 	return dst
+}
+
+// UnStr returns the JSON string value in src (without quotes), unescaped
+func UnStr(src []byte) (string, error) {
+	if bytes.IndexByte(src, '\\') < 0 {
+		return string(src), nil // the usual case
+	}
+	return jsp.ParseString(src)
 }
 
 // S returns string from byte slice, in an unsafe way
